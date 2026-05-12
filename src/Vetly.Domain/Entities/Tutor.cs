@@ -12,7 +12,12 @@ public class Tutor
     public DateTime? DataConsentimento { get; private set; }
     public bool Ativo { get; private set; }
 
-    private Tutor() { }
+    private Tutor()
+    {
+        Nome = null!;
+        Email = null!;
+        Telefone = null!;
+    }
 
     public Tutor(string nome, string email, string telefone)
     {

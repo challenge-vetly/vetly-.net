@@ -11,7 +11,10 @@ public class Exame
     public DateTime DataSolicitacao { get; private set; }
     public DateTime? DataResultado { get; private set; }
 
-    private Exame() { }
+    private Exame()
+    {
+        TipoSolicitacao = null!;
+    }
 
     public Exame(Guid animalId, Guid veterinarioId, string tipoSolicitacao)
     {

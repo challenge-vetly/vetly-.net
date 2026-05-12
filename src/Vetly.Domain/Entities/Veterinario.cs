@@ -17,7 +17,14 @@ public class Veterinario
     public bool Ativo { get; private set; }
     public Guid? EmpresaId { get; private set; } //Guid? para garantir que só exista um ID único para cada empresa, e nullable para permitir que o veterinário não esteja vinculado a nenhuma empresa
 
-    private Veterinario() { }
+    private Veterinario()
+    {
+        Nome = null!;
+        Crmv = null!;
+        UfAtuacao = null!;
+        Especialidades = [];
+        EspeciesAtendidas = [];
+    }
 
     public Veterinario(string nome, Crmv crmv, string ufAtuacao, PersonaVeterinario persona, PlanoAssinatura plano)
     {
@@ -27,8 +34,8 @@ public class Veterinario
         UfAtuacao = ufAtuacao.ToUpperInvariant();
         Persona = persona;
         Plano = plano;
-        Especialidades = new List<string>();
-        EspeciesAtendidas = new List<string>();
+        Especialidades = [];
+        EspeciesAtendidas = [];
         Ativo = true;
     }
 

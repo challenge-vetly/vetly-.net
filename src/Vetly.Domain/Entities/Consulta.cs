@@ -15,7 +15,7 @@ public class Consulta
     public StatusPagamento StatusPagamento { get; private set; }
     public bool Cancelada { get; private set; }
 
-    private Consulta() { }
+    private Consulta() { } // construtor para EF Core
 
     public Consulta(DateTime dataHora, ModalidadeAtendimento modalidade, Guid veterinarioId, Guid animalId, Guid tutorId)
     {

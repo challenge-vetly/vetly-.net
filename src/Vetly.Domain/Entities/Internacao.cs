@@ -11,7 +11,10 @@ public class Internacao
     public DateTime? DataAlta { get; private set; }
     public string ProcedimentosDiarios { get; private set; }
 
-    private Internacao() { }
+    private Internacao()
+    {
+        ProcedimentosDiarios = null!;
+    }
 
     public Internacao(Guid animalId, Guid veterinarioId, decimal valorCaucao)
     {

@@ -13,7 +13,10 @@ public class Documento
     public string CrmvSignatario { get; private set; }
     public bool AssinadoDigitalmente { get; private set; }
 
-    private Documento() { }
+    private Documento()
+    {
+        CrmvSignatario = null!;
+    }
 
     public Documento(TipoDocumento tipo, string crmvSignatario, Guid? consultaId = null, Guid? internacaoId = null)
     {

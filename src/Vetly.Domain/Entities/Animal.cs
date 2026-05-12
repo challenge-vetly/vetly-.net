@@ -11,7 +11,13 @@ public class Animal
     public List<string> AlertasAtivos { get; private set; }
     public bool Ativo { get; private set; }
 
-    private Animal() { }
+    private Animal()
+    {
+        Nome = null!; // Não será null quando for usado
+        Especie = null!;
+        Raca = null!;
+        AlertasAtivos = []; // Inicializa a lista de alertas como vazia para evitar null reference exceptions
+    }
 
     public Animal(string nome, string especie, string raca, DateTime dataNascimento, Guid tutorId)
     {
@@ -21,7 +27,7 @@ public class Animal
         Raca = raca;
         DataNascimento = dataNascimento;
         TutorId = tutorId;
-        AlertasAtivos = new List<string>();
+        AlertasAtivos = [];
         Ativo = true;
     }
 

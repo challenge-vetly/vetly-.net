@@ -12,7 +12,10 @@ public class Prontuario
     public string? CrmvSolicitanteCorrecao { get; private set; }
     public DateTime DataCriacao { get; private set; }
 
-    private Prontuario() { }
+    private Prontuario()
+    {
+        DadosClinicos = null!;
+    }
 
     public Prontuario(Guid consultaId, Guid animalId, string dadosClinicos)
     {

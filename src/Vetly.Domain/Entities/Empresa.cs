@@ -8,7 +8,11 @@ public class Empresa
     public Guid AdministradorId { get; private set; }
     public bool Ativa { get; private set; }
 
-    private Empresa() { }
+    private Empresa()
+    {
+        Nome = null!;
+        Tipo = null!;
+    }
 
     public Empresa(string nome, string tipo, Guid administradorId)
     {
