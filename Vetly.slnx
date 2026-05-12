@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Vetly.API/Vetly.API.csproj" />
+    <Project Path="src/Vetly.Application/Vetly.Application.csproj" />
+    <Project Path="src/Vetly.Domain/Vetly.Domain.csproj" />
+    <Project Path="src/Vetly.Infrastructure/Vetly.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Vetly.IntegrationTests/Vetly.IntegrationTests.csproj" />
+    <Project Path="tests/Vetly.UnitTests/Vetly.UnitTests.csproj" />
+  </Folder>
+</Solution>
