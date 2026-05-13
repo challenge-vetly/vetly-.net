@@ -1,13 +1,12 @@
-﻿using Vetly.Application.DTOs.Internacao;
+using Vetly.Application.DTOs.Internacao;
 using Vetly.Application.Exceptions;
 using Vetly.Application.Interfaces;
 using Vetly.Domain.Entities;
-using Vetly.Application.Interfaces;
 
 namespace Vetly.Application.Services;
 
 /// <summary>
-/// ServiÃ§o de internaÃ§Ãµes. Gerencia abertura, apuraÃ§Ã£o de valor diÃ¡rio e alta com emissÃ£o de NF.
+/// Servico de internacoes. Gerencia abertura, apuracao de valor diario e alta.
 /// </summary>
 public class InternacaoService : IInternacaoService
 {
@@ -24,17 +23,17 @@ public class InternacaoService : IInternacaoService
     public async Task<InternacaoDto> ObterPorIdAsync(Guid id)
     {
         var internacao = await _repo.ObterPorIdAsync(id)
-            ?? throw new NotFoundException("InternaÃ§Ã£o", id);
+            ?? throw new NotFoundException("Internacao", id);
         return MapearParaDto(internacao);
     }
 
     public async Task<InternacaoDto> AbrirAsync(CriarInternacaoDto dto)
     {
-        // Verifica se o animal jÃ¡ possui uma internaÃ§Ã£o ativa
+        // Verifica se o animal ja possui uma internacao ativa
         var ativa = await _repo.ObterAtivaDoAnimalAsync(dto.AnimalId);
         if (ativa is not null)
             throw new BusinessRuleException("INTERNACAO-001",
-                "O animal jÃ¡ possui uma internaÃ§Ã£o ativa. Finalize a atual antes de abrir outra.");
+                "O animal ja possui uma internacao ativa. Finalize a atual antes de abrir outra.");
 
         var internacao = new Internacao(dto.AnimalId, dto.VeterinarioId, dto.ValorCaucao);
         await _repo.AdicionarAsync(internacao);
@@ -45,7 +44,7 @@ public class InternacaoService : IInternacaoService
     public async Task AtualizarAsync(Guid id, string procedimentosJson)
     {
         var internacao = await _repo.ObterPorIdAsync(id)
-            ?? throw new NotFoundException("InternaÃ§Ã£o", id);
+            ?? throw new NotFoundException("Internacao", id);
         internacao.RegistrarProcedimentoDiario(procedimentosJson);
         _repo.Atualizar(internacao);
         await _repo.SalvarAsync();
@@ -54,7 +53,7 @@ public class InternacaoService : IInternacaoService
     public async Task<InternacaoDto> DarAltaAsync(Guid id)
     {
         var internacao = await _repo.ObterPorIdAsync(id)
-            ?? throw new NotFoundException("InternaÃ§Ã£o", id);
+            ?? throw new NotFoundException("Internacao", id);
 
         internacao.DarAlta();
         _repo.Atualizar(internacao);

@@ -1,14 +1,13 @@
-﻿using Vetly.Application.DTOs.Animal;
+using Vetly.Application.DTOs.Animal;
 using Vetly.Application.DTOs.Exame;
 using Vetly.Application.DTOs.Prontuario;
 using Vetly.Application.Exceptions;
 using Vetly.Application.Interfaces;
 using Vetly.Domain.Entities;
-using Vetly.Application.Interfaces;
 
 namespace Vetly.Application.Services;
 
-/// <summary>ServiÃ§o de animais. Gerencia cadastro, histÃ³rico longitudinal e exames.</summary>
+/// <summary>Servico de animais. Gerencia cadastro, historico longitudinal e exames.</summary>
 public class AnimalService : IAnimalService
 {
     private readonly IAnimalRepository _repo;
@@ -33,16 +32,11 @@ public class AnimalService : IAnimalService
         var prontuarios = await _repo.ObterHistoricoLongitudinalAsync(animalId);
         return prontuarios.Select(p => new ProntuarioDto
         {
-            Id = p.Id,
-            ConsultaId = p.ConsultaId,
-            AnimalId = p.AnimalId,
-            DadosClinicos = p.DadosClinicos,
-            VersaoOriginalId = p.VersaoOriginalId,
-            DataCorrecao = p.DataCorrecao,
-            JustificativaCorrecao = p.JustificativaCorrecao,
+            Id = p.Id, ConsultaId = p.ConsultaId, AnimalId = p.AnimalId,
+            DadosClinicos = p.DadosClinicos, VersaoOriginalId = p.VersaoOriginalId,
+            DataCorrecao = p.DataCorrecao, JustificativaCorrecao = p.JustificativaCorrecao,
             CrmvSolicitanteCorrecao = p.CrmvSolicitanteCorrecao,
-            DataCriacao = p.DataCriacao,
-            ExigeJustificativa = p.ExigeJustificativa()
+            DataCriacao = p.DataCriacao, ExigeJustificativa = p.ExigeJustificativa()
         });
     }
 
@@ -51,14 +45,10 @@ public class AnimalService : IAnimalService
         var exames = await _repo.ObterExamesAsync(animalId);
         return exames.Select(e => new ExameDto
         {
-            Id = e.Id,
-            AnimalId = e.AnimalId,
-            VeterinarioId = e.VeterinarioId,
-            TipoSolicitacao = e.TipoSolicitacao,
-            Resultado = e.Resultado,
+            Id = e.Id, AnimalId = e.AnimalId, VeterinarioId = e.VeterinarioId,
+            TipoSolicitacao = e.TipoSolicitacao, Resultado = e.Resultado,
             LiberadoAoTutor = e.LiberadoAoTutor,
-            DataSolicitacao = e.DataSolicitacao,
-            DataResultado = e.DataResultado
+            DataSolicitacao = e.DataSolicitacao, DataResultado = e.DataResultado
         });
     }
 
@@ -90,14 +80,8 @@ public class AnimalService : IAnimalService
 
     private static AnimalDto MapearParaDto(Animal a) => new()
     {
-        Id = a.Id,
-        Nome = a.Nome,
-        Especie = a.Especie,
-        Raca = a.Raca,
-        DataNascimento = a.DataNascimento,
-        IdadeEmAnos = a.IdadeEmAnos(),
-        TutorId = a.TutorId,
-        AlertasAtivos = a.AlertasAtivos,
-        Ativo = a.Ativo
+        Id = a.Id, Nome = a.Nome, Especie = a.Especie, Raca = a.Raca,
+        DataNascimento = a.DataNascimento, IdadeEmAnos = a.IdadeEmAnos(),
+        TutorId = a.TutorId, AlertasAtivos = a.AlertasAtivos, Ativo = a.Ativo
     };
 }

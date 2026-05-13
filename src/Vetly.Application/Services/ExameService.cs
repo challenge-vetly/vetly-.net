@@ -1,12 +1,11 @@
-﻿using Vetly.Application.DTOs.Exame;
+using Vetly.Application.DTOs.Exame;
 using Vetly.Application.Exceptions;
 using Vetly.Application.Interfaces;
 using Vetly.Domain.Entities;
-using Vetly.Application.Interfaces;
 
 namespace Vetly.Application.Services;
 
-/// <summary>ServiÃ§o de exames. Gerencia solicitaÃ§Ã£o, resultado e liberaÃ§Ã£o ao tutor.</summary>
+/// <summary>Servico de exames. Gerencia solicitacao, resultado e liberacao ao tutor.</summary>
 public class ExameService : IExameService
 {
     private readonly IExameRepository _repo;
@@ -48,7 +47,7 @@ public class ExameService : IExameService
     {
         var exame = await _repo.ObterPorIdAsync(id)
             ?? throw new NotFoundException("Exame", id);
-        exame.LiberarAoTutor(); // lanÃ§a InvalidOperationException se sem resultado
+        exame.LiberarAoTutor(); // lanca InvalidOperationException se sem resultado
         _repo.Atualizar(exame);
         await _repo.SalvarAsync();
     }

@@ -3,7 +3,6 @@ using Vetly.Application.Exceptions;
 using Vetly.Application.Factories;
 using Vetly.Application.Interfaces;
 using Vetly.Domain.Enums;
-using Vetly.Application.Interfaces;
 
 namespace Vetly.Application.Services;
 
