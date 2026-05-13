@@ -1,16 +1,16 @@
-using Vetly.Application.DTOs.Cancelamento;
+﻿using Vetly.Application.DTOs.Cancelamento;
 using Vetly.Application.DTOs.Consulta;
 using Vetly.Application.Exceptions;
 using Vetly.Application.Interfaces;
 using Vetly.Application.Strategies.Cancelamento;
 using Vetly.Domain.Entities;
 using Vetly.Domain.Enums;
-using Vetly.Infrastructure.Repositories;
+using Vetly.Application.Interfaces;
 
 namespace Vetly.Application.Services;
 
 /// <summary>
-/// Serviço de consultas. Orquestra agendamento (RN-015) e cancelamento via Strategy (RN-019/020/021).
+/// ServiÃ§o de consultas. Orquestra agendamento (RN-015) e cancelamento via Strategy (RN-019/020/021).
 /// </summary>
 public class ConsultaService : IConsultaService
 {
@@ -55,7 +55,7 @@ public class ConsultaService : IConsultaService
     }
 
     /// <summary>
-    /// RN-015: o agendamento só é confirmado se o pagamento associado estiver com status Confirmado.
+    /// RN-015: o agendamento sÃ³ Ã© confirmado se o pagamento associado estiver com status Confirmado.
     /// </summary>
     public async Task<ConsultaDto> AgendarAsync(CriarConsultaDto dto)
     {
@@ -64,7 +64,7 @@ public class ConsultaService : IConsultaService
 
         if (pagamento.StatusPagamento != StatusPagamento.Confirmado)
             throw new BusinessRuleException("RN-015",
-                "A consulta só pode ser agendada após confirmação do pagamento.");
+                "A consulta sÃ³ pode ser agendada apÃ³s confirmaÃ§Ã£o do pagamento.");
 
         var consulta = new Consulta(dto.DataHora, dto.Modalidade, dto.VeterinarioId, dto.AnimalId, dto.TutorId);
         consulta.ConfirmarPagamento();
@@ -84,7 +84,7 @@ public class ConsultaService : IConsultaService
     }
 
     /// <summary>
-    /// Cancela a consulta aplicando a Strategy de reembolso de menor prioridade aplicável (RN-019/020/021).
+    /// Cancela a consulta aplicando a Strategy de reembolso de menor prioridade aplicÃ¡vel (RN-019/020/021).
     /// </summary>
     public async Task<ResultadoCancelamentoDto> CancelarAsync(Guid id)
     {
@@ -92,12 +92,12 @@ public class ConsultaService : IConsultaService
             ?? throw new NotFoundException("Consulta", id);
 
         if (consulta.Cancelada)
-            throw new BusinessRuleException("CONSULTA-001", "Esta consulta já foi cancelada.");
+            throw new BusinessRuleException("CONSULTA-001", "Esta consulta jÃ¡ foi cancelada.");
 
         var pagamento = await _pagamentoRepo.ObterPorConsultaAsync(id)
-            ?? throw new BusinessRuleException("CONSULTA-002", "Pagamento da consulta não encontrado.");
+            ?? throw new BusinessRuleException("CONSULTA-002", "Pagamento da consulta nÃ£o encontrado.");
 
-        // Seleciona a strategy de menor prioridade que seja aplicável ao momento do cancelamento
+        // Seleciona a strategy de menor prioridade que seja aplicÃ¡vel ao momento do cancelamento
         var strategy = _strategies
             .OrderBy(s => s.Prioridade)
             .First(s => s.Aplicavel(consulta.DataHora, DateTime.UtcNow));

@@ -1,14 +1,14 @@
-using Vetly.Application.DTOs.Documento;
+﻿using Vetly.Application.DTOs.Documento;
 using Vetly.Application.Exceptions;
 using Vetly.Application.Factories;
 using Vetly.Application.Interfaces;
 using Vetly.Domain.Enums;
-using Vetly.Infrastructure.Repositories;
+using Vetly.Application.Interfaces;
 
 namespace Vetly.Application.Services;
 
 /// <summary>
-/// Serviço de documentos clínicos.
+/// ServiÃ§o de documentos clÃ­nicos.
 /// Usa Factory Pattern para selecionar a factory correta pelo tipo de documento (RN-024).
 /// </summary>
 public class DocumentoService : IDocumentoService
@@ -48,7 +48,7 @@ public class DocumentoService : IDocumentoService
 
     /// <summary>
     /// Gera um documento selecionando a factory pelo tipo (RN-024).
-    /// Requer que o diagnóstico esteja validado antes de gerar documentos.
+    /// Requer que o diagnÃ³stico esteja validado antes de gerar documentos.
     /// </summary>
     public async Task<DocumentoDto> GerarAsync(Guid consultaId, TipoDocumento tipo)
     {
@@ -57,10 +57,10 @@ public class DocumentoService : IDocumentoService
 
         if (!consulta.PodeGerarDocumentos())
             throw new BusinessRuleException("RN-024",
-                "O diagnóstico deve ser validado pelo veterinário antes de gerar documentos.");
+                "O diagnÃ³stico deve ser validado pelo veterinÃ¡rio antes de gerar documentos.");
 
         var vet = await _vetRepo.ObterPorIdAsync(consulta.VeterinarioId)
-            ?? throw new NotFoundException("Veterinário", consulta.VeterinarioId);
+            ?? throw new NotFoundException("VeterinÃ¡rio", consulta.VeterinarioId);
 
         var animal = await _animalRepo.ObterPorIdAsync(consulta.AnimalId)
             ?? throw new NotFoundException("Animal", consulta.AnimalId);
@@ -89,7 +89,7 @@ public class DocumentoService : IDocumentoService
         await _repo.SalvarAsync();
     }
 
-    /// <summary>Cria uma versão corrigida — valida necessidade de justificativa (RN-032/033/034).</summary>
+    /// <summary>Cria uma versÃ£o corrigida â€” valida necessidade de justificativa (RN-032/033/034).</summary>
     public async Task<DocumentoDto> CorrigirAsync(Guid id, string novosDados, string? justificativa, string crmvSolicitante)
     {
         var doc = await _repo.ObterPorIdAsync(id)

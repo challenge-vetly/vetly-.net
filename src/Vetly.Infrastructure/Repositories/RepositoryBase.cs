@@ -1,5 +1,6 @@
 using System.Linq.Expressions;
 using Microsoft.EntityFrameworkCore;
+using Vetly.Application.Interfaces;
 using Vetly.Infrastructure.Data;
 
 namespace Vetly.Infrastructure.Repositories;

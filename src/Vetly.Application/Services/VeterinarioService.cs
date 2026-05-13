@@ -1,16 +1,16 @@
-using System.Text.RegularExpressions;
+﻿using System.Text.RegularExpressions;
 using Vetly.Application.DTOs.Consulta;
 using Vetly.Application.DTOs.Veterinario;
 using Vetly.Application.Exceptions;
 using Vetly.Application.Interfaces;
 using Vetly.Domain.Entities;
 using Vetly.Domain.ValueObjects;
-using Vetly.Infrastructure.Repositories;
+using Vetly.Application.Interfaces;
 
 namespace Vetly.Application.Services;
 
 /// <summary>
-/// Serviço de veterinários. Orquestra validações de CRMV (RN-011),
+/// ServiÃ§o de veterinÃ¡rios. Orquestra validaÃ§Ãµes de CRMV (RN-011),
 /// soft delete com retorno de agendamentos (RN-008) e gerenciamento de perfil.
 /// </summary>
 public class VeterinarioService : IVeterinarioService
@@ -35,7 +35,7 @@ public class VeterinarioService : IVeterinarioService
     public async Task<VeterinarioDto> ObterPorIdAsync(Guid id)
     {
         var vet = await _repo.ObterPorIdAsync(id)
-            ?? throw new NotFoundException("Veterinário", id);
+            ?? throw new NotFoundException("VeterinÃ¡rio", id);
         return MapearParaDto(vet);
     }
 
@@ -61,7 +61,7 @@ public class VeterinarioService : IVeterinarioService
 
         var existente = await _repo.ObterPorCrmvAsync(dto.Crmv);
         if (existente is not null)
-            throw new BusinessRuleException("RN-011", $"CRMV '{dto.Crmv}' já está cadastrado na plataforma.");
+            throw new BusinessRuleException("RN-011", $"CRMV '{dto.Crmv}' jÃ¡ estÃ¡ cadastrado na plataforma.");
 
         var crmv = new Crmv(dto.Crmv);
         var vet = new Veterinario(dto.Nome, crmv, dto.UfAtuacao, dto.Persona, dto.Plano);
@@ -80,7 +80,7 @@ public class VeterinarioService : IVeterinarioService
     public async Task AtualizarAsync(Guid id, CriarVeterinarioDto dto)
     {
         var vet = await _repo.ObterPorIdAsync(id)
-            ?? throw new NotFoundException("Veterinário", id);
+            ?? throw new NotFoundException("VeterinÃ¡rio", id);
 
         vet.AtualizarDados(dto.Nome, dto.UfAtuacao, dto.TitulacaoAcademica);
         vet.AtualizarPlano(dto.Plano);
@@ -92,7 +92,7 @@ public class VeterinarioService : IVeterinarioService
     public async Task<IEnumerable<ConsultaDto>> DesativarAsync(Guid id)
     {
         var vet = await _repo.ObterPorIdAsync(id)
-            ?? throw new NotFoundException("Veterinário", id);
+            ?? throw new NotFoundException("VeterinÃ¡rio", id);
 
         // RN-008: retorna agendamentos futuros antes de desativar para o controller informar o cliente
         var agendamentos = await _repo.ObterAgendaFuturaAsync(id);
@@ -104,12 +104,12 @@ public class VeterinarioService : IVeterinarioService
 
     /// <summary>
     /// RN-011: valida o formato do CRMV com regex.
-    /// Em produção, esta etapa seria seguida de consulta à API do CFMV.
+    /// Em produÃ§Ã£o, esta etapa seria seguida de consulta Ã  API do CFMV.
     /// </summary>
     private static void ValidarCrmv(string crmv)
     {
         if (!CrmvRegex.IsMatch(crmv))
-            throw new ValidationException("crmv", $"CRMV '{crmv}' está em formato inválido. Use o padrão XXXXXX-UF.");
+            throw new ValidationException("crmv", $"CRMV '{crmv}' estÃ¡ em formato invÃ¡lido. Use o padrÃ£o XXXXXX-UF.");
     }
 
     private static VeterinarioDto MapearParaDto(Veterinario v) => new()

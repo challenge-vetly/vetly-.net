@@ -1,14 +1,14 @@
-using Vetly.Application.DTOs.Animal;
+﻿using Vetly.Application.DTOs.Animal;
 using Vetly.Application.DTOs.Exame;
 using Vetly.Application.DTOs.Prontuario;
 using Vetly.Application.Exceptions;
 using Vetly.Application.Interfaces;
 using Vetly.Domain.Entities;
-using Vetly.Infrastructure.Repositories;
+using Vetly.Application.Interfaces;
 
 namespace Vetly.Application.Services;
 
-/// <summary>Serviço de animais. Gerencia cadastro, histórico longitudinal e exames.</summary>
+/// <summary>ServiÃ§o de animais. Gerencia cadastro, histÃ³rico longitudinal e exames.</summary>
 public class AnimalService : IAnimalService
 {
     private readonly IAnimalRepository _repo;

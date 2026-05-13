@@ -1,6 +1,6 @@
 using System.Linq.Expressions;
 
-namespace Vetly.Infrastructure.Repositories;
+namespace Vetly.Application.Interfaces;
 
 /// <summary>
 /// Contrato genérico de repositório com operações CRUD básicas.

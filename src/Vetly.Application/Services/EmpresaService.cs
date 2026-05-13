@@ -1,13 +1,13 @@
-using Vetly.Application.DTOs.Empresa;
+﻿using Vetly.Application.DTOs.Empresa;
 using Vetly.Application.DTOs.Veterinario;
 using Vetly.Application.Exceptions;
 using Vetly.Application.Interfaces;
 using Vetly.Domain.Entities;
-using Vetly.Infrastructure.Repositories;
+using Vetly.Application.Interfaces;
 
 namespace Vetly.Application.Services;
 
-/// <summary>Serviço de empresas. Gerencia cadastro e vinculação de veterinários.</summary>
+/// <summary>ServiÃ§o de empresas. Gerencia cadastro e vinculaÃ§Ã£o de veterinÃ¡rios.</summary>
 public class EmpresaService : IEmpresaService
 {
     private readonly IEmpresaRepository _repo;
@@ -74,7 +74,7 @@ public class EmpresaService : IEmpresaService
             ?? throw new NotFoundException("Empresa", empresaId);
 
         var vet = await _vetRepo.ObterPorIdAsync(veterinarioId)
-            ?? throw new NotFoundException("Veterinário", veterinarioId);
+            ?? throw new NotFoundException("VeterinÃ¡rio", veterinarioId);
 
         vet.VincularEmpresa(empresaId);
         _vetRepo.Atualizar(vet);

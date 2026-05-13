@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Vetly.Application.Interfaces;
 using Vetly.Domain.Entities;
 using Vetly.Domain.Enums;
 using Vetly.Infrastructure.Data;

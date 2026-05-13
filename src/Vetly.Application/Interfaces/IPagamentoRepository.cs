@@ -1,6 +1,6 @@
 using Vetly.Domain.Entities;
 
-namespace Vetly.Infrastructure.Repositories;
+namespace Vetly.Application.Interfaces;
 
 /// <summary>Contrato de repositório específico para a entidade <see cref="Pagamento"/>.</summary>
 public interface IPagamentoRepository : IRepositoryBase<Pagamento>

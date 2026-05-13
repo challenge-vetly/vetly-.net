@@ -1,13 +1,13 @@
-using Vetly.Application.DTOs.Animal;
+﻿using Vetly.Application.DTOs.Animal;
 using Vetly.Application.DTOs.Tutor;
 using Vetly.Application.Exceptions;
 using Vetly.Application.Interfaces;
 using Vetly.Domain.Entities;
-using Vetly.Infrastructure.Repositories;
+using Vetly.Application.Interfaces;
 
 namespace Vetly.Application.Services;
 
-/// <summary>Serviço de tutores. Gerencia cadastro e consentimentos LGPD.</summary>
+/// <summary>ServiÃ§o de tutores. Gerencia cadastro e consentimentos LGPD.</summary>
 public class TutorService : ITutorService
 {
     private readonly ITutorRepository _repo;
@@ -50,7 +50,7 @@ public class TutorService : ITutorService
     {
         var existente = await _repo.ObterPorEmailAsync(dto.Email);
         if (existente is not null)
-            throw new BusinessRuleException("TUTOR-001", $"E-mail '{dto.Email}' já está cadastrado.");
+            throw new BusinessRuleException("TUTOR-001", $"E-mail '{dto.Email}' jÃ¡ estÃ¡ cadastrado.");
 
         var tutor = new Tutor(dto.Nome, dto.Email, dto.Telefone);
         await _repo.AdicionarAsync(tutor);
