@@ -2,7 +2,8 @@ using Microsoft.EntityFrameworkCore;
 using Vetly.Domain.Entities;
 
 namespace Vetly.Infrastructure.Data;
-
+// esse arquivo é importante para o EF Core, pois é onde definimos os DbSets e as configurações de mapeamento das entidades para as tabelas do banco de dados. 
+//Ele serve como a ponte entre o modelo de domínio e a camada de persistência, permitindo que o EF Core saiba como materializar as entidades a partir dos dados armazenados no Oracle.
 public class VetlyDbContext : DbContext
 {
     public VetlyDbContext(DbContextOptions<VetlyDbContext> options) : base(options) { }
