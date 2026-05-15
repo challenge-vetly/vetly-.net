@@ -13,4 +13,7 @@ public class DocumentoDto
     public DateTime DataGeracao { get; set; }
     public string CrmvSignatario { get; set; } = string.Empty;
     public bool AssinadoDigitalmente { get; set; }
+    public Guid? VersaoOriginalId { get; set; }
+    public DateTime? DataCorrecao { get; set; }
+    public string? CrmvSolicitanteCorrecao { get; set; }
 }

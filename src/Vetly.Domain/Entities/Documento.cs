@@ -50,6 +50,16 @@ public class Documento
     /// </summary>
     public bool AssinadoDigitalmente { get; private set; }
 
+    /// <summary>Id do documento original quando este é uma versão corrigida (RN-032).</summary>
+    public Guid? VersaoOriginalId { get; private set; }
+
+    /// <summary>Data e hora em que a correção foi realizada (RN-032).</summary>
+    public DateTime? DataCorrecao { get; private set; }
+
+    /// <summary>CRMV do veterinário que solicitou a correção (RN-032).</summary>
+    [MaxLength(15)]
+    public string? CrmvSolicitanteCorrecao { get; private set; }
+
     /// <summary>Construtor privado reservado ao EF Core para materialização de entidades.</summary>
     private Documento()
     {
@@ -76,4 +86,15 @@ public class Documento
 
     /// <summary>Incrementa a versão do documento ao criar uma correção.</summary>
     public void IncrementarVersao() => Versao++;
+
+    /// <summary>
+    /// Marca este documento como versão corrigida de outro (RN-032).
+    /// Vincula ao documento original e registra o responsável pela correção.
+    /// </summary>
+    public void Corrigir(Guid versaoOriginalId, DateTime dataCorrecao, string crmvSolicitante)
+    {
+        VersaoOriginalId = versaoOriginalId;
+        DataCorrecao = dataCorrecao;
+        CrmvSolicitanteCorrecao = crmvSolicitante;
+    }
 }

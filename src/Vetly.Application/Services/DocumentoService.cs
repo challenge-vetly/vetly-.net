@@ -1,4 +1,4 @@
-﻿using Vetly.Application.DTOs.Documento;
+using Vetly.Application.DTOs.Documento;
 using Vetly.Application.Exceptions;
 using Vetly.Application.Factories;
 using Vetly.Application.Interfaces;
@@ -7,7 +7,7 @@ using Vetly.Domain.Enums;
 namespace Vetly.Application.Services;
 
 /// <summary>
-/// ServiÃ§o de documentos clÃ­nicos.
+/// Servico de documentos clinicos.
 /// Usa Factory Pattern para selecionar a factory correta pelo tipo de documento (RN-024).
 /// </summary>
 public class DocumentoService : IDocumentoService
@@ -47,7 +47,7 @@ public class DocumentoService : IDocumentoService
 
     /// <summary>
     /// Gera um documento selecionando a factory pelo tipo (RN-024).
-    /// Requer que o diagnÃ³stico esteja validado antes de gerar documentos.
+    /// Requer que o diagnostico esteja validado antes de gerar documentos.
     /// </summary>
     public async Task<DocumentoDto> GerarAsync(Guid consultaId, TipoDocumento tipo)
     {
@@ -56,10 +56,10 @@ public class DocumentoService : IDocumentoService
 
         if (!consulta.PodeGerarDocumentos())
             throw new BusinessRuleException("RN-024",
-                "O diagnÃ³stico deve ser validado pelo veterinÃ¡rio antes de gerar documentos.");
+                "O diagnostico deve ser validado pelo veterinario antes de gerar documentos.");
 
         var vet = await _vetRepo.ObterPorIdAsync(consulta.VeterinarioId)
-            ?? throw new NotFoundException("VeterinÃ¡rio", consulta.VeterinarioId);
+            ?? throw new NotFoundException("Veterinario", consulta.VeterinarioId);
 
         var animal = await _animalRepo.ObterPorIdAsync(consulta.AnimalId)
             ?? throw new NotFoundException("Animal", consulta.AnimalId);
@@ -68,7 +68,12 @@ public class DocumentoService : IDocumentoService
         var factory = _factories.FirstOrDefault(f => f.TipoSuportado == tipo)
             ?? throw new InvalidOperationException($"Nenhuma factory registrada para o tipo '{tipo}'.");
 
-        var consultaDto = new DTOs.Consulta.ConsultaDto { Id = consulta.Id, VeterinarioId = consulta.VeterinarioId, AnimalId = consulta.AnimalId, TutorId = consulta.TutorId, DataHora = consulta.DataHora, Modalidade = consulta.Modalidade, StatusPagamento = consulta.StatusPagamento };
+        var consultaDto = new DTOs.Consulta.ConsultaDto
+        {
+            Id = consulta.Id, VeterinarioId = consulta.VeterinarioId, AnimalId = consulta.AnimalId,
+            TutorId = consulta.TutorId, DataHora = consulta.DataHora, Modalidade = consulta.Modalidade,
+            StatusPagamento = consulta.StatusPagamento
+        };
         var vetDto = new DTOs.Veterinario.VeterinarioDto { Id = vet.Id, Crmv = vet.Crmv.Valor, Nome = vet.Nome };
         var animalDto = new DTOs.Animal.AnimalDto { Id = animal.Id, Nome = animal.Nome, Especie = animal.Especie };
 
@@ -88,16 +93,21 @@ public class DocumentoService : IDocumentoService
         await _repo.SalvarAsync();
     }
 
-    /// <summary>Cria uma versÃ£o corrigida â€” valida necessidade de justificativa (RN-032/033/034).</summary>
+    /// <summary>Cria uma versao corrigida - valida necessidade de justificativa (RN-032/033/034).</summary>
     public async Task<DocumentoDto> CorrigirAsync(Guid id, string novosDados, string? justificativa, string crmvSolicitante)
     {
         var doc = await _repo.ObterPorIdAsync(id)
             ?? throw new NotFoundException("Documento", id);
 
-        doc.IncrementarVersao();
-        _repo.Atualizar(doc);
+        var horasDesdeGeracao = (DateTime.UtcNow - doc.DataGeracao).TotalHours;
+        if (horasDesdeGeracao > 24 && string.IsNullOrWhiteSpace(justificativa))
+            throw new BusinessRuleException("RN-034", "Correcoes apos 24h exigem justificativa.");
+
+        var corrigido = new Domain.Entities.Documento(doc.TipoDocumento, crmvSolicitante, doc.ConsultaId, doc.InternacaoId);
+        corrigido.Corrigir(doc.Id, DateTime.UtcNow, crmvSolicitante);
+        await _repo.AdicionarAsync(corrigido);
         await _repo.SalvarAsync();
-        return MapearParaDto(doc);
+        return MapearParaDto(corrigido);
     }
 
     private static DocumentoDto MapearParaDto(Domain.Entities.Documento d) => new()
@@ -105,6 +115,8 @@ public class DocumentoService : IDocumentoService
         Id = d.Id, ConsultaId = d.ConsultaId, InternacaoId = d.InternacaoId,
         TipoDocumento = d.TipoDocumento, Versao = d.Versao,
         DataGeracao = d.DataGeracao, CrmvSignatario = d.CrmvSignatario,
-        AssinadoDigitalmente = d.AssinadoDigitalmente
+        AssinadoDigitalmente = d.AssinadoDigitalmente,
+        VersaoOriginalId = d.VersaoOriginalId, DataCorrecao = d.DataCorrecao,
+        CrmvSolicitanteCorrecao = d.CrmvSolicitanteCorrecao
     };
 }

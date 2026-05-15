@@ -15,4 +15,5 @@ public class ConsultaDto
     public bool ProtocoloValidado { get; set; }
     public StatusPagamento StatusPagamento { get; set; }
     public bool Cancelada { get; set; }
+    public bool Finalizada { get; set; }
 }

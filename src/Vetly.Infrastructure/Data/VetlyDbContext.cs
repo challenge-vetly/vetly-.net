@@ -18,6 +18,7 @@ public class VetlyDbContext : DbContext
     public DbSet<Documento> Documentos => Set<Documento>();
     public DbSet<Pagamento> Pagamentos => Set<Pagamento>();
     public DbSet<Empresa> Empresas => Set<Empresa>();
+    public DbSet<LembreteAgendado> Lembretes => Set<LembreteAgendado>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

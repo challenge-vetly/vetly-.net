@@ -43,7 +43,11 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         };
     });
 
-builder.Services.AddAuthorization();
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy("ApenasAdmin", policy => policy.RequireRole("Admin"));
+    options.AddPolicy("VeterinarioOuAdmin", policy => policy.RequireRole("Admin", "Veterinario"));
+});
 
 // ── Repositórios ─────────────────────────────────────────────────────────────
 builder.Services.AddScoped<IVeterinarioRepository, VeterinarioRepository>();
@@ -55,6 +59,7 @@ builder.Services.AddScoped<IExameRepository, ExameRepository>();
 builder.Services.AddScoped<IDocumentoRepository, DocumentoRepository>();
 builder.Services.AddScoped<IPagamentoRepository, PagamentoRepository>();
 builder.Services.AddScoped<IEmpresaRepository, EmpresaRepository>();
+builder.Services.AddScoped<ILembreteRepository, LembreteRepository>();
 
 // ── Serviços de Aplicação ────────────────────────────────────────────────────
 builder.Services.AddScoped<IVeterinarioService, VeterinarioService>();
@@ -66,6 +71,7 @@ builder.Services.AddScoped<IInternacaoService, InternacaoService>();
 builder.Services.AddScoped<IExameService, ExameService>();
 builder.Services.AddScoped<IPagamentoService, PagamentoService>();
 builder.Services.AddScoped<IEmpresaService, EmpresaService>();
+builder.Services.AddScoped<ILembreteService, LembreteService>();
 
 // ── Factories (IEnumerable<IDocumentoFactory> — resolvidas pelo DI) ──────────
 builder.Services.AddScoped<IDocumentoFactory, ProntuarioFactory>();

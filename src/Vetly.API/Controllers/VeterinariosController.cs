@@ -41,10 +41,12 @@ public class VeterinariosController : ControllerBase
     public async Task<IActionResult> ObterAgenda(Guid id) =>
         Ok(await _service.ObterAgendaAsync(id));
 
-    /// <summary>Cadastra um novo veterinario (RN-011: CRMV validado).</summary>
+    /// <summary>Cadastra um novo veterinario (RN-011: CRMV validado). Restrito a Admins.</summary>
     [HttpPost]
+    [Authorize(Policy = "ApenasAdmin")]
     [ProducesResponseType(typeof(VeterinarioDto), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
     public async Task<IActionResult> Criar([FromBody] CriarVeterinarioDto dto)
     {
@@ -62,9 +64,11 @@ public class VeterinariosController : ControllerBase
         return NoContent();
     }
 
-    /// <summary>Desativa um veterinario (soft delete — RN-008). Retorna agendamentos futuros impactados.</summary>
+    /// <summary>Desativa um veterinario (soft delete — RN-008). Restrito a Admins.</summary>
     [HttpDelete("{id:guid}")]
+    [Authorize(Policy = "ApenasAdmin")]
     [ProducesResponseType(typeof(IEnumerable<object>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Desativar(Guid id)
     {

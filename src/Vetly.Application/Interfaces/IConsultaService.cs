@@ -15,4 +15,10 @@ public interface IConsultaService
 
     /// <summary>Cancela a consulta aplicando a Strategy de reembolso adequada (RN-019/020/021).</summary>
     Task<ResultadoCancelamentoDto> CancelarAsync(Guid id);
+
+    /// <summary>Finaliza a consulta — exige receita veterinária assinada digitalmente (RN-031).</summary>
+    Task FinalizarAsync(Guid consultaId);
+
+    /// <summary>Retorna briefing pre-consulta com animal, historico e exames recentes.</summary>
+    Task<BriefingConsultaDto> ObterBriefingAsync(Guid consultaId);
 }

@@ -10,6 +10,6 @@ public interface IInternacaoService
     Task<InternacaoDto> AbrirAsync(CriarInternacaoDto dto);
     Task AtualizarAsync(Guid id, string procedimentosJson);
 
-    /// <summary>Encerra a internação, apura o valor total e gera a Nota Fiscal.</summary>
-    Task<InternacaoDto> DarAltaAsync(Guid id);
+    /// <summary>Encerra a internacao, apura o saldo restante apos desconto da caucao.</summary>
+    Task<AltaInternacaoDto> DarAltaAsync(Guid id);
 }

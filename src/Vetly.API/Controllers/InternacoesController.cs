@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Vetly.Application.DTOs.Internacao;
+
 using Vetly.Application.Interfaces;
 
 namespace Vetly.API.Controllers;
@@ -51,7 +52,7 @@ public class InternacoesController : ControllerBase
 
     /// <summary>Concede alta ao animal internado e finaliza a internacao.</summary>
     [HttpPost("{id:guid}/alta")]
-    [ProducesResponseType(typeof(InternacaoDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(AltaInternacaoDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
     public async Task<IActionResult> DarAlta(Guid id)

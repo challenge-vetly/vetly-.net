@@ -48,6 +48,9 @@ public class Consulta
     /// <summary>Indica se a consulta foi cancelada.</summary>
     public bool Cancelada { get; private set; }
 
+    /// <summary>Indica se a consulta foi finalizada (receita assinada obrigatória — RN-031).</summary>
+    public bool Finalizada { get; private set; }
+
     /// <summary>Construtor privado reservado ao EF Core para materialização de entidades.</summary>
     private Consulta() { }
 
@@ -77,6 +80,9 @@ public class Consulta
 
     /// <summary>Cancela a consulta. O reembolso é calculado pelo Strategy de cancelamento (RN-019/020/021).</summary>
     public void Cancelar() => Cancelada = true;
+
+    /// <summary>Finaliza a consulta após confirmação de receita assinada digitalmente (RN-031).</summary>
+    public void Finalizar() => Finalizada = true;
 
     /// <summary>Reagenda a consulta para uma nova data e hora.</summary>
     public void Reagendar(DateTime novaDataHora) => DataHora = novaDataHora;

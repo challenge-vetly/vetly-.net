@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Vetly.Application.DTOs.Cancelamento;
 using Vetly.Application.DTOs.Consulta;
 using Vetly.Application.Interfaces;
 
@@ -69,4 +70,22 @@ public class ConsultasController : ControllerBase
         var resultado = await _service.CancelarAsync(id);
         return Ok(resultado);
     }
+
+    /// <summary>Finaliza a consulta — exige receita veterinaria assinada digitalmente (RN-031).</summary>
+    [HttpPost("{id:guid}/finalizar")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
+    public async Task<IActionResult> Finalizar(Guid id)
+    {
+        await _service.FinalizarAsync(id);
+        return NoContent();
+    }
+
+    /// <summary>Retorna briefing pre-consulta com animal, historico e exames recentes.</summary>
+    [HttpGet("{id:guid}/briefing")]
+    [ProducesResponseType(typeof(BriefingConsultaDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ObterBriefing(Guid id) =>
+        Ok(await _service.ObterBriefingAsync(id));
 }

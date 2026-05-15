@@ -50,7 +50,7 @@ public class InternacaoService : IInternacaoService
         await _repo.SalvarAsync();
     }
 
-    public async Task<InternacaoDto> DarAltaAsync(Guid id)
+    public async Task<AltaInternacaoDto> DarAltaAsync(Guid id)
     {
         var internacao = await _repo.ObterPorIdAsync(id)
             ?? throw new NotFoundException("Internacao", id);
@@ -58,7 +58,16 @@ public class InternacaoService : IInternacaoService
         internacao.DarAlta();
         _repo.Atualizar(internacao);
         await _repo.SalvarAsync();
-        return MapearParaDto(internacao);
+
+        return new AltaInternacaoDto
+        {
+            InternacaoId = internacao.Id,
+            AnimalId = internacao.AnimalId,
+            ValorCaucao = internacao.ValorCaucao,
+            ValorTotalApurado = internacao.ValorTotalApurado,
+            SaldoRestante = internacao.ValorTotalApurado - internacao.ValorCaucao,
+            DataAlta = internacao.DataAlta!.Value
+        };
     }
 
     private static InternacaoDto MapearParaDto(Internacao i) => new()

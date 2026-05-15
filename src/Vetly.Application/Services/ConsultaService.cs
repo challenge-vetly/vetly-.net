@@ -1,5 +1,7 @@
+using Vetly.Application.DTOs.Animal;
 using Vetly.Application.DTOs.Cancelamento;
 using Vetly.Application.DTOs.Consulta;
+using Vetly.Application.DTOs.Exame;
 using Vetly.Application.Exceptions;
 using Vetly.Application.Interfaces;
 using Vetly.Application.Strategies.Cancelamento;
@@ -15,15 +17,21 @@ public class ConsultaService : IConsultaService
 {
     private readonly IConsultaRepository _repo;
     private readonly IPagamentoRepository _pagamentoRepo;
+    private readonly IDocumentoRepository _documentoRepo;
+    private readonly IAnimalRepository _animalRepo;
     private readonly IEnumerable<ICancelamentoStrategy> _strategies;
 
     public ConsultaService(
         IConsultaRepository repo,
         IPagamentoRepository pagamentoRepo,
+        IDocumentoRepository documentoRepo,
+        IAnimalRepository animalRepo,
         IEnumerable<ICancelamentoStrategy> strategies)
     {
         _repo = repo;
         _pagamentoRepo = pagamentoRepo;
+        _documentoRepo = documentoRepo;
+        _animalRepo = animalRepo;
         _strategies = strategies;
     }
 
@@ -113,11 +121,76 @@ public class ConsultaService : IConsultaService
         return resultado;
     }
 
+    /// <summary>
+    /// Finaliza a consulta exigindo receita veterinaria assinada digitalmente (RN-031).
+    /// </summary>
+    public async Task FinalizarAsync(Guid consultaId)
+    {
+        var consulta = await _repo.ObterPorIdAsync(consultaId)
+            ?? throw new NotFoundException("Consulta", consultaId);
+
+        var receita = await _documentoRepo.ObterPorConsultaETipoAsync(consultaId, TipoDocumento.ReceitaVeterinaria);
+        if (receita is null)
+            throw new BusinessRuleException("RN-031", "Receita veterinaria nao encontrada para esta consulta.");
+        if (!receita.AssinadoDigitalmente)
+            throw new BusinessRuleException("RN-031", "A receita veterinaria deve estar assinada digitalmente.");
+
+        consulta.Finalizar();
+        _repo.Atualizar(consulta);
+        await _repo.SalvarAsync();
+    }
+
+    /// <summary>
+    /// Agrega dados pre-consulta: animal, historico (ultimas 5), exames recentes (ultimos 3).
+    /// </summary>
+    public async Task<BriefingConsultaDto> ObterBriefingAsync(Guid consultaId)
+    {
+        var consulta = await _repo.ObterPorIdAsync(consultaId)
+            ?? throw new NotFoundException("Consulta", consultaId);
+
+        var animal = await _animalRepo.ObterPorIdAsync(consulta.AnimalId)
+            ?? throw new NotFoundException("Animal", consulta.AnimalId);
+
+        var historico = (await _repo.ObterPorAnimalAsync(consulta.AnimalId))
+            .OrderByDescending(c => c.DataHora)
+            .Take(5)
+            .Select(MapearParaDto)
+            .ToList();
+
+        var exames = (await _animalRepo.ObterExamesAsync(consulta.AnimalId))
+            .OrderByDescending(e => e.DataSolicitacao)
+            .Take(3)
+            .Select(e => new ExameDto
+            {
+                Id = e.Id, AnimalId = e.AnimalId, VeterinarioId = e.VeterinarioId,
+                TipoSolicitacao = e.TipoSolicitacao, Resultado = e.Resultado,
+                LiberadoAoTutor = e.LiberadoAoTutor,
+                DataSolicitacao = e.DataSolicitacao, DataResultado = e.DataResultado
+            })
+            .ToList();
+
+        return new BriefingConsultaDto
+        {
+            ConsultaId = consultaId,
+            Animal = new AnimalDto
+            {
+                Id = animal.Id, Nome = animal.Nome, Especie = animal.Especie,
+                Raca = animal.Raca, DataNascimento = animal.DataNascimento,
+                IdadeEmAnos = animal.IdadeEmAnos(), TutorId = animal.TutorId,
+                AlertasAtivos = animal.AlertasAtivos, Ativo = animal.Ativo
+            },
+            HistoricoResumido = historico,
+            AlertasAtivos = animal.AlertasAtivos,
+            ExamesRecentes = exames,
+            UltimaConsulta = historico.Count > 0 ? historico[0].DataHora : null
+        };
+    }
+
     private static ConsultaDto MapearParaDto(Consulta c) => new()
     {
         Id = c.Id, DataHora = c.DataHora, Modalidade = c.Modalidade,
         VeterinarioId = c.VeterinarioId, AnimalId = c.AnimalId, TutorId = c.TutorId,
         DiagnosticoValidado = c.DiagnosticoValidado, ProtocoloValidado = c.ProtocoloValidado,
-        StatusPagamento = c.StatusPagamento, Cancelada = c.Cancelada
+        StatusPagamento = c.StatusPagamento, Cancelada = c.Cancelada, Finalizada = c.Finalizada
     };
 }

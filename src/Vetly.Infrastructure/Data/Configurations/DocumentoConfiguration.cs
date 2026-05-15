@@ -51,6 +51,18 @@ public class DocumentoConfiguration : IEntityTypeConfiguration<Documento>
             .HasColumnType("NUMBER(1)")
             .HasColumnName("ASSINADO_DIGITALMENTE");
 
+        // Campos de auditoria de correção (RN-032)
+        builder.Property(d => d.VersaoOriginalId)
+            .HasColumnType("CHAR(36)")
+            .HasColumnName("VERSAO_ORIGINAL_ID");
+
+        builder.Property(d => d.DataCorrecao)
+            .HasColumnName("DATA_CORRECAO");
+
+        builder.Property(d => d.CrmvSolicitanteCorrecao)
+            .HasColumnType("VARCHAR2(15)")
+            .HasColumnName("CRMV_SOLICITANTE_CORRECAO");
+
         builder.HasIndex(d => d.ConsultaId).HasDatabaseName("IX_DOCUMENTO_CONSULTA");
         builder.HasIndex(d => d.InternacaoId).HasDatabaseName("IX_DOCUMENTO_INTERNACAO");
     }

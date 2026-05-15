@@ -61,6 +61,10 @@ public class ConsultaConfiguration : IEntityTypeConfiguration<Consulta>
             .HasColumnType("NUMBER(1)")
             .HasColumnName("CANCELADA");
 
+        builder.Property(c => c.Finalizada)
+            .HasColumnType("NUMBER(1)")
+            .HasColumnName("FINALIZADA");
+
         // Índice composto para as buscas mais comuns: por veterinário + data
         builder.HasIndex(c => c.VeterinarioId).HasDatabaseName("IX_CONSULTA_VETERINARIO");
         builder.HasIndex(c => c.AnimalId).HasDatabaseName("IX_CONSULTA_ANIMAL");
