@@ -185,7 +185,9 @@ curl -X POST http://localhost:11434/api/generate \
 | GET | `/api/consultas` | Filtros: dataInicio, dataFim, veterinarioId, cancelada |
 | GET | `/api/consultas/veterinario/{id}` | Por veterinario |
 | GET | `/api/consultas/animal/{id}` | Por animal |
+| GET | `/api/consultas/{id}/briefing` | Briefing pre-consulta: animal, historico e exames |
 | POST | `/api/consultas` | Agendar (RN-015: pagamento confirmado) |
+| POST | `/api/consultas/{id}/finalizar` | Finalizar — exige receita assinada (RN-031) |
 | DELETE | `/api/consultas/{id}` | Cancelar + Strategy reembolso (RN-019/020/021) |
 
 ### Internacoes
@@ -193,7 +195,14 @@ curl -X POST http://localhost:11434/api/generate \
 |---|---|---|
 | POST | `/api/internacoes` | Abrir internacao |
 | PUT | `/api/internacoes/{id}/procedimentos` | Registrar procedimentos do dia |
-| POST | `/api/internacoes/{id}/alta` | Dar alta ao animal |
+| POST | `/api/internacoes/{id}/alta` | Dar alta — retorna saldo restante (RN-016) |
+
+### Lembretes
+| Metodo | Rota | Descricao |
+|---|---|---|
+| POST | `/api/lembretes` | Agendar lembrete (vacina, retorno, medicacao…) |
+| POST | `/api/lembretes/{id}/tentativa` | Registrar tentativa de contato (alerta apos 3 — RN-029) |
+| POST | `/api/lembretes/{id}/resposta` | Registrar resposta do tutor — encerra regua (RN-030) |
 
 ### Exames
 | Metodo | Rota | Descricao |
@@ -283,15 +292,33 @@ curl -X POST https://localhost:7xxx/api/ia/diagnostico \
 
 | RN | Descricao | Implementacao |
 |---|---|---|
+| RN-001/007 | Controle de acesso por perfil (Admin, Veterinario) | Policies JWT + `[Authorize(Policy)]` |
 | RN-008 | Desativacao de vet retorna agendamentos futuros | `VeterinarioService.DesativarAsync` |
 | RN-011 | CRMV validado por regex + mock CFMV | `VeterinarioService.ValidarCrmv` |
 | RN-015 | Consulta exige pagamento confirmado | `ConsultaService.AgendarAsync` |
+| RN-016 | Alta de internacao calcula saldo restante (caucao - total apurado) | `InternacaoService.DarAltaAsync` → `AltaInternacaoDto` |
 | RN-019 | Cancelamento >24h = reembolso integral | `ReembolsoIntegralStrategy` |
 | RN-020 | Cancelamento 2-24h = reembolso parcial | `ReembolsoParcialStrategy` |
 | RN-021 | Cancelamento <2h = sem reembolso | `SemReembolsoStrategy` |
 | RN-024 | IA so sugere, veterinario valida | `DocumentoService.GerarAsync` |
-| RN-031 | Documento assinado digitalmente | `DocumentoService.AssinarAsync` |
-| RN-032 | Correcao de prontuario exige justificativa | `DocumentoService.CorrigirAsync` |
+| RN-029 | Apos 3 tentativas sem resposta, alerta e enviado a clinica | `LembreteService.ProcessarTentativaAsync` |
+| RN-030 | Resposta do tutor encerra regua de contato | `LembreteService.RegistrarRespostaAsync` |
+| RN-031 | Finalizacao de consulta exige receita assinada digitalmente | `ConsultaService.FinalizarAsync` |
+| RN-032/033 | Correcao cria nova versao do documento (original preservado) | `DocumentoService.CorrigirAsync` |
+| RN-034 | Correcao apos 24h exige justificativa | `DocumentoService.CorrigirAsync` |
+
+---
+
+## 11.1 Discrepancia Corrigida (CRMV invalido → 400)
+
+**Problema:** `POST /api/veterinarios` com CRMV no formato invalido retornava 422 em vez de 400.
+
+**Causa raiz:** `VeterinarioRepository.ObterPorCrmvAsync` usava `EF.Property<string>(v, "CRMV")` para acessar a shadow property do value object `Crmv`. No InMemory (usado nos testes), essa shadow property nao existe com esse nome — o EF Core InMemory armazena por caminho de navegacao. Resultado: `InvalidOperationException` → middleware → 422.
+
+**Solucao:**
+1. `ObterPorCrmvAsync`: substituido `EF.Property<string>(v, "CRMV")` por `v.Crmv.Valor` — funciona com Oracle (translata para coluna "CRMV") e InMemory (avalia em memoria).
+2. `VeterinarioConfiguration`: removido `HasIndex("CRMV")` que tambem falhava em InMemory. Unicidade de CRMV e garantida na camada de aplicacao (`ValidarCrmv`).
+3. `WebApplicationFactory`: adicionado `UseInternalServiceProvider` com provider InMemory isolado para evitar conflito dual-provider Oracle + InMemory.
 
 ---
 
@@ -323,8 +350,19 @@ docs(readme): adiciona README completo
 | 4 | Application — Factory e Strategy patterns | ✅ Concluida |
 | 5 | Application — DTOs, interfaces e servicos | ✅ Concluida |
 | 6 | API — Controllers, middlewares, JWT, Scalar | ✅ Concluida |
-| 7 | Testes unitarios (18 testes, 100% aprovados) | ✅ Concluida |
-| 8 | README completo | ✅ Concluida |
+| 7 | Testes unitarios e de integracao (47 testes, 100% aprovados) | ✅ Concluida |
+| 8 | Correcao CRMV 400 + RN-016/029/030/031/032/034 + Lembretes + Auth + Briefing | ✅ Concluida |
+| 9 | README completo | ✅ Concluida |
+
+---
+
+## 14. Cobertura de Testes
+
+| Suite | Quantidade | O que cobre |
+|---|---|---|
+| `Vetly.UnitTests` | 40 testes | CancelamentoStrategies, DocumentoService, OllamaService, ConsultaService, PagamentoService, VeterinarioService, InternacaoService, LembreteService |
+| `Vetly.IntegrationTests` | 7 testes | Autenticacao JWT (401/403), validacao CRMV (400), duplicata CRMV (422), IA endpoint |
+| **Total** | **47 testes** | **100% aprovados** |
 
 ---
 
