@@ -81,8 +81,6 @@ public class VeterinarioConfiguration : IEntityTypeConfiguration<Veterinario>
                 .IsRequired();
         });
 
-        // Índice no CRMV para validação rápida de unicidade (RN-011)
-        builder.HasIndex("CRMV").HasDatabaseName("IX_VETERINARIO_CRMV").IsUnique();
         // Índice na UF para buscas por região (GET /api/veterinarios/regiao/{uf})
         builder.HasIndex(v => v.UfAtuacao).HasDatabaseName("IX_VETERINARIO_UF");
     }

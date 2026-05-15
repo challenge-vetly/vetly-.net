@@ -15,7 +15,7 @@ public class VeterinarioRepository : RepositoryBase<Veterinario>, IVeterinarioRe
     /// <inheritdoc/>
     public async Task<Veterinario?> ObterPorCrmvAsync(string crmv) =>
         await _dbSet
-            .FirstOrDefaultAsync(v => EF.Property<string>(v, "CRMV") == crmv.ToUpperInvariant());
+            .FirstOrDefaultAsync(v => v.Crmv.Valor == crmv.ToUpperInvariant());
 
     /// <inheritdoc/>
     public async Task<IEnumerable<Veterinario>> ObterPorUfAsync(string uf) =>
