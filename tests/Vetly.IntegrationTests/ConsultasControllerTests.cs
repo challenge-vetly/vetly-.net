@@ -8,6 +8,9 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Tokens;
+using Vetly.Domain.Entities;
+using Vetly.Domain.Enums;
+using Vetly.Domain.ValueObjects;
 using Vetly.Infrastructure.Data;
 
 namespace Vetly.IntegrationTests;
@@ -19,9 +22,11 @@ namespace Vetly.IntegrationTests;
 public class ConsultasControllerTests : IClassFixture<VetlyWebApplicationFactory>
 {
     private readonly HttpClient _client;
+    private readonly VetlyWebApplicationFactory _factory;
 
     public ConsultasControllerTests(VetlyWebApplicationFactory factory)
     {
+        _factory = factory;
         _client = factory.CreateClient();
     }
 
@@ -62,16 +67,50 @@ public class ConsultasControllerTests : IClassFixture<VetlyWebApplicationFactory
 
         var response = await _client.PostAsync("/api/veterinarios", payload);
 
-        // CRMV inválido é rejeitado com 400 (model validation) ou 422 (BusinessRuleException via middleware)
-        Assert.True(
-            response.StatusCode == HttpStatusCode.BadRequest ||
-            response.StatusCode == HttpStatusCode.UnprocessableEntity,
-            $"Esperado 400 ou 422, recebido {(int)response.StatusCode}");
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task PostVeterinarios_CrmvDuplicado_ComToken_Retorna422()
+    {
+        const string crmvExistente = "99999-SP";
+
+        // Seed via DI da factory — usa o mesmo InMemoryServiceProvider isolado
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<VetlyDbContext>();
+            var crmv = new Crmv(crmvExistente);
+            var vet = new Veterinario("Dr. Existente", crmv, "SP", PersonaVeterinario.Autonomo, PlanoAssinatura.Profissional);
+            await db.Veterinarios.AddAsync(vet);
+            await db.SaveChangesAsync();
+        }
+
+        var token = GerarTokenJwt();
+        _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        var payload = new StringContent(
+            $$$"""{"nome":"Dr. Duplicado","crmv":"{{{crmvExistente}}}","ufAtuacao":"SP","persona":1,"plano":1}""",
+            Encoding.UTF8, "application/json");
+
+        var response = await _client.PostAsync("/api/veterinarios", payload);
+
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task DeleteVeterinarios_ComTokenSemRoleAdmin_Retorna403()
+    {
+        var token = GerarTokenJwt(role: "Veterinario");
+        _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        var response = await _client.DeleteAsync($"/api/veterinarios/{Guid.NewGuid()}");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     // ── Helper ───────────────────────────────────────────────────────────────
 
-    private static string GerarTokenJwt()
+    private static string GerarTokenJwt(string role = "Admin")
     {
         var key = new SymmetricSecurityKey(
             Encoding.UTF8.GetBytes("VetlySecretKey_MustBeAtLeast32CharactersLong!"));
@@ -79,7 +118,11 @@ public class ConsultasControllerTests : IClassFixture<VetlyWebApplicationFactory
         var token = new JwtSecurityToken(
             issuer: "Vetly",
             audience: "VetlyAPI",
-            claims: new[] { new Claim(ClaimTypes.NameIdentifier, "test-user") },
+            claims: new[]
+            {
+                new Claim(ClaimTypes.NameIdentifier, "test-user"),
+                new Claim("role", role)
+            },
             expires: DateTime.UtcNow.AddHours(1),
             signingCredentials: credentials);
         return new JwtSecurityTokenHandler().WriteToken(token);
@@ -92,19 +135,31 @@ public class ConsultasControllerTests : IClassFixture<VetlyWebApplicationFactory
 /// </summary>
 public class VetlyWebApplicationFactory : WebApplicationFactory<Program>
 {
+    // Nome fixo por instância de factory — compartilhado entre testes e seeding
+    public static readonly string DatabaseName = "VetlyIntegrationTest_" + Guid.NewGuid();
+
+    // ServiceProvider isolado com apenas o provider InMemory — evita conflito com Oracle no DI
+    private static readonly IServiceProvider InMemoryServiceProvider =
+        new ServiceCollection()
+            .AddEntityFrameworkInMemoryDatabase()
+            .BuildServiceProvider();
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.ConfigureServices(services =>
         {
-            // Remove o registro do DbContextOptions<VetlyDbContext> feito com Oracle
+            // Remove o DbContextOptions<VetlyDbContext> configurado com Oracle
             var descriptor = services.SingleOrDefault(
                 d => d.ServiceType == typeof(DbContextOptions<VetlyDbContext>));
             if (descriptor != null)
                 services.Remove(descriptor);
 
-            // Substitui por InMemory para isolar CI/CD do banco Oracle
+            // Substitui por InMemory usando service provider isolado
+            // UseInternalServiceProvider evita que o EF Core consulte os serviços Oracle do DI
             services.AddDbContext<VetlyDbContext>(options =>
-                options.UseInMemoryDatabase("VetlyIntegrationTest_" + Guid.NewGuid()));
+                options
+                    .UseInternalServiceProvider(InMemoryServiceProvider)
+                    .UseInMemoryDatabase(DatabaseName));
         });
     }
 }

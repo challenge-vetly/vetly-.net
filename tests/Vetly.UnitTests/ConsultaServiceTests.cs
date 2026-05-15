@@ -6,6 +6,7 @@ using Vetly.Application.Services;
 using Vetly.Application.Strategies.Cancelamento;
 using Vetly.Domain.Entities;
 using Vetly.Domain.Enums;
+using Vetly.Domain.ValueObjects;
 
 namespace Vetly.UnitTests;
 
@@ -17,9 +18,11 @@ public class ConsultaServiceTests
 {
     private readonly Mock<IConsultaRepository> _repoMock = new();
     private readonly Mock<IPagamentoRepository> _pagamentoRepoMock = new();
+    private readonly Mock<IDocumentoRepository> _documentoRepoMock = new();
+    private readonly Mock<IAnimalRepository> _animalRepoMock = new();
 
     private ConsultaService CriarServico(params ICancelamentoStrategy[] strategies) =>
-        new(_repoMock.Object, _pagamentoRepoMock.Object, strategies);
+        new(_repoMock.Object, _pagamentoRepoMock.Object, _documentoRepoMock.Object, _animalRepoMock.Object, strategies);
 
     private static CriarConsultaDto CriarDto(Guid pagamentoId) => new()
     {
@@ -103,5 +106,61 @@ public class ConsultaServiceTests
 
         Assert.Equal("Reembolso Integral", resultado.EstrategiaAplicada);
         Assert.Equal(200m, resultado.ValorReembolso);
+    }
+
+    [Fact]
+    public async Task FinalizarAsync_ComReceitaAssinada_Sucesso()
+    {
+        var consulta = new Consulta(
+            DateTime.UtcNow.AddDays(1), ModalidadeAtendimento.Presencial,
+            Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
+        var receita = new Documento(TipoDocumento.ReceitaVeterinaria, "12345-SP", consulta.Id);
+        receita.Assinar();
+
+        _repoMock.Setup(r => r.ObterPorIdAsync(consulta.Id)).ReturnsAsync(consulta);
+        _documentoRepoMock.Setup(r => r.ObterPorConsultaETipoAsync(consulta.Id, TipoDocumento.ReceitaVeterinaria))
+            .ReturnsAsync(receita);
+        _repoMock.Setup(r => r.Atualizar(It.IsAny<Consulta>()));
+        _repoMock.Setup(r => r.SalvarAsync()).ReturnsAsync(1);
+
+        await CriarServico().FinalizarAsync(consulta.Id);
+
+        Assert.True(consulta.Finalizada);
+    }
+
+    [Fact]
+    public async Task FinalizarAsync_SemReceita_LancaBusinessRuleExceptionRN031()
+    {
+        var consulta = new Consulta(
+            DateTime.UtcNow.AddDays(1), ModalidadeAtendimento.Presencial,
+            Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
+
+        _repoMock.Setup(r => r.ObterPorIdAsync(consulta.Id)).ReturnsAsync(consulta);
+        _documentoRepoMock.Setup(r => r.ObterPorConsultaETipoAsync(consulta.Id, TipoDocumento.ReceitaVeterinaria))
+            .ReturnsAsync((Documento?)null);
+
+        var ex = await Assert.ThrowsAsync<BusinessRuleException>(
+            () => CriarServico().FinalizarAsync(consulta.Id));
+
+        Assert.Equal("RN-031", ex.Codigo);
+    }
+
+    [Fact]
+    public async Task FinalizarAsync_ReceitaNaoAssinada_LancaBusinessRuleExceptionRN031()
+    {
+        var consulta = new Consulta(
+            DateTime.UtcNow.AddDays(1), ModalidadeAtendimento.Presencial,
+            Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
+        var receita = new Documento(TipoDocumento.ReceitaVeterinaria, "12345-SP", consulta.Id);
+        // NÃO chama receita.Assinar()
+
+        _repoMock.Setup(r => r.ObterPorIdAsync(consulta.Id)).ReturnsAsync(consulta);
+        _documentoRepoMock.Setup(r => r.ObterPorConsultaETipoAsync(consulta.Id, TipoDocumento.ReceitaVeterinaria))
+            .ReturnsAsync(receita);
+
+        var ex = await Assert.ThrowsAsync<BusinessRuleException>(
+            () => CriarServico().FinalizarAsync(consulta.Id));
+
+        Assert.Equal("RN-031", ex.Codigo);
     }
 }

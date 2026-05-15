@@ -1,3 +1,4 @@
+using System.Reflection;
 using Moq;
 using Vetly.Application.DTOs.Animal;
 using Vetly.Application.DTOs.Consulta;
@@ -101,6 +102,61 @@ public class DocumentoServiceTests
             () => service.GerarAsync(consulta.Id, TipoDocumento.Prontuario));
 
         Assert.Equal("RN-024", ex.Codigo);
+    }
+
+    // ── Helper para controlar DataGeracao nos testes de correção ─────────────
+
+    private static Documento CriarDocumentoComDataGeracao(DateTime dataGeracao)
+    {
+        var doc = new Documento(TipoDocumento.Prontuario, "12345-SP", Guid.NewGuid());
+        typeof(Documento)
+            .GetField("<DataGeracao>k__BackingField", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .SetValue(doc, dataGeracao);
+        return doc;
+    }
+
+    [Fact]
+    public async Task CorrigirAsync_DentroDe24h_SemJustificativa_Sucesso()
+    {
+        var doc = CriarDocumentoComDataGeracao(DateTime.UtcNow.AddHours(-12));
+
+        _docRepoMock.Setup(r => r.ObterPorIdAsync(doc.Id)).ReturnsAsync(doc);
+        _docRepoMock.Setup(r => r.AdicionarAsync(It.IsAny<Documento>())).Returns(Task.CompletedTask);
+        _docRepoMock.Setup(r => r.SalvarAsync()).ReturnsAsync(1);
+
+        var resultado = await CriarServico().CorrigirAsync(doc.Id, "novos dados", null, "12345-SP");
+
+        Assert.NotNull(resultado);
+        Assert.Equal(doc.Id, resultado.VersaoOriginalId);
+        Assert.NotNull(resultado.DataCorrecao);
+    }
+
+    [Fact]
+    public async Task CorrigirAsync_Apos24h_SemJustificativa_LancaBusinessRuleExceptionRN034()
+    {
+        var doc = CriarDocumentoComDataGeracao(DateTime.UtcNow.AddHours(-25));
+
+        _docRepoMock.Setup(r => r.ObterPorIdAsync(doc.Id)).ReturnsAsync(doc);
+
+        var ex = await Assert.ThrowsAsync<BusinessRuleException>(
+            () => CriarServico().CorrigirAsync(doc.Id, "novos dados", null, "12345-SP"));
+
+        Assert.Equal("RN-034", ex.Codigo);
+    }
+
+    [Fact]
+    public async Task CorrigirAsync_Apos24h_ComJustificativa_Sucesso()
+    {
+        var doc = CriarDocumentoComDataGeracao(DateTime.UtcNow.AddHours(-25));
+
+        _docRepoMock.Setup(r => r.ObterPorIdAsync(doc.Id)).ReturnsAsync(doc);
+        _docRepoMock.Setup(r => r.AdicionarAsync(It.IsAny<Documento>())).Returns(Task.CompletedTask);
+        _docRepoMock.Setup(r => r.SalvarAsync()).ReturnsAsync(1);
+
+        var resultado = await CriarServico().CorrigirAsync(doc.Id, "novos dados", "Erro de preenchimento", "12345-SP");
+
+        Assert.Equal(doc.Id, resultado.VersaoOriginalId);
+        Assert.Equal("12345-SP", resultado.CrmvSolicitanteCorrecao);
     }
 
     [Fact]
