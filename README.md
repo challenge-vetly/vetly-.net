@@ -243,11 +243,14 @@ curl -X POST http://localhost:11434/api/generate \
 ## 10. Exemplos curl
 
 ```bash
-# Autenticar (JWT necessario para todos os endpoints)
-# Implemente um endpoint de login que gere o token
+# 1. Gerar token JWT (endpoint publico — sem autenticacao previa)
+curl -X POST https://localhost:7262/api/auth/token \
+  -H "Content-Type: application/json" \
+  -d '{"usuario": "admin-teste", "role": "Admin"}'
+# Retorna: { "token": "eyJ...", "role": "Admin", "expiraEm": "..." }
 
-# Cadastrar veterinario (RN-011)
-curl -X POST https://localhost:7xxx/api/veterinarios \
+# 2. Cadastrar veterinario (RN-011: CRMV validado)
+curl -X POST https://localhost:7262/api/veterinarios \
   -H "Authorization: Bearer {token}" \
   -H "Content-Type: application/json" \
   -d '{
@@ -260,8 +263,8 @@ curl -X POST https://localhost:7xxx/api/veterinarios \
     "especiesAtendidas": ["Canino", "Felino"]
   }'
 
-# Agendar consulta (RN-015: pagamento deve estar confirmado)
-curl -X POST https://localhost:7xxx/api/consultas \
+# 3. Agendar consulta (RN-015: pagamento deve estar confirmado)
+curl -X POST https://localhost:7262/api/consultas \
   -H "Authorization: Bearer {token}" \
   -H "Content-Type: application/json" \
   -d '{
@@ -273,8 +276,8 @@ curl -X POST https://localhost:7xxx/api/consultas \
     "pagamentoId": "{guid}"
   }'
 
-# Sugerir diagnostico via IA
-curl -X POST https://localhost:7xxx/api/ia/diagnostico \
+# 4. Sugerir diagnostico via IA
+curl -X POST https://localhost:7262/api/ia/diagnostico \
   -H "Authorization: Bearer {token}" \
   -H "Content-Type: application/json" \
   -d '{
@@ -373,11 +376,16 @@ docs(readme): adiciona README completo
 dotnet restore
 dotnet build
 
-# Executar a API
-dotnet run --project src/Vetly.API
+# Aplicar migrations no banco Oracle
+dotnet ef database update \
+  --project src/Vetly.Infrastructure \
+  --startup-project src/Vetly.API
+
+# Executar a API (perfil HTTPS)
+dotnet run --project src/Vetly.API --launch-profile https
 
 # Acessar documentacao Scalar
-# https://localhost:{porta}/scalar/v1
+# https://localhost:7262/scalar/v1
 
 # Executar testes
 dotnet test

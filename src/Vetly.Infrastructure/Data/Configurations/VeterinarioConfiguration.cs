@@ -56,18 +56,17 @@ public class VeterinarioConfiguration : IEntityTypeConfiguration<Veterinario>
             .HasColumnName("EMPRESA_ID");
 
         // Listas persistidas como string delimitada por ponto-e-vírgula (VARCHAR2)
-        // EF converte automaticamente via HasConversion; ponto-e-vírgula foi escolhido
-        // por não ocorrer naturalmente em nomes de especialidades/espécies
+        // ";" é sentinel para lista vazia — Oracle trata "" como NULL (coluna NOT NULL)
         builder.Property(v => v.Especialidades)
             .HasConversion(
-                v => string.Join(';', v),
+                v => v.Count == 0 ? ";" : string.Join(';', v),
                 v => v.Split(';', StringSplitOptions.RemoveEmptyEntries).ToList())
             .HasColumnType("VARCHAR2(1000)")
             .HasColumnName("ESPECIALIDADES");
 
         builder.Property(v => v.EspeciesAtendidas)
             .HasConversion(
-                v => string.Join(';', v),
+                v => v.Count == 0 ? ";" : string.Join(';', v),
                 v => v.Split(';', StringSplitOptions.RemoveEmptyEntries).ToList())
             .HasColumnType("VARCHAR2(1000)")
             .HasColumnName("ESPECIES_ATENDIDAS");

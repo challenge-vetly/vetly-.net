@@ -49,10 +49,11 @@ public class AnimalConfiguration : IEntityTypeConfiguration<Animal>
             .HasColumnName("ATIVO")
             .IsRequired();
 
-        // Alertas armazenados como string delimitada; VARCHAR2(2000) para suportar vários alertas
+        // Alertas armazenados como string delimitada; ";" é sentinel para lista vazia
+        // (Oracle trata "" como NULL; Split com RemoveEmptyEntries lê ";" de volta como [])
         builder.Property(a => a.AlertasAtivos)
             .HasConversion(
-                v => string.Join(';', v),
+                v => v.Count == 0 ? ";" : string.Join(';', v),
                 v => v.Split(';', StringSplitOptions.RemoveEmptyEntries).ToList())
             .HasColumnType("VARCHAR2(2000)")
             .HasColumnName("ALERTAS_ATIVOS");
