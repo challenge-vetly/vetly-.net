@@ -169,15 +169,23 @@ curl -X POST http://localhost:11434/api/generate \
 ### Animais
 | Metodo | Rota | Descricao |
 |---|---|---|
+| GET | `/api/animais` | Lista todos ativos |
+| GET | `/api/animais/{id}` | Detalhe |
 | GET | `/api/animais/{id}/prontuarios` | Historico longitudinal |
 | GET | `/api/animais/{id}/exames` | Exames do animal |
 | POST | `/api/animais` | Cadastrar |
+| PUT | `/api/animais/{id}` | Atualizar |
+| DELETE | `/api/animais/{id}` | Desativar (soft delete) |
 
 ### Tutores
 | Metodo | Rota | Descricao |
 |---|---|---|
+| GET | `/api/tutores` | Lista todos ativos |
+| GET | `/api/tutores/{id}` | Detalhe |
 | GET | `/api/tutores/{id}/animais` | Animais do tutor |
 | POST | `/api/tutores` | Cadastrar |
+| PUT | `/api/tutores/{id}` | Atualizar |
+| DELETE | `/api/tutores/{id}` | Desativar (soft delete + anonimizacao LGPD) |
 
 ### Consultas
 | Metodo | Rota | Descricao |
@@ -221,14 +229,21 @@ curl -X POST http://localhost:11434/api/generate \
 ### Pagamentos
 | Metodo | Rota | Descricao |
 |---|---|---|
+| GET | `/api/pagamentos` | Lista todos os pagamentos |
+| GET | `/api/pagamentos/{id}` | Detalhe |
 | POST | `/api/pagamentos` | Registrar pagamento |
 | POST | `/api/pagamentos/{id}/processar-split` | Split financeiro via Strategy |
 
 ### Empresas
 | Metodo | Rota | Descricao |
 |---|---|---|
+| GET | `/api/empresas` | Lista todas ativas |
+| GET | `/api/empresas/{id}` | Detalhe |
 | GET | `/api/empresas/{id}/veterinarios` | Veterinarios da empresa |
+| POST | `/api/empresas` | Cadastrar |
 | POST | `/api/empresas/{id}/veterinarios/{vetId}` | Vincular veterinario |
+| PUT | `/api/empresas/{id}` | Atualizar |
+| DELETE | `/api/empresas/{id}` | Desativar |
 
 ### IA (Ollama)
 | Metodo | Rota | Descricao |
