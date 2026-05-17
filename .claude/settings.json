@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dir \"f:\\\\Vetly\\\\vetly-.net\\\\src\\\\Vetly.Domain\\\\\" /s /b | head -30)",
+      "Bash(curl -s -k -X POST https://localhost:7262/api/auth/token -H 'Content-Type: application/json' -d '{\"usuario\":\"admin-teste\",\"role\":\"Admin\"}')"
+    ]
+  }
+}
