@@ -88,4 +88,15 @@ public class ConsultasController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> ObterBriefing(Guid id) =>
         Ok(await _service.ObterBriefingAsync(id));
+
+    /// <summary>Registra a validacao manual do diagnostico pelo veterinario (RN-024).</summary>
+    [HttpPut("{id:guid}/validar-diagnostico")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
+    public async Task<IActionResult> ValidarDiagnostico(Guid id)
+    {
+        await _service.ValidarDiagnosticoAsync(id);
+        return NoContent();
+    }
 }

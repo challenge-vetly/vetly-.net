@@ -73,6 +73,17 @@ public class Pagamento
     /// <summary>Confirma o recebimento do pagamento.</summary>
     public void Confirmar() => StatusPagamento = StatusPagamento.Confirmado;
 
+    /// <summary>
+    /// Vincula este pagamento a uma consulta apos o agendamento.
+    /// Necessario para que CancelarAsync encontre o pagamento via ObterPorConsultaAsync (RN-019/020/021).
+    /// </summary>
+    public void VincularConsulta(Guid consultaId)
+    {
+        if (ConsultaId.HasValue && ConsultaId.Value != consultaId)
+            throw new InvalidOperationException("Pagamento ja esta vinculado a outra consulta.");
+        ConsultaId = consultaId;
+    }
+
     /// <summary>Define o percentual do split financeiro após processamento pela Strategy.</summary>
     public void DefinirSplit(decimal percentual) => PercentualSplit = percentual;
 

@@ -8,7 +8,8 @@ public interface IInternacaoService
     Task<IEnumerable<InternacaoDto>> ObterTodosAsync();
     Task<InternacaoDto> ObterPorIdAsync(Guid id);
     Task<InternacaoDto> AbrirAsync(CriarInternacaoDto dto);
-    Task AtualizarAsync(Guid id, string procedimentosJson);
+    /// <summary>Registra procedimentos diarios e acumula o valor total apurado (RN-016).</summary>
+    Task<InternacaoDto> RegistrarProcedimentosAsync(Guid id, RegistrarProcedimentosDto dto);
 
     /// <summary>Encerra a internacao, apura o saldo restante apos desconto da caucao.</summary>
     Task<AltaInternacaoDto> DarAltaAsync(Guid id);

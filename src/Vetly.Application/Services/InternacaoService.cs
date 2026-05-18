@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Vetly.Application.DTOs.Internacao;
 using Vetly.Application.Exceptions;
 using Vetly.Application.Interfaces;
@@ -41,13 +42,22 @@ public class InternacaoService : IInternacaoService
         return MapearParaDto(internacao);
     }
 
-    public async Task AtualizarAsync(Guid id, string procedimentosJson)
+    public async Task<InternacaoDto> RegistrarProcedimentosAsync(Guid id, RegistrarProcedimentosDto dto)
     {
         var internacao = await _repo.ObterPorIdAsync(id)
             ?? throw new NotFoundException("Internacao", id);
-        internacao.RegistrarProcedimentoDiario(procedimentosJson);
+
+        if (!internacao.EstaAtiva())
+            throw new BusinessRuleException("INTERNACAO-002",
+                "Nao e possivel registrar procedimentos em internacao ja encerrada.");
+
+        var json = JsonSerializer.Serialize(dto.Procedimentos);
+        internacao.RegistrarProcedimentoDiario(json);
+        internacao.ApurarValor(dto.Procedimentos.Sum(p => p.Valor)); // RN-016
+
         _repo.Atualizar(internacao);
         await _repo.SalvarAsync();
+        return MapearParaDto(internacao);
     }
 
     public async Task<AltaInternacaoDto> DarAltaAsync(Guid id)

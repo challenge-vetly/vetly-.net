@@ -38,12 +38,15 @@ public class ConsultaServiceTests
     public async Task AgendarAsync_PagamentoConfirmado_RetornaConsultaDto()
     {
         var pagamentoId = Guid.NewGuid();
-        var pagamento = new Pagamento(Guid.NewGuid(), 200m, MeioPagamento.Pix, Guid.NewGuid());
+        // Pagamento sem consultaId — cenário real: tutor paga antes de agendar
+        var pagamento = new Pagamento(Guid.NewGuid(), 200m, MeioPagamento.Pix);
         pagamento.Confirmar();
 
         _pagamentoRepoMock.Setup(r => r.ObterPorIdAsync(pagamentoId)).ReturnsAsync(pagamento);
         _repoMock.Setup(r => r.AdicionarAsync(It.IsAny<Consulta>())).Returns(Task.CompletedTask);
         _repoMock.Setup(r => r.SalvarAsync()).ReturnsAsync(1);
+        _pagamentoRepoMock.Setup(r => r.Atualizar(It.IsAny<Pagamento>()));
+        _pagamentoRepoMock.Setup(r => r.SalvarAsync()).ReturnsAsync(1);
 
         var resultado = await CriarServico().AgendarAsync(CriarDto(pagamentoId));
 
@@ -56,7 +59,7 @@ public class ConsultaServiceTests
     {
         var pagamentoId = Guid.NewGuid();
         // Pagamento criado sem Confirmar() — permanece Pendente
-        var pagamento = new Pagamento(Guid.NewGuid(), 200m, MeioPagamento.Pix, Guid.NewGuid());
+        var pagamento = new Pagamento(Guid.NewGuid(), 200m, MeioPagamento.Pix);
 
         _pagamentoRepoMock.Setup(r => r.ObterPorIdAsync(pagamentoId)).ReturnsAsync(pagamento);
 
@@ -162,5 +165,57 @@ public class ConsultaServiceTests
             () => CriarServico().FinalizarAsync(consulta.Id));
 
         Assert.Equal("RN-031", ex.Codigo);
+    }
+
+    [Fact]
+    public async Task AgendarAsync_PagamentoConfirmado_VinculaPagamentoAConsulta()
+    {
+        var pagamentoId = Guid.NewGuid();
+        var pagamento = new Pagamento(Guid.NewGuid(), 200m, MeioPagamento.Pix);
+        pagamento.Confirmar();
+
+        _pagamentoRepoMock.Setup(r => r.ObterPorIdAsync(pagamentoId)).ReturnsAsync(pagamento);
+        _repoMock.Setup(r => r.AdicionarAsync(It.IsAny<Consulta>())).Returns(Task.CompletedTask);
+        _repoMock.Setup(r => r.SalvarAsync()).ReturnsAsync(1);
+        _pagamentoRepoMock.Setup(r => r.Atualizar(It.IsAny<Pagamento>()));
+        _pagamentoRepoMock.Setup(r => r.SalvarAsync()).ReturnsAsync(1);
+
+        var resultado = await CriarServico().AgendarAsync(CriarDto(pagamentoId));
+
+        Assert.Equal(resultado.Id, pagamento.ConsultaId);
+        _pagamentoRepoMock.Verify(r => r.Atualizar(pagamento), Times.Once);
+        _pagamentoRepoMock.Verify(r => r.SalvarAsync(), Times.Once);
+    }
+
+    [Fact]
+    public async Task ValidarDiagnosticoAsync_ConsultaExistente_MarcaDiagnosticoValidado()
+    {
+        var consulta = new Consulta(
+            DateTime.UtcNow.AddDays(1), ModalidadeAtendimento.Presencial,
+            Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
+
+        _repoMock.Setup(r => r.ObterPorIdAsync(consulta.Id)).ReturnsAsync(consulta);
+        _repoMock.Setup(r => r.Atualizar(It.IsAny<Consulta>()));
+        _repoMock.Setup(r => r.SalvarAsync()).ReturnsAsync(1);
+
+        await CriarServico().ValidarDiagnosticoAsync(consulta.Id);
+
+        Assert.True(consulta.DiagnosticoValidado);
+    }
+
+    [Fact]
+    public async Task ValidarDiagnosticoAsync_ConsultaCancelada_LancaBusinessRuleExceptionCONSULTA003()
+    {
+        var consulta = new Consulta(
+            DateTime.UtcNow.AddDays(1), ModalidadeAtendimento.Presencial,
+            Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
+        consulta.Cancelar();
+
+        _repoMock.Setup(r => r.ObterPorIdAsync(consulta.Id)).ReturnsAsync(consulta);
+
+        var ex = await Assert.ThrowsAsync<BusinessRuleException>(
+            () => CriarServico().ValidarDiagnosticoAsync(consulta.Id));
+
+        Assert.Equal("CONSULTA-003", ex.Codigo);
     }
 }

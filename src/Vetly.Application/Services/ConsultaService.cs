@@ -78,6 +78,12 @@ public class ConsultaService : IConsultaService
 
         await _repo.AdicionarAsync(consulta);
         await _repo.SalvarAsync();
+
+        // Fecha o vinculo bidirecional Pagamento→Consulta; sem isso CancelarAsync lanca CONSULTA-002.
+        pagamento.VincularConsulta(consulta.Id);
+        _pagamentoRepo.Atualizar(pagamento);
+        await _pagamentoRepo.SalvarAsync();
+
         return MapearParaDto(consulta);
     }
 
@@ -184,6 +190,24 @@ public class ConsultaService : IConsultaService
             ExamesRecentes = exames,
             UltimaConsulta = historico.Count > 0 ? historico[0].DataHora : null
         };
+    }
+
+    /// <summary>
+    /// Registra a validacao manual do diagnostico pelo veterinario (RN-024).
+    /// Pre-requisito para gerar documentos via DocumentoService.
+    /// </summary>
+    public async Task ValidarDiagnosticoAsync(Guid consultaId)
+    {
+        var consulta = await _repo.ObterPorIdAsync(consultaId)
+            ?? throw new NotFoundException("Consulta", consultaId);
+
+        if (consulta.Cancelada)
+            throw new BusinessRuleException("CONSULTA-003",
+                "Nao e possivel validar diagnostico de consulta cancelada.");
+
+        consulta.ValidarDiagnostico();
+        _repo.Atualizar(consulta);
+        await _repo.SalvarAsync();
     }
 
     private static ConsultaDto MapearParaDto(Consulta c) => new()

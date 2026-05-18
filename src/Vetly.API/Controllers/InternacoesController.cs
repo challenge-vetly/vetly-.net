@@ -40,15 +40,13 @@ public class InternacoesController : ControllerBase
         return CreatedAtAction(nameof(ObterPorId), new { id = criada.Id }, criada);
     }
 
-    /// <summary>Registra procedimentos do dia para uma internacao ativa.</summary>
+    /// <summary>Registra procedimentos do dia para uma internacao ativa e acumula o valor total apurado (RN-016).</summary>
     [HttpPut("{id:guid}/procedimentos")]
-    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(InternacaoDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> RegistrarProcedimentos(Guid id, [FromBody] string procedimentosJson)
-    {
-        await _service.AtualizarAsync(id, procedimentosJson);
-        return NoContent();
-    }
+    [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
+    public async Task<IActionResult> RegistrarProcedimentos(Guid id, [FromBody] RegistrarProcedimentosDto dto) =>
+        Ok(await _service.RegistrarProcedimentosAsync(id, dto));
 
     /// <summary>Concede alta ao animal internado e finaliza a internacao.</summary>
     [HttpPost("{id:guid}/alta")]

@@ -21,4 +21,7 @@ public interface IConsultaService
 
     /// <summary>Retorna briefing pre-consulta com animal, historico e exames recentes.</summary>
     Task<BriefingConsultaDto> ObterBriefingAsync(Guid consultaId);
+
+    /// <summary>Registra que o veterinario validou o diagnostico (RN-024). Pre-requisito para gerar documentos.</summary>
+    Task ValidarDiagnosticoAsync(Guid consultaId);
 }
