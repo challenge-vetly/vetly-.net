@@ -78,9 +78,7 @@ dotnet restore
 dotnet build
 
 # 2. Aplicar migrations no Oracle
-dotnet ef database update \
-  --project src/Vetly.Infrastructure \
-  --startup-project src/Vetly.API
+dotnet ef database update --project src/Vetly.Infrastructure --startup-project src/Vetly.API
 
 # 3. Subir a API (HTTPS na porta 7262)
 dotnet run --project src/Vetly.API --launch-profile https
