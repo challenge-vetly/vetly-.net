@@ -39,3 +39,6 @@ Thumbs.db
 
 # IDE cache
 *.lscache
+
+# Claude Code local settings
+.claude/settings.local.json
