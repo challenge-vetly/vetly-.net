@@ -14,6 +14,14 @@ using Vetly.API.Middlewares;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Carrega appsettings.{Environment}.local.json (ex: appsettings.Development.local.json) se existir.
+// Esse arquivo é gitignored e deve ser criado localmente com as credenciais de cada ambiente.
+builder.Configuration
+    .AddJsonFile(
+        $"appsettings.{builder.Environment.EnvironmentName}.local.json",
+        optional: true,
+        reloadOnChange: true);
+
 // ── Controllers ───────────────────────────────────────────────────────────────
 builder.Services.AddControllers();
 

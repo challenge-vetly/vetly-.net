@@ -50,27 +50,25 @@ curl -X POST http://localhost:11434/api/generate \
   -d '{"model":"llama3.1","prompt":"ola","stream":false}'
 ```
 
-**Configuração** (`src/Vetly.API/appsettings.json`):
+**Configuração** — crie o arquivo `src/Vetly.API/appsettings.Development.local.json` com suas credenciais Oracle:
 
 ```json
 {
   "ConnectionStrings": {
     "OracleConnection": "User Id=SEU_USUARIO;Password=SUA_SENHA;Data Source=oracle.fiap.com.br:1521/orcl"
   },
+  "Jwt": {
+    "Key": "VetlySecretKey_MustBeAtLeast32CharactersLong!"
+  },
   "Ollama": {
     "BaseUrl": "http://localhost:11434",
     "Model": "llama3.1",
     "TimeoutSeconds": 120
-  },
-  "Jwt": {
-    "Key": "SUA_JWT_SECRET_KEY_COM_MINIMO_32_CARACTERES",
-    "Issuer": "Vetly",
-    "Audience": "VetlyAPI"
   }
 }
 ```
 
-> Em produção, substitua as credenciais por variáveis de ambiente: `ConnectionStrings__OracleConnection`, `Jwt__Key`.
+> Este arquivo está no `.gitignore` e **não é commitado**. Substitua `SEU_USUARIO` e `SUA_SENHA` pelas suas credenciais Oracle. O modelo Ollama utilizado no projeto é o `llama3.1` — certifique-se de tê-lo instalado com `ollama pull llama3.1`.
 
 **Rodar:**
 
