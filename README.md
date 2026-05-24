@@ -55,7 +55,7 @@ curl -X POST http://localhost:11434/api/generate \
 ```json
 {
   "ConnectionStrings": {
-    "OracleConnection": "User Id=rm564731;Password=190105;Data Source=oracle.fiap.com.br:1521/orcl"
+    "OracleConnection": "User Id=SEU_USUARIO;Password=SUA_SENHA;Data Source=oracle.fiap.com.br:1521/orcl"
   },
   "Ollama": {
     "BaseUrl": "http://localhost:11434",
@@ -63,7 +63,7 @@ curl -X POST http://localhost:11434/api/generate \
     "TimeoutSeconds": 120
   },
   "Jwt": {
-    "Key": "VetlySecretKey_MustBeAtLeast32CharactersLong!",
+    "Key": "SUA_JWT_SECRET_KEY_COM_MINIMO_32_CARACTERES",
     "Issuer": "Vetly",
     "Audience": "VetlyAPI"
   }
