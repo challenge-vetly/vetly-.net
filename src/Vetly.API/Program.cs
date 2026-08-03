@@ -11,6 +11,7 @@ using Vetly.Application.Strategies.Split;
 using Vetly.Infrastructure.Data;
 using Vetly.Infrastructure.Repositories;
 using Vetly.API.Middlewares;
+using Vetly.API.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -24,6 +25,11 @@ builder.Configuration
 
 // ── Controllers ───────────────────────────────────────────────────────────────
 builder.Services.AddControllers();
+
+// ── Infraestrutura transversal (relógio testável + identidade do usuário atual) ─
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
 
 // ── OpenAPI / Scalar ─────────────────────────────────────────────────────────
 builder.Services.AddOpenApi();
