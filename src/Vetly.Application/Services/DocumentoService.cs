@@ -19,6 +19,7 @@ public class DocumentoService : IDocumentoService
     private readonly IAnimalRepository _animalRepo;
     private readonly ILogAuditoriaIARepository _logAuditoriaRepo;
     private readonly IEnumerable<IDocumentoFactory> _factories;
+    private readonly ICurrentUserService _currentUser;
     private readonly TimeProvider _timeProvider;
 
     public DocumentoService(
@@ -28,6 +29,7 @@ public class DocumentoService : IDocumentoService
         IAnimalRepository animalRepo,
         ILogAuditoriaIARepository logAuditoriaRepo,
         IEnumerable<IDocumentoFactory> factories,
+        ICurrentUserService currentUser,
         TimeProvider timeProvider)
     {
         _repo = repo;
@@ -36,6 +38,7 @@ public class DocumentoService : IDocumentoService
         _animalRepo = animalRepo;
         _logAuditoriaRepo = logAuditoriaRepo;
         _factories = factories;
+        _currentUser = currentUser;
         _timeProvider = timeProvider;
     }
 
@@ -100,12 +103,27 @@ public class DocumentoService : IDocumentoService
         return MapearParaDto(documento);
     }
 
-    /// <summary>Assina digitalmente o documento (RN-031).</summary>
-    public async Task AssinarAsync(Guid id)
+    /// <summary>
+    /// Assina o documento por nome digitado (RN-031 — MVP). Se o chamador for um
+    /// veterinário autenticado (claim entidadeId), exige que o nome digitado coincida com
+    /// o nome cadastrado — RN-031 não abre exceção para nomes divergentes.
+    /// </summary>
+    public async Task AssinarAsync(Guid id, string nomeDigitado)
     {
         var doc = await _repo.ObterPorIdAsync(id)
             ?? throw new NotFoundException("Documento", id);
-        doc.Assinar();
+
+        if (_currentUser.EntidadeId is { } vetId)
+        {
+            var vet = await _vetRepo.ObterPorIdAsync(vetId)
+                ?? throw new NotFoundException("Veterinario", vetId);
+
+            if (!string.Equals(vet.Nome.Trim(), nomeDigitado.Trim(), StringComparison.OrdinalIgnoreCase))
+                throw new BusinessRuleException("DOCUMENTO-002",
+                    "O nome digitado nao corresponde ao nome do veterinario autenticado.");
+        }
+
+        doc.Assinar(nomeDigitado, _timeProvider.GetUtcNow().UtcDateTime);
         _repo.Atualizar(doc);
         await _repo.SalvarAsync();
     }
@@ -133,6 +151,8 @@ public class DocumentoService : IDocumentoService
         TipoDocumento = d.TipoDocumento, Versao = d.Versao,
         DataGeracao = d.DataGeracao, CrmvSignatario = d.CrmvSignatario,
         AssinadoDigitalmente = d.AssinadoDigitalmente,
+        TipoAssinatura = d.TipoAssinatura, AssinaturaNomeDigitado = d.AssinaturaNomeDigitado,
+        DataAssinatura = d.DataAssinatura, HabilitaDispensacaoControlados = d.HabilitaDispensacaoControlados,
         VersaoOriginalId = d.VersaoOriginalId, DataCorrecao = d.DataCorrecao,
         CrmvSolicitanteCorrecao = d.CrmvSolicitanteCorrecao
     };

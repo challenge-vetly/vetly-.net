@@ -37,7 +37,7 @@ Plano de referência completo (decisões de arquitetura, mapeamento fase→arqui
       FIFO, tiers, IDescontoFidelidadeStrategy (RN-069..075)
 - [x] Fase 11 — Dashboard consolidado do Administrador + FaixaEnterprise +
       autorização por posse via claim entidadeId (RN-007, RN-092, RN-001..006)
-- [ ] Fase 12 — Documento: assinatura por nome digitado (RN-031, RN-091)
+- [x] Fase 12 — Documento: assinatura por nome digitado (RN-031, RN-091)
 - [ ] Fase 13 — Documentação final: README de contratos + FLUXO-DE-TESTE.md +
       tag v2.0.0
 
@@ -230,45 +230,56 @@ README de contratos (Fase 13).
   `NotaFiscal` cruzada por vet, sem um pedido explícito além da menção
   genérica "NFs" no texto da RN — fica de fora para não inflar o escopo
   sem necessidade concreta.
+- **`Documento.Assinar()` (v1, sem parâmetros) foi substituído por
+  `Assinar(string nomeDigitado, DateTime agora)`** — única mudança de
+  assinatura de um método v1 pré-existente em toda a migração (todo o resto
+  dessa lista de decisões é sobre *não* tocar métodos v1). Diferente dos
+  casos documentados antes (`Pagamento.VincularConsulta` etc., que ficam
+  intocados por estarem fora do escopo de cada fase), a Fase 12 *é*
+  especificamente sobre RN-031/091 mudarem a mecânica de assinatura — manter
+  as duas versões coexistindo (`Assinar()` e `Assinar(nome, agora)`) criaria
+  dois caminhos para o mesmo dado (`AssinadoDigitalmente`) sem necessidade.
+  Único call site afetado fora de testes: `DocumentoService.AssinarAsync`.
+- **A validação "nome digitado == nome do vet autenticado" só roda quando
+  `ICurrentUserService.EntidadeId` está presente** — mesmo padrão de
+  degradação graciosa já usado em `ConsultaService.MarcarRealizadaAsync`
+  (Fase 4) para tokens emitidos sem a claim `entidadeId` (o dev-stub de auth
+  permite emitir token só com `{usuario, role}`). Sem a claim, a assinatura
+  é aceita com qualquer nome não-vazio — a validação de domínio (não-vazio)
+  continua valendo sempre, só a de posse é condicional.
 
 ## ESTADO ATUAL
 
-**Fase corrente:** Fase 11 concluída (commit a registrar, tag
-`v2-fase-11-empresa`). Iniciando Fase 12.
-**Baseline de testes:** 230/230 verdes (224 unit + 6 integration) — cresceu a
-partir dos 211 da Fase 10 com `EmpresaFaixaEnterpriseTests` (6 casos,
-domínio puro), `EmpresaServiceTests` (5 casos, Moq) e 4 novos casos em
-`VeterinarioServiceTests`/`ConsultaServiceTests` (posse da agenda/consultas).
-**O que mudou na Fase 11:** `Empresa` ganha `FaixaEnterprise` (decimal) e
-`RecalcularFaixaEnterprise(qtdVetsAtivos)` (R$599 até 5, R$999 até 10,
-R$1.699 até 20, +R$70/vet acima de 20 — RN-092), recalculada no read
-(vinculação, dashboard, assinatura — ver "Decisões de fundação" sobre por
-que não é em todo evento de mutação). Novos métodos em `IConsultaRepository`/
-`IPagamentoRepository` (`ObterPorVeterinariosAsync`, o segundo via join
-Pagamento×Consulta) para agregação por conjunto de vets sem N+1. Novo
-`EmpresaService.ObterDashboardConsolidadoAsync`: agrega faturamento bruto,
-comissões, repasses e reembolsos dos vets vinculados, mais contagem de
-consultas realizadas/canceladas — `DashboardConsolidadoDto` nunca tem campo
-de dado bancário pessoal, remuneração individual ou dado de outra empresa,
-por construção (RN-007). Novo `ObterAssinaturaAsync` retorna a faixa
-Enterprise atual. Ambos checam posse via `ICurrentUserService.EntidadeId`:
-Admin só acessa a própria `EmpresaId`, senão `ForbiddenException`
-`ACESSO-002` — primeira vez que essa claim (criada na Fase 0) é
-efetivamente exercitada. RN-001..006 (vet só vê a própria agenda/pacientes)
-implementado em `VeterinarioService.ObterAgendaAsync` e
-`ConsultaService.ObterPorVeterinarioAsync` — mesmo código de erro, mesmo
-padrão de checagem já usado em `MarcarRealizadaAsync` (Fase 4). Endpoints
-novos: `GET /api/empresas/{id}/dashboard`, `GET /api/empresas/{id}/assinatura`.
-Migration `Fase11_FinanceiroEmpresa`: puramente aditiva (`AddColumn
-FAIXA_ENTERPRISE` em `TB_EMPRESA`, default 0).
-**Próximos passos:** Fase 12 — documento com assinatura por nome digitado:
-`Documento` ganha `AssinaturaNomeDigitado` (string?), `TipoAssinatura` (enum
-novo, só `NomeDigitado` aceito no MVP) e
-`HabilitaDispensacaoControlados` (sempre `false` enquanto
-`TipoAssinatura == NomeDigitado` — RN-091: receita com nome digitado nunca
-habilita dispensação externa de controlados). `DocumentoService.AssinarAsync`
-recebe o nome digitado, valida não-vazio e coincidência com o nome do vet
-autenticado (via `ICurrentUserService` + `IVeterinarioRepository`), grava
-CRMV + timestamp (`TimeProvider`). Endpoint `POST /api/documentos/{id}/assinar`.
-Deve preservar o fluxo de correção já existente (RN-032..035) — testes atuais
-de `DocumentoServiceTests` continuam verdes.
+**Fase corrente:** Fase 12 concluída (commit a registrar, tag
+`v2-fase-12-documento`). Iniciando Fase 13 (última fase).
+**Baseline de testes:** 237/237 verdes (231 unit + 6 integration) — cresceu a
+partir dos 230 da Fase 11 com `DocumentoAssinaturaTests` (5 casos, domínio
+puro) e 3 novos casos em `DocumentoServiceTests` (posse da assinatura).
+**O que mudou na Fase 12:** `Documento` ganha `TipoAssinatura` (enum novo,
+só `NomeDigitado` no MVP), `AssinaturaNomeDigitado` (string?),
+`DataAssinatura` (DateTime?) e `HabilitaDispensacaoControlados` (sempre
+`false` — RN-091). O método v1 `Assinar()` sem parâmetros foi substituído
+por `Assinar(nomeDigitado, agora)` (ver "Decisões de fundação" — única
+mudança de assinatura de método v1 pré-existente em toda a migração, porque
+é exatamente disso que trata a RN-031/091 nesta fase). `DocumentoService.
+AssinarAsync(id, nomeDigitado)` valida não-vazio (domínio, `DOCUMENTO-001`)
+e, quando `ICurrentUserService.EntidadeId` está presente, que o nome
+digitado coincide (case/espaço-insensível) com o nome do vet autenticado
+(`BusinessRuleException DOCUMENTO-002`) — sem a claim, aceita qualquer nome
+não-vazio (mesma degradação graciosa do dev-stub já usada na Fase 4).
+Endpoint `POST /api/documentos/{id}/assinar` passa a receber
+`{ nomeDigitado }` no corpo. Fluxo de correção (RN-032..035) intocado.
+Migration `Fase12_AssinaturaDocumento`: puramente aditiva (`AddColumn` × 4
+em `TB_DOCUMENTO`, sem rename).
+**Próximos passos:** Fase 13 — documentação final (última fase do plano):
+(1) reescrever `README.md` com contratos completos por domínio (endpoints,
+DTOs de entrada/saída, tabela de enums nome→valores JSON, tabela de códigos
+de erro por camada — `RN-NNN`/`ENTIDADE-NNN`/`ACESSO-NNN` — RFC 7807, nota
+explícita do que é simulado/fora de escopo); (2) criar `FLUXO-DE-TESTE.md`
+com roteiro `curl`/Scalar encadeado por `id` cobrindo a jornada ponta a
+ponta (cadastro → consentimento LGPD → agendamento → pagamento simulado →
+IA da consulta → documentos assinados → avaliação → fidelidade →
+cancelamento) + checklist RN→endpoint→OK/Falha; (3) revisão final deste
+arquivo (todas as fases `[x]`, contagem de testes final); (4) commit
+`docs(v2): contratos da API e fluxo de teste ponta a ponta` + tags
+`v2-fase-13-docs` e `v2.0.0`.

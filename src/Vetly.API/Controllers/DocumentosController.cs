@@ -44,14 +44,15 @@ public class DocumentosController : ControllerBase
         return CreatedAtAction(nameof(ObterPorId), new { id = doc.Id }, doc);
     }
 
-    /// <summary>Assina digitalmente um documento (RN-031).</summary>
+    /// <summary>Assina um documento por nome digitado (RN-031 — MVP; nunca habilita dispensação de controlados — RN-091).</summary>
     [HttpPost("{id:guid}/assinar")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
-    public async Task<IActionResult> Assinar(Guid id)
+    public async Task<IActionResult> Assinar(Guid id, [FromBody] AssinarDocumentoDto dto)
     {
-        await _service.AssinarAsync(id);
+        await _service.AssinarAsync(id, dto.NomeDigitado);
         return NoContent();
     }
 

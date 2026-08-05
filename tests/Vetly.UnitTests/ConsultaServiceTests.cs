@@ -199,7 +199,7 @@ public class ConsultaServiceTests
         var vetId = Guid.NewGuid();
         var consulta = CriarConsultaConfirmada(vetId);
         var receita = new Documento(TipoDocumento.ReceitaVeterinaria, "12345-SP", consulta.Id);
-        receita.Assinar();
+        receita.Assinar("Dr. Vet", DateTime.UtcNow);
 
         _currentUserMock.Setup(c => c.EntidadeId).Returns(vetId);
         _repoMock.Setup(r => r.ObterPorIdAsync(consulta.Id)).ReturnsAsync(consulta);

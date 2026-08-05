@@ -24,6 +24,7 @@ public class DocumentoServiceTests
     private readonly Mock<IVeterinarioRepository> _vetRepoMock = new();
     private readonly Mock<IAnimalRepository> _animalRepoMock = new();
     private readonly Mock<ILogAuditoriaIARepository> _logAuditoriaRepoMock = new();
+    private readonly Mock<ICurrentUserService> _currentUserMock = new();
 
     public DocumentoServiceTests()
     {
@@ -33,7 +34,7 @@ public class DocumentoServiceTests
 
     private DocumentoService CriarServico(params IDocumentoFactory[] factories) =>
         new(_docRepoMock.Object, _consultaRepoMock.Object, _vetRepoMock.Object,
-            _animalRepoMock.Object, _logAuditoriaRepoMock.Object, factories, TimeProvider.System);
+            _animalRepoMock.Object, _logAuditoriaRepoMock.Object, factories, _currentUserMock.Object, TimeProvider.System);
 
     private static Consulta CriarConsultaValidada()
     {
@@ -190,5 +191,56 @@ public class DocumentoServiceTests
 
         await Assert.ThrowsAsync<InvalidOperationException>(
             () => service.GerarAsync(consulta.Id, TipoDocumento.Atestado));
+    }
+
+    [Fact]
+    public async Task AssinarAsync_VeterinarioAutenticadoComNomeCoincidente_AssinaComSucesso()
+    {
+        var vet = new Veterinario("Dr. João Silva", new Crmv("12345-SP"), "SP", PersonaVeterinario.Autonomo, PlanoAssinatura.Profissional);
+        var doc = new Documento(TipoDocumento.ReceitaVeterinaria, vet.Crmv.Valor, Guid.NewGuid());
+
+        _docRepoMock.Setup(r => r.ObterPorIdAsync(doc.Id)).ReturnsAsync(doc);
+        _docRepoMock.Setup(r => r.Atualizar(It.IsAny<Documento>()));
+        _docRepoMock.Setup(r => r.SalvarAsync()).ReturnsAsync(1);
+        _vetRepoMock.Setup(r => r.ObterPorIdAsync(vet.Id)).ReturnsAsync(vet);
+        _currentUserMock.Setup(c => c.EntidadeId).Returns(vet.Id);
+
+        await CriarServico().AssinarAsync(doc.Id, " dr. joão silva "); // espacos/caixa não importam
+
+        Assert.True(doc.AssinadoDigitalmente);
+        Assert.Equal(" dr. joão silva ", doc.AssinaturaNomeDigitado);
+    }
+
+    [Fact]
+    public async Task AssinarAsync_NomeDigitadoNaoCoincideComVeterinarioAutenticado_LancaBusinessRuleExceptionDOCUMENTO002()
+    {
+        var vet = new Veterinario("Dr. João Silva", new Crmv("12345-SP"), "SP", PersonaVeterinario.Autonomo, PlanoAssinatura.Profissional);
+        var doc = new Documento(TipoDocumento.ReceitaVeterinaria, vet.Crmv.Valor, Guid.NewGuid());
+
+        _docRepoMock.Setup(r => r.ObterPorIdAsync(doc.Id)).ReturnsAsync(doc);
+        _vetRepoMock.Setup(r => r.ObterPorIdAsync(vet.Id)).ReturnsAsync(vet);
+        _currentUserMock.Setup(c => c.EntidadeId).Returns(vet.Id);
+
+        var ex = await Assert.ThrowsAsync<BusinessRuleException>(
+            () => CriarServico().AssinarAsync(doc.Id, "Outro Nome Qualquer"));
+
+        Assert.Equal("DOCUMENTO-002", ex.Codigo);
+        Assert.False(doc.AssinadoDigitalmente);
+    }
+
+    [Fact]
+    public async Task AssinarAsync_SemClaimEntidadeId_AssinaSemValidarNomeContraCadastro()
+    {
+        var doc = new Documento(TipoDocumento.ReceitaVeterinaria, "12345-SP", Guid.NewGuid());
+
+        _docRepoMock.Setup(r => r.ObterPorIdAsync(doc.Id)).ReturnsAsync(doc);
+        _docRepoMock.Setup(r => r.Atualizar(It.IsAny<Documento>()));
+        _docRepoMock.Setup(r => r.SalvarAsync()).ReturnsAsync(1);
+        _currentUserMock.Setup(c => c.EntidadeId).Returns((Guid?)null);
+
+        await CriarServico().AssinarAsync(doc.Id, "Qualquer Nome");
+
+        Assert.True(doc.AssinadoDigitalmente);
+        _vetRepoMock.Verify(r => r.ObterPorIdAsync(It.IsAny<Guid>()), Times.Never);
     }
 }
