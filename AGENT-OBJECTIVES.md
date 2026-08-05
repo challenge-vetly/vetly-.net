@@ -25,7 +25,7 @@ Plano de referência completo (decisões de arquitetura, mapeamento fase→arqui
 - [x] Fase 4 — Máquina de estados da Consulta: StatusConsulta, lock de checkout,
       no-show, pré-sintomas (RN-057..061)
 - [x] Fase 5 — Pagamento simulado + IComissaoStrategy por plano (RN-037, RN-089)
-- [ ] Fase 6 — Cancelamento/no-show v2: crédito de cortesia, strikes, suspensão
+- [x] Fase 6 — Cancelamento/no-show v2: crédito de cortesia, strikes, suspensão
       (RN-062..067)
 - [ ] Fase 7 — IA v2: decisão Aprovar/NãoAprovar/Corrigir + LogAuditoriaIA
       (RN-096..100)
@@ -127,38 +127,44 @@ README de contratos (Fase 13).
 
 ## ESTADO ATUAL
 
-**Fase corrente:** Fase 5 concluída (commit a registrar, tag `v2-fase-05-pagamento`).
-Iniciando Fase 6.
-**Baseline de testes:** 112/112 verdes (106 unit + 6 integration) — cresceu a
-partir dos 102 da Fase 4 com `ComissaoStrategyTests` (3 casos), `PagamentoTests`
-(3 casos, domínio puro) e novos casos em `PagamentoServiceTests` (exemplo
-canônico R$150/Profissional/comissão R$18/repasse R$132 + Theory por plano).
-**O que mudou na Fase 5:** `Pagamento` ganha `Simulado` (sempre true no ctor),
-`PercentualComissao`/`ValorComissao`/`ValorRepasse` (calculados por
-`RegistrarComissao(percentual)`, com arredondamento para 2 casas),
-`DescontoFidelidadeCalculado`/`IncidenciaVetly`/`IncidenciaVeterinario` (ainda
-zerados — Fase 10 preenche). Nova Strategy `IComissaoStrategy`
-(`ComissaoBasicoStrategy` 15% / `ComissaoProfissionalStrategy` 12% /
-`ComissaoEnterpriseStrategy` 10%) selecionada por `Veterinario.Plano` — decide
-**quanto** a plataforma retém; a `ISplitFinanceiroStrategy` existente (por
-persona) continua decidindo **quem** recebe o repasse; as duas são
-complementares. `PagamentoService.ProcessarSimuladoAsync`: cria o pagamento
-(sempre "sucesso" — RN-037), aplica a comissão do plano do vet da consulta e
-chama `consulta.ConfirmarPagamento(agora)` (método já existe desde a Fase 4).
-`ProcessarSplitAsync` (endpoint v1) mantido compatível e agora também aplica a
-comissão por plano, além do split por persona já existente — assim pagamentos
-criados fora do fluxo `/simular` também recebem os campos de comissão. Novo
-endpoint `POST /api/pagamentos/simular`. Migration `Fase05_PagamentoSimuladoComissao`:
-puramente aditiva, sem backfill necessário (`SIMULADO` default `false` em
-linhas pré-existentes é aceitável — não há como saber retroativamente).
-**Próximos passos:** Fase 6 — cancelamento/no-show v2: `Veterinario` ganha
-`StrikesAtivos` (coleção `StrikeReputacao`), `SuspensoAte`,
-`RegistrarStrike(agora)` (3 em 90 dias ⇒ suspenso 7 dias), `EstaSuspenso(agora)`.
-Novo `ConsultaService.CancelamentoPeloVeterinarioAsync`: crédito de cortesia =
-min(10% do valor, R$30) somado a `Responsavel.SaldoCreditosVetly` (método já
-existe desde a Fase 1, só falta o mutador) + `Veterinario.RegistrarStrike`.
-`RegistrarNoShowAsync` (Fase 4) ganha as consequências reais: no-show do
-Responsável chama `Responsavel.RegistrarNoShow(agora)` (Fase 1); no-show do vet
-= mesmo tratamento do cancelamento pelo vet + strike. Reaproveita
-`ICancelamentoStrategy` existente para o reembolso registrado (não liquidado).
-Novo endpoint `POST /api/consultas/{id}/cancelar-pelo-veterinario`.
+**Fase corrente:** Fase 6 concluída (commit a registrar, tag `v2-fase-06-cancelamento`).
+Iniciando Fase 7.
+**Baseline de testes:** 121/121 verdes (115 unit + 6 integration) — cresceu a
+partir dos 112 da Fase 5 com `VeterinarioStrikeTests` (4 casos, domínio puro),
+2 novos casos em `ResponsavelTests` (crédito) e 4 novos casos em
+`ConsultaServiceTests` (no-show do responsável/veterinário, teto do crédito,
+3º strike suspende).
+**O que mudou na Fase 6:** `Veterinario` ganha `StrikesAtivos` (owned collection
+`StrikeReputacao { Data, Motivo }`, mapeada via `OwnsMany` em
+`TB_VETERINARIO_STRIKE` — histórico nunca apagado), `SuspensoAte`,
+`RegistrarStrike(agora, motivo)` (3 strikes na janela móvel de 90 dias ⇒
+suspenso 7 dias), `EstaSuspenso(agora)`, `StrikesNaJanela(agora)`. `Responsavel`
+ganha `CreditarSaldoCreditosVetly(valor)` (`DomainException("RESPONSAVEL-002", ...)`
+se valor ≤ 0). Novo `ConsultaService.CancelamentoPeloVeterinarioAsync`: crédito
+de cortesia = min(10% do valor pago, R$30) + strike — não exige pagamento
+vinculado (cancelar a partir de `EmCheckout` sem pagamento ainda só aplica o
+strike). `RegistrarNoShowAsync` (Fase 4) ganha as consequências reais: no-show
+do Responsável chama `Responsavel.RegistrarNoShow(agora)` (Fase 1); no-show do
+vet recebe o mesmo tratamento do cancelamento pelo vet (crédito + strike),
+via helper privado compartilhado `AplicarConsequenciasVeterinarioAsync`.
+`CancelarAsync` (Fase 4) ganha os campos `Janela` (">24h"/"24h-2h"/"&lt;2h") e
+`Liquidado` (sempre `false`) em `ResultadoCancelamentoDto` — estendido, não
+substituído, para não quebrar o contrato já existente. `VeterinarioDto` ganha
+`StrikesAtivos` (int, contagem na janela de 90 dias — mesma convenção de
+`ResponsavelDto.NoShowsAtivos`) e `SuspensoAte`. Novo endpoint
+`POST /api/consultas/{id}/cancelar-pelo-veterinario`. Migration
+`Fase06_CancelamentoNoShowV2`: puramente aditiva (`AddColumn SUSPENSO_ATE` +
+`CreateTable TB_VETERINARIO_STRIKE` com FK cascade), gerada corretamente pela
+scaffold automática sem necessidade de edição manual.
+**Próximos passos:** Fase 7 — IA v2: nova entidade imutável `LogAuditoriaIA`
+(`ConsultaId`, `VeterinarioId`, `Crmv`, `Timestamp`, `VersaoModelo`,
+`TipoSugestao`, `ConteudoSugerido`, `Decisao`, `ConteudoFinal`). `Consulta`
+ganha `DiagnosticoFinal`/`ProtocoloFinal`/`EstadoFinalDefinido` — documentos só
+gerados com esse flag (`DomainException("CONSULTA-012", ...)`). `OllamaService`
+já existe (v1) mas está desconectado do fluxo clínico — Fase 7 conecta
+`SugerirDiagnosticoAsync`/`SugerirProtocoloAsync` (recusa com
+`BusinessRuleException("IA-001", ...)` se `Animal.PesoKg` for nulo, antes de
+chamar o modelo) e `RegistrarDecisaoAsync` (Aprovar/Corrigir/NãoAprovar,
+grava `LogAuditoriaIA` a cada chamada). Endpoints
+`POST /api/consultas/{id}/ia/{diagnostico|protocolo|decisao}`,
+`GET /{id}/ia/auditoria`.

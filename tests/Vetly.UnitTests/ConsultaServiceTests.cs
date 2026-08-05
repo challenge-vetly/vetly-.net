@@ -24,6 +24,8 @@ public class ConsultaServiceTests
     private readonly Mock<IDocumentoRepository> _documentoRepoMock = new();
     private readonly Mock<IAnimalRepository> _animalRepoMock = new();
     private readonly Mock<IConsentimentoLgpdRepository> _consentimentoRepoMock = new();
+    private readonly Mock<IResponsavelRepository> _responsavelRepoMock = new();
+    private readonly Mock<IVeterinarioRepository> _vetRepoMock = new();
     private readonly Mock<ICurrentUserService> _currentUserMock = new();
     private readonly FakeTimeProvider _timeProvider = new(new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc));
 
@@ -38,7 +40,8 @@ public class ConsultaServiceTests
 
     private ConsultaService CriarServico(params ICancelamentoStrategy[] strategies) =>
         new(_repoMock.Object, _pagamentoRepoMock.Object, _documentoRepoMock.Object, _animalRepoMock.Object,
-            _consentimentoRepoMock.Object, _currentUserMock.Object, _timeProvider, strategies);
+            _consentimentoRepoMock.Object, _responsavelRepoMock.Object, _vetRepoMock.Object,
+            _currentUserMock.Object, _timeProvider, strategies);
 
     private static CriarConsultaDto CriarDto(TipoServico tipoServico = TipoServico.Consulta, ModalidadeAtendimento modalidade = ModalidadeAtendimento.Presencial) => new()
     {
@@ -253,16 +256,96 @@ public class ConsultaServiceTests
     }
 
     [Fact]
-    public async Task RegistrarNoShowAsync_ParteResponsavel_TransicionaParaNoShowResponsavel()
+    public async Task RegistrarNoShowAsync_ParteResponsavel_TransicionaERegistraNoShowNoResponsavel()
     {
         var consulta = CriarConsultaConfirmada();
+        var responsavel = new Responsavel("Responsavel Teste", "r@teste.com", "11999999999");
         _repoMock.Setup(r => r.ObterPorIdAsync(consulta.Id)).ReturnsAsync(consulta);
         _repoMock.Setup(r => r.Atualizar(It.IsAny<Consulta>()));
         _repoMock.Setup(r => r.SalvarAsync()).ReturnsAsync(1);
+        _responsavelRepoMock.Setup(r => r.ObterPorIdAsync(consulta.ResponsavelId)).ReturnsAsync(responsavel);
+        _responsavelRepoMock.Setup(r => r.Atualizar(It.IsAny<Responsavel>()));
 
         var resultado = await CriarServico().RegistrarNoShowAsync(consulta.Id, ParteNoShow.Responsavel);
 
         Assert.Equal(StatusConsulta.NoShowResponsavel, resultado.Status);
+        Assert.Equal(1, responsavel.ContadorNoShows);
+    }
+
+    [Fact]
+    public async Task RegistrarNoShowAsync_ParteVeterinario_CreditaCortesiaERegistraStrike()
+    {
+        var vetId = Guid.NewGuid();
+        var consulta = CriarConsultaConfirmada(vetId);
+        var pagamento = new Pagamento(consulta.ResponsavelId, 300m, MeioPagamento.Pix, consulta.Id);
+        var vet = new Veterinario("Dr. Vet", new Crmv("12345-SP"), "SP", PersonaVeterinario.Autonomo, PlanoAssinatura.Profissional);
+        var responsavel = new Responsavel("Responsavel Teste", "r@teste.com", "11999999999");
+
+        _repoMock.Setup(r => r.ObterPorIdAsync(consulta.Id)).ReturnsAsync(consulta);
+        _repoMock.Setup(r => r.Atualizar(It.IsAny<Consulta>()));
+        _repoMock.Setup(r => r.SalvarAsync()).ReturnsAsync(1);
+        _pagamentoRepoMock.Setup(r => r.ObterPorConsultaAsync(consulta.Id)).ReturnsAsync(pagamento);
+        _responsavelRepoMock.Setup(r => r.ObterPorIdAsync(consulta.ResponsavelId)).ReturnsAsync(responsavel);
+        _responsavelRepoMock.Setup(r => r.Atualizar(It.IsAny<Responsavel>()));
+        _vetRepoMock.Setup(r => r.ObterPorIdAsync(vetId)).ReturnsAsync(vet);
+        _vetRepoMock.Setup(r => r.Atualizar(It.IsAny<Veterinario>()));
+
+        var resultado = await CriarServico().RegistrarNoShowAsync(consulta.Id, ParteNoShow.Veterinario);
+
+        Assert.Equal(StatusConsulta.NoShowVeterinario, resultado.Status);
+        Assert.Equal(30m, responsavel.SaldoCreditosVetly); // 10% de 300 = 30, dentro do teto
+        Assert.Single(vet.StrikesAtivos);
+    }
+
+    [Fact]
+    public async Task CancelamentoPeloVeterinarioAsync_ConsultaR500_CreditaTetoDeR30()
+    {
+        var vetId = Guid.NewGuid();
+        var consulta = CriarConsultaConfirmada(vetId);
+        var pagamento = new Pagamento(consulta.ResponsavelId, 500m, MeioPagamento.Pix, consulta.Id);
+        var vet = new Veterinario("Dr. Vet", new Crmv("12345-SP"), "SP", PersonaVeterinario.Autonomo, PlanoAssinatura.Profissional);
+        var responsavel = new Responsavel("Responsavel Teste", "r@teste.com", "11999999999");
+
+        _repoMock.Setup(r => r.ObterPorIdAsync(consulta.Id)).ReturnsAsync(consulta);
+        _repoMock.Setup(r => r.Atualizar(It.IsAny<Consulta>()));
+        _repoMock.Setup(r => r.SalvarAsync()).ReturnsAsync(1);
+        _pagamentoRepoMock.Setup(r => r.ObterPorConsultaAsync(consulta.Id)).ReturnsAsync(pagamento);
+        _responsavelRepoMock.Setup(r => r.ObterPorIdAsync(consulta.ResponsavelId)).ReturnsAsync(responsavel);
+        _responsavelRepoMock.Setup(r => r.Atualizar(It.IsAny<Responsavel>()));
+        _vetRepoMock.Setup(r => r.ObterPorIdAsync(vetId)).ReturnsAsync(vet);
+        _vetRepoMock.Setup(r => r.Atualizar(It.IsAny<Veterinario>()));
+
+        var resultado = await CriarServico().CancelamentoPeloVeterinarioAsync(consulta.Id);
+
+        Assert.Equal(30m, resultado.CreditoCortesia); // 10% de 500 = 50, mas teto e R$30
+        Assert.True(resultado.StrikeRegistrado);
+        Assert.False(resultado.VeterinarioSuspenso); // 1o strike, nao atinge o limiar de 3
+        Assert.Equal(StatusConsulta.Cancelada, consulta.Status);
+    }
+
+    [Fact]
+    public async Task CancelamentoPeloVeterinarioAsync_TerceiroStrikeEm90Dias_SuspendeVeterinarioPor7Dias()
+    {
+        var vetId = Guid.NewGuid();
+        var vet = new Veterinario("Dr. Vet", new Crmv("12345-SP"), "SP", PersonaVeterinario.Autonomo, PlanoAssinatura.Profissional);
+        vet.RegistrarStrike(_timeProvider.GetUtcNow().UtcDateTime, "strike anterior 1");
+        vet.RegistrarStrike(_timeProvider.GetUtcNow().UtcDateTime, "strike anterior 2");
+
+        var consulta = CriarConsultaConfirmada(vetId);
+        var responsavel = new Responsavel("Responsavel Teste", "r@teste.com", "11999999999");
+
+        _repoMock.Setup(r => r.ObterPorIdAsync(consulta.Id)).ReturnsAsync(consulta);
+        _repoMock.Setup(r => r.Atualizar(It.IsAny<Consulta>()));
+        _repoMock.Setup(r => r.SalvarAsync()).ReturnsAsync(1);
+        _pagamentoRepoMock.Setup(r => r.ObterPorConsultaAsync(consulta.Id)).ReturnsAsync((Pagamento?)null);
+        _vetRepoMock.Setup(r => r.ObterPorIdAsync(vetId)).ReturnsAsync(vet);
+        _vetRepoMock.Setup(r => r.Atualizar(It.IsAny<Veterinario>()));
+
+        var resultado = await CriarServico().CancelamentoPeloVeterinarioAsync(consulta.Id);
+
+        Assert.Equal(0m, resultado.CreditoCortesia); // sem pagamento vinculado, nada a creditar
+        Assert.True(resultado.VeterinarioSuspenso);
+        Assert.NotNull(vet.SuspensoAte);
     }
 
     [Fact]

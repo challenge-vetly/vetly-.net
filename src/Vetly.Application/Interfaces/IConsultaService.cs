@@ -22,6 +22,12 @@ public interface IConsultaService
     Task<ResultadoCancelamentoDto> CancelarAsync(Guid id);
 
     /// <summary>
+    /// Cancela a consulta por iniciativa do veterinário: crédito de cortesia (10% do
+    /// valor, teto R$ 30) + strike de reputação (RN-065/067).
+    /// </summary>
+    Task<CancelamentoPeloVeterinarioDto> CancelamentoPeloVeterinarioAsync(Guid consultaId);
+
+    /// <summary>
     /// Marca a consulta como realizada (RN-061) — exige receita assinada digitalmente (RN-031)
     /// e que o chamador seja o veterinário responsável.
     /// </summary>

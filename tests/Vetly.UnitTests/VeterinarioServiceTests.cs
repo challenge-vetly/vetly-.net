@@ -17,7 +17,7 @@ public class VeterinarioServiceTests
 {
     private readonly Mock<IVeterinarioRepository> _repoMock = new();
 
-    private VeterinarioService CriarServico() => new(_repoMock.Object);
+    private VeterinarioService CriarServico() => new(_repoMock.Object, TimeProvider.System);
 
     private static CriarVeterinarioDto CriarDto(string crmv = "12345-SP") => new()
     {

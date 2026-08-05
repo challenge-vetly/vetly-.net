@@ -17,8 +17,13 @@ public class VeterinarioService : IVeterinarioService
     private static readonly Regex CrmvRegex = new(@"^\d{4,6}-[A-Z]{2}$", RegexOptions.Compiled);
 
     private readonly IVeterinarioRepository _repo;
+    private readonly TimeProvider _timeProvider;
 
-    public VeterinarioService(IVeterinarioRepository repo) => _repo = repo;
+    public VeterinarioService(IVeterinarioRepository repo, TimeProvider timeProvider)
+    {
+        _repo = repo;
+        _timeProvider = timeProvider;
+    }
 
     /// <inheritdoc/>
     public async Task<IEnumerable<VeterinarioDto>> ObterTodosAsync()
@@ -108,12 +113,14 @@ public class VeterinarioService : IVeterinarioService
             throw new ValidationException("crmv", $"CRMV '{crmv}' esta em formato invalido. Use o padrao XXXXXX-UF.");
     }
 
-    private static VeterinarioDto MapearParaDto(Veterinario v) => new()
+    private VeterinarioDto MapearParaDto(Veterinario v) => new()
     {
         Id = v.Id, Nome = v.Nome, Crmv = v.Crmv.Valor, UfAtuacao = v.UfAtuacao,
         Especialidades = v.Especialidades, EspeciesAtendidas = v.EspeciesAtendidas,
         TitulacaoAcademica = v.TitulacaoAcademica, Persona = v.Persona,
-        Plano = v.Plano, Ativo = v.Ativo, EmpresaId = v.EmpresaId
+        Plano = v.Plano, Ativo = v.Ativo, EmpresaId = v.EmpresaId,
+        StrikesAtivos = v.StrikesNaJanela(_timeProvider.GetUtcNow().UtcDateTime),
+        SuspensoAte = v.SuspensoAte
     };
 
     private static ConsultaDto MapearConsultaParaDto(Consulta c) => new()

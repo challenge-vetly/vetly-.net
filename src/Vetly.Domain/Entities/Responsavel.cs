@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using Vetly.Domain.Enums;
+using Vetly.Domain.Exceptions;
 
 namespace Vetly.Domain.Entities;
 
@@ -81,6 +82,18 @@ public class Responsavel
 
     /// <summary>Desativa o cadastro do responsavel (soft delete).</summary>
     public void Desativar() => Ativo = false;
+
+    /// <summary>
+    /// Credita crédito Vetly (ex: crédito de cortesia por cancelamento/no-show do
+    /// veterinário — RN-065/066). Exige valor positivo.
+    /// </summary>
+    public void CreditarSaldoCreditosVetly(decimal valor)
+    {
+        if (valor <= 0)
+            throw new DomainException("RESPONSAVEL-002", "O valor do crédito deve ser maior que zero.");
+
+        SaldoCreditosVetly += valor;
+    }
 
     /// <summary>
     /// Registra um no-show ocorrido em <paramref name="agora"/>. A contagem usa uma

@@ -26,6 +26,8 @@ public class ConsultaService : IConsultaService
     private readonly IDocumentoRepository _documentoRepo;
     private readonly IAnimalRepository _animalRepo;
     private readonly IConsentimentoLgpdRepository _consentimentoRepo;
+    private readonly IResponsavelRepository _responsavelRepo;
+    private readonly IVeterinarioRepository _vetRepo;
     private readonly ICurrentUserService _currentUser;
     private readonly TimeProvider _timeProvider;
     private readonly IEnumerable<ICancelamentoStrategy> _strategies;
@@ -36,6 +38,8 @@ public class ConsultaService : IConsultaService
         IDocumentoRepository documentoRepo,
         IAnimalRepository animalRepo,
         IConsentimentoLgpdRepository consentimentoRepo,
+        IResponsavelRepository responsavelRepo,
+        IVeterinarioRepository vetRepo,
         ICurrentUserService currentUser,
         TimeProvider timeProvider,
         IEnumerable<ICancelamentoStrategy> strategies)
@@ -45,6 +49,8 @@ public class ConsultaService : IConsultaService
         _documentoRepo = documentoRepo;
         _animalRepo = animalRepo;
         _consentimentoRepo = consentimentoRepo;
+        _responsavelRepo = responsavelRepo;
+        _vetRepo = vetRepo;
         _currentUser = currentUser;
         _timeProvider = timeProvider;
         _strategies = strategies;
@@ -136,11 +142,14 @@ public class ConsultaService : IConsultaService
             ?? throw new BusinessRuleException("CONSULTA-002", "Pagamento da consulta nao encontrado.");
 
         // Seleciona a strategy de menor prioridade que seja aplicavel ao momento do cancelamento
+        var agora = DateTime.UtcNow;
         var strategy = _strategies
             .OrderBy(s => s.Prioridade)
-            .First(s => s.Aplicavel(consulta.DataHora, DateTime.UtcNow));
+            .First(s => s.Aplicavel(consulta.DataHora, agora));
 
         var resultado = strategy.Executar(pagamento, percentualRetencao: 30m);
+        resultado.Janela = CalcularJanela(consulta.DataHora, agora);
+        resultado.Liquidado = false; // MVP: calculado e registrado, nunca liquidado (RN-037/062)
 
         pagamento.Estornar(resultado.ValorReembolso);
 
@@ -149,6 +158,71 @@ public class ConsultaService : IConsultaService
         await _repo.SalvarAsync();
 
         return resultado;
+    }
+
+    /// <summary>
+    /// Cancela a consulta por iniciativa do veterinário: crédito de cortesia de 10% do
+    /// valor pago (teto R$ 30) + strike de reputação (RN-065/067). Diferente de
+    /// <see cref="CancelarAsync"/>: não exige um pagamento vinculado — se não houver
+    /// nenhum, apenas o strike é aplicado (nada a creditar).
+    /// </summary>
+    public async Task<CancelamentoPeloVeterinarioDto> CancelamentoPeloVeterinarioAsync(Guid consultaId)
+    {
+        var consulta = await _repo.ObterPorIdAsync(consultaId)
+            ?? throw new NotFoundException("Consulta", consultaId);
+
+        consulta.Cancelar(); // valida a transição (CONSULTA-010) antes de seguir
+
+        var agora = _timeProvider.GetUtcNow().UtcDateTime;
+        var (credito, suspenso) = await AplicarConsequenciasVeterinarioAsync(
+            consulta, "Cancelamento pelo veterinário", agora);
+
+        _repo.Atualizar(consulta);
+        await _repo.SalvarAsync();
+
+        return new CancelamentoPeloVeterinarioDto
+        {
+            CreditoCortesia = credito, StrikeRegistrado = true, VeterinarioSuspenso = suspenso
+        };
+    }
+
+    /// <summary>
+    /// Aplica o crédito de cortesia (se houver pagamento vinculado) e o strike de
+    /// reputação ao veterinário da consulta (RN-065/066/067). Compartilhado entre
+    /// cancelamento pelo vet e no-show do vet, que têm a mesma consequência (RN-066).
+    /// </summary>
+    private async Task<(decimal credito, bool suspenso)> AplicarConsequenciasVeterinarioAsync(
+        Consulta consulta, string motivoStrike, DateTime agora)
+    {
+        var credito = 0m;
+        var pagamento = await _pagamentoRepo.ObterPorConsultaAsync(consulta.Id);
+        if (pagamento is not null)
+        {
+            credito = Math.Min(pagamento.Valor * 0.10m, 30m);
+            var responsavel = await _responsavelRepo.ObterPorIdAsync(consulta.ResponsavelId)
+                ?? throw new NotFoundException("Responsavel", consulta.ResponsavelId);
+            responsavel.CreditarSaldoCreditosVetly(credito);
+            _responsavelRepo.Atualizar(responsavel);
+        }
+
+        var vet = await _vetRepo.ObterPorIdAsync(consulta.VeterinarioId)
+            ?? throw new NotFoundException("Veterinario", consulta.VeterinarioId);
+        vet.RegistrarStrike(agora, motivoStrike);
+        _vetRepo.Atualizar(vet);
+
+        return (credito, vet.EstaSuspenso(agora));
+    }
+
+    /// <summary>Classifica a janela de antecedência do cancelamento (RN-062/063).</summary>
+    private static string CalcularJanela(DateTime horarioConsulta, DateTime horarioCancelamento)
+    {
+        var antecedencia = (horarioConsulta - horarioCancelamento).TotalHours;
+        return antecedencia switch
+        {
+            > 24 => ">24h",
+            > 2 and <= 24 => "24h-2h",
+            _ => "<2h"
+        };
     }
 
     /// <summary>
@@ -177,16 +251,32 @@ public class ConsultaService : IConsultaService
         return MapearParaDto(consulta);
     }
 
-    /// <summary>Registra no-show de uma das partes (RN-064/066). Consequências (crédito/strike) ficam para a Fase 6.</summary>
+    /// <summary>
+    /// Registra no-show de uma das partes. No-show do responsável conta para o limiar de
+    /// bloqueio de descontos (RN-064); no-show do veterinário recebe o mesmo tratamento do
+    /// cancelamento pelo vet — crédito de cortesia + strike (RN-066).
+    /// </summary>
     public async Task<ConsultaDto> RegistrarNoShowAsync(Guid consultaId, ParteNoShow parte)
     {
         var consulta = await _repo.ObterPorIdAsync(consultaId)
             ?? throw new NotFoundException("Consulta", consultaId);
 
+        var agora = _timeProvider.GetUtcNow().UtcDateTime;
+
         if (parte == ParteNoShow.Responsavel)
+        {
             consulta.RegistrarNoShowResponsavel();
+
+            var responsavel = await _responsavelRepo.ObterPorIdAsync(consulta.ResponsavelId)
+                ?? throw new NotFoundException("Responsavel", consulta.ResponsavelId);
+            responsavel.RegistrarNoShow(agora);
+            _responsavelRepo.Atualizar(responsavel);
+        }
         else
+        {
             consulta.RegistrarNoShowVeterinario();
+            await AplicarConsequenciasVeterinarioAsync(consulta, "No-show do veterinário", agora);
+        }
 
         _repo.Atualizar(consulta);
         await _repo.SalvarAsync();

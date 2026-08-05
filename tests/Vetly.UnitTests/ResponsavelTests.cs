@@ -1,10 +1,12 @@
 using Vetly.Domain.Entities;
+using Vetly.Domain.Exceptions;
 
 namespace Vetly.UnitTests;
 
 /// <summary>
 /// Testes unitarios do dominio de Responsavel.
-/// Cobre a janela movel de 90 dias de no-shows e o bloqueio de descontos por 60 dias (RN-064).
+/// Cobre a janela movel de 90 dias de no-shows, o bloqueio de descontos por 60 dias (RN-064)
+/// e o credito de cortesia Vetly (RN-065/066).
 /// </summary>
 public class ResponsavelTests
 {
@@ -54,5 +56,26 @@ public class ResponsavelTests
         Assert.Equal(1, responsavel.ContadorNoShows);
         Assert.Null(responsavel.BloqueadoDescontosAte);
         Assert.Equal(0, responsavel.NoShowsAtivos(depoisDaJanela.AddDays(91)));
+    }
+
+    [Fact]
+    public void CreditarSaldoCreditosVetly_ValorPositivo_SomaAoSaldoExistente()
+    {
+        var responsavel = CriarResponsavel();
+
+        responsavel.CreditarSaldoCreditosVetly(30m);
+        responsavel.CreditarSaldoCreditosVetly(15m);
+
+        Assert.Equal(45m, responsavel.SaldoCreditosVetly);
+    }
+
+    [Fact]
+    public void CreditarSaldoCreditosVetly_ValorZeroOuNegativo_LancaDomainExceptionRESPONSAVEL002()
+    {
+        var responsavel = CriarResponsavel();
+
+        var ex = Assert.Throws<DomainException>(() => responsavel.CreditarSaldoCreditosVetly(0m));
+
+        Assert.Equal("RESPONSAVEL-002", ex.Codigo);
     }
 }

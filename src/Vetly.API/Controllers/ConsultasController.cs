@@ -80,6 +80,14 @@ public class ConsultasController : ControllerBase
         return Ok(resultado);
     }
 
+    /// <summary>Cancela a consulta por iniciativa do veterinário: crédito de cortesia + strike (RN-065/067).</summary>
+    [HttpPost("{id:guid}/cancelar-pelo-veterinario")]
+    [ProducesResponseType(typeof(CancelamentoPeloVeterinarioDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
+    public async Task<IActionResult> CancelarPeloVeterinario(Guid id) =>
+        Ok(await _service.CancelamentoPeloVeterinarioAsync(id));
+
     /// <summary>Marca a consulta como realizada — exige receita assinada digitalmente (RN-031/061).</summary>
     [HttpPost("{id:guid}/realizada")]
     [ProducesResponseType(typeof(ConsultaDto), StatusCodes.Status200OK)]

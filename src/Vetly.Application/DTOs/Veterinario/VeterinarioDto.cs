@@ -16,4 +16,6 @@ public class VeterinarioDto
     public PlanoAssinatura Plano { get; set; }
     public bool Ativo { get; set; }
     public Guid? EmpresaId { get; set; }
+    public int StrikesAtivos { get; set; }
+    public DateTime? SuspensoAte { get; set; }
 }
