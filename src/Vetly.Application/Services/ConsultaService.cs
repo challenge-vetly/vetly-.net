@@ -29,6 +29,7 @@ public class ConsultaService : IConsultaService
     private readonly IResponsavelRepository _responsavelRepo;
     private readonly IVeterinarioRepository _vetRepo;
     private readonly IAcessoProntuarioService _acessoProntuarioService;
+    private readonly IAvaliacaoService _avaliacaoService;
     private readonly ICurrentUserService _currentUser;
     private readonly TimeProvider _timeProvider;
     private readonly IEnumerable<ICancelamentoStrategy> _strategies;
@@ -42,6 +43,7 @@ public class ConsultaService : IConsultaService
         IResponsavelRepository responsavelRepo,
         IVeterinarioRepository vetRepo,
         IAcessoProntuarioService acessoProntuarioService,
+        IAvaliacaoService avaliacaoService,
         ICurrentUserService currentUser,
         TimeProvider timeProvider,
         IEnumerable<ICancelamentoStrategy> strategies)
@@ -54,6 +56,7 @@ public class ConsultaService : IConsultaService
         _responsavelRepo = responsavelRepo;
         _vetRepo = vetRepo;
         _acessoProntuarioService = acessoProntuarioService;
+        _avaliacaoService = avaliacaoService;
         _currentUser = currentUser;
         _timeProvider = timeProvider;
         _strategies = strategies;
@@ -167,6 +170,12 @@ public class ConsultaService : IConsultaService
         _repo.Atualizar(consulta);
         _pagamentoRepo.Atualizar(pagamento);
         await _repo.SalvarAsync();
+
+        // RN-081: se a consulta já tinha avaliação publicada, o cancelamento a invalida.
+        // No estado atual da máquina de estados (Cancelar só parte de EmCheckout/Confirmada,
+        // nunca de Realizada) isso é inalcançável na prática — mantido para não deixar a
+        // regra sem cobertura caso um fluxo futuro permita cancelar após realizada.
+        await _avaliacaoService.InvalidarPorCancelamentoAsync(consulta.Id, agora);
 
         return resultado;
     }

@@ -31,7 +31,7 @@ Plano de referência completo (decisões de arquitetura, mapeamento fase→arqui
       (RN-096..100)
 - [x] Fase 8 — Colmeia por evento clínico: ConcessaoAcessoProntuario +
       LogAcessoProntuario (RN-083..088)
-- [ ] Fase 9 — Avaliação: entidade Avaliacao, moderação, média ponderada
+- [x] Fase 9 — Avaliação: entidade Avaliacao, moderação, média ponderada
       (RN-076..082)
 - [ ] Fase 10 — Fidelidade: ObrigacaoDoPet (Factory por espécie), PontosFidelidade
       FIFO, tiers, IDescontoFidelidadeStrategy (RN-069..075)
@@ -156,53 +156,74 @@ README de contratos (Fase 13).
   próxima consulta confirmada (`ConcederAcessoPorConsultaAsync` checa o
   consentimento ativo no momento da confirmação) — concessões já emitidas
   seguem seu próprio ciclo de vida via `EstaAtiva(agora)`/`ExpiraEm`.
+- **Códigos `AVALIACAO-005` (nota fora do intervalo 1-5) e `AVALIACAO-006`
+  (consulta já avaliada)** — dois códigos além dos `AVALIACAO-001..004`
+  previstos originalmente. `005` é invariante de domínio (`Avaliacao`, via
+  `DomainException`); `006` é regra de aplicação (unicidade por consulta,
+  `AvaliacaoService`, via `BusinessRuleException`) — mesma distinção já usada
+  em todo o resto da base entre invariante de entidade e regra que precisa
+  consultar outro repositório.
+- **RN-081 (cancelamento/reembolso invalida avaliação) fica wireado em
+  `ConsultaService.CancelarAsync`, mas é código estruturalmente inalcançável
+  no estado atual**: `Consulta.Cancelar()` só aceita partir de
+  `EmCheckout`/`Confirmada`, nunca de `Realizada` — e uma `Avaliacao` só pode
+  existir para uma consulta `Realizada`. Mantido mesmo assim porque (a) é a
+  tradução literal da RN, (b) o custo é uma linha, e (c) não há outro ponto
+  de integração natural no sistema atual. Documentado aqui para não parecer
+  "morto por acidente" numa leitura futura do código.
 
 ## ESTADO ATUAL
 
-**Fase corrente:** Fase 8 concluída (commit a registrar, tag
-`v2-fase-08-colmeia`). Iniciando Fase 9.
-**Baseline de testes:** 150/150 verdes (144 unit + 6 integration) — cresceu a
-partir dos 137 da Fase 7 com `ConcessaoAcessoProntuarioTests` (4 casos,
-domínio puro), `AcessoProntuarioServiceTests` (6 casos, Moq) e reescrita de
-`AnimalServiceTests`/`ConsultaServiceTests` para cobrir acesso completo ×
-restrito × negado.
-**O que mudou na Fase 8:** novas entidades `ConcessaoAcessoProntuario`
-(`AnimalId`, `VeterinarioId`, `ConsultaId`, `BaseAcesso` enum
-`{ConsentimentoRede, AtendimentoDireto}`, `ConcedidoEm`, `ExpiraEm`,
-`Revogada`, com `EstaAtiva(agora)`/`Revogar()`) e `LogAcessoProntuario`
-(somente inserção). Novo `AcessoProntuarioService` (`PodeAcessarAsync`,
-`TemAcessoCompletoAsync`, `RegistrarAcessoAsync`,
-`ConcederAcessoPorConsultaAsync`, `ObterConcessoesAtivasAsync`,
-`ObterLogAcessosAsync`). `ConsultaService.ConfirmarPagamentoAsync` chama
-`ConcederAcessoPorConsultaAsync` após confirmar (cria concessão só se o
-Responsável tem `CompartilhamentoRede` ativo — Fase 2 — com
-`ExpiraEm = dataConsulta.AddHours(24)`); `ObterBriefingAsync` agora exige
-`PodeAcessarAsync` (403 `ACESSO-001` se negado) e registra log. `IConsultaRepository`
-ganhou `ExisteConsultaAsync` (base "atendimento direto" — vet já atendeu o
-animal alguma vez) e `IAnimalRepository` ganhou
-`ObterHistoricoLongitudinalPorVeterinarioAsync` (join com `Consultas` — histórico
-restrito ao que o vet chamador produziu). `AnimalService.ObterHistoricoAsync`
-reescrito: chamador `Veterinario` sem nenhum acesso → 403 `ACESSO-001`;
-com concessão ativa → histórico completo (menos ocultados, Fase 3); só
-"atendimento direto" → apenas os próprios prontuários, sem checar ocultados
-(vet nunca vê o que não produziu, ocultado ou não); chamador `Responsavel`
-sempre vê tudo, sem consultar a colmeia. Novo
-`AnimalService.ObterLogAcessosAsync`. Endpoints novos:
-`GET /api/animais/{id}/log-acessos`,
-`GET /api/veterinarios/{id}/concessoes`. Migration
-`Fase08_ColmeiaAcessoProntuario`: puramente aditiva (`CreateTable` para as
-duas tabelas novas, sem nenhum rename — scaffold do EF não teve ambiguidade
-desta vez).
-**Próximos passos:** Fase 9 — avaliação e notoriedade: nova entidade
-`Avaliacao` (`ConsultaId` único, `ResponsavelId`, `VeterinarioId`,
-`NotaGeral` 1-5 obrigatória, subnotas opcionais, `Comentario`, `Data`,
-`StatusModeracao` enum, `RespostaVeterinario` 0..1, `Invalidada`). Regras via
-`DomainException`: fora da janela de 7 dias (`AVALIACAO-001`), consulta não
-realizada (`AVALIACAO-002`), edição após 48h (`AVALIACAO-003`), segunda
-resposta do vet (`AVALIACAO-004`). `Veterinario` ganha
-`NotaMedia`/`TotalAvaliacoes` com recálculo ponderado por recência (últimos
-90 dias pesam 2×), só exposto com ≥3 avaliações. Cancelamento/reembolso
-invalida avaliação e recalcula (RN-081, reaproveita `ICancelamentoStrategy`
-da Fase 6). Endpoints `POST /api/consultas/{id}/avaliacao`,
-`PUT /api/avaliacoes/{id}`, `POST /{id}/resposta`, `POST /{id}/moderar`,
-`GET /api/veterinarios/{id}/avaliacoes`.
+**Fase corrente:** Fase 9 concluída (commit a registrar, tag
+`v2-fase-09-avaliacao`). Iniciando Fase 10.
+**Baseline de testes:** 173/173 verdes (167 unit + 6 integration) — cresceu a
+partir dos 150 da Fase 8 com `AvaliacaoTests` (9 casos, domínio puro),
+`AvaliacaoServiceTests` (8 casos, Moq), `VeterinarioReputacaoTests` (4 casos,
+domínio puro) e 2 novos casos em `VeterinarioServiceTests` (exposição pública
+da nota condicionada a ≥3 avaliações).
+**O que mudou na Fase 9:** nova entidade `Avaliacao` (`ConsultaId` único,
+`ResponsavelId`, `VeterinarioId`, `NotaGeral` 1-5 obrigatória, subnotas
+opcionais, `Comentario`, `Data`, `StatusModeracao`, `RespostaVeterinario`
+0..1, `Invalidada`), criada via método-fábrica `Avaliacao.Criar(...)` que
+valida o gatilho (RN-076: só consulta `Realizada`, `AVALIACAO-002`) e a
+janela de 7 dias (`AVALIACAO-001`) a partir de `Consulta.DataRealizada`
+(campo já existente desde a Fase 4). `Editar` valida a janela de 48h da
+publicação (`AVALIACAO-003`); `Responder` só aceita uma resposta por
+avaliação (`AVALIACAO-004`); `Moderar` troca `StatusModeracao` sem nunca
+tocar na nota (RN-080); `Invalidar` marca antifraude (RN-081). Novo enum
+`StatusModeracao`. `Veterinario` ganha `NotaMedia`/`TotalAvaliacoes` e o
+método `RecalcularReputacao(avaliacoes, agora)`, que pondera por recência
+(últimos 90 dias pesam 2×, RN-078) — recebe tuplas `(nota, data)` em vez de
+navegar para `Avaliacao` (sem navigation properties, convenção da base).
+Novo `AvaliacaoService` orquestra criação (checa unicidade por consulta,
+`AVALIACAO-006`), edição, resposta, moderação e o recálculo de reputação do
+vet a cada mutação do conjunto de avaliações válidas; `VeterinarioService`
+só expõe `NotaMedia` no DTO quando `TotalAvaliacoes >= 3` (RN-078).
+`ConsultaService.CancelarAsync` ganhou a chamada a
+`IAvaliacaoService.InvalidarPorCancelamentoAsync` (RN-081 — ver "Decisões de
+fundação" sobre por que é inalcançável no estado atual, mas documentado).
+Endpoints novos: `POST /api/consultas/{id}/avaliacao`, `GET/PUT
+/api/avaliacoes/{id}`, `POST /api/avaliacoes/{id}/resposta`, `POST
+/api/avaliacoes/{id}/moderar` (restrito a Admin), `GET
+/api/veterinarios/{id}/avaliacoes`. Migration `Fase09_AvaliacaoNotoriedade`:
+aditiva (`AddColumn` NOTA_MEDIA/TOTAL_AVALIACOES em TB_VETERINARIO +
+`CreateTable` TB_AVALIACAO com índice único em CONSULTA_ID); precisou de
+correção manual — o scaffold gerou `NOTA_GERAL`/subnotas como
+`Column<bool>` em vez de `Column<int>` (Oracle mapeia `NUMBER(1)` como tipo
+canônico de `bool` por convenção, e o scaffold seguiu o store type em vez do
+CLR type real da propriedade `int`).
+**Próximos passos:** Fase 10 — fidelidade: `ObrigacaoDoPet` (`Tipo:
+TipoObrigacao` — enum novo, decisão de fundação já tomada na Fase 0),
+`PontosFidelidade` (FIFO, `ExpiraEm` = Data+12m, `Estornado`). Tier
+recalculado a cada mutação de pontos (Prata≥300, Ouro≥800 em 12m)
+atualizando `Responsavel.TierFidelidade`/`SaldoPontos` (campos já existentes
+desde a Fase 1). `IObrigacaoFactory` (por espécie: canina/felina/genérica —
+mesmo padrão de seleção do `IDocumentoFactory`) gera calendário no cadastro
+do Animal. `IDescontoFidelidadeStrategy` por tier (Bronze 0%, Prata
+5%=3%+2%, Ouro 10%=6%+4%) grava nos campos de incidência do `Pagamento`
+(`DescontoFidelidadeCalculado`/`IncidenciaVetly`/`IncidenciaVeterinario`, já
+existentes e zerados desde a Fase 5) e respeita
+`Responsavel.BloqueadoDescontosAte` (Fase 6 — desconto zerado durante
+penalidade). Endpoints `GET/POST /api/animais/{id}/obrigacoes`, `GET
+/api/responsaveis/{id}/fidelidade[/extrato]`, `GET
+/api/consultas/{id}/desconto-previsto`.

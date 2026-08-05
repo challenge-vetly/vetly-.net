@@ -120,7 +120,10 @@ public class VeterinarioService : IVeterinarioService
         TitulacaoAcademica = v.TitulacaoAcademica, Persona = v.Persona,
         Plano = v.Plano, Ativo = v.Ativo, EmpresaId = v.EmpresaId,
         StrikesAtivos = v.StrikesNaJanela(_timeProvider.GetUtcNow().UtcDateTime),
-        SuspensoAte = v.SuspensoAte
+        SuspensoAte = v.SuspensoAte,
+        // RN-078: nota só é pública a partir de 3 avaliações — antes disso, nula.
+        NotaMedia = v.TotalAvaliacoes >= 3 ? v.NotaMedia : null,
+        TotalAvaliacoes = v.TotalAvaliacoes
     };
 
     private static ConsultaDto MapearConsultaParaDto(Consulta c) => new()

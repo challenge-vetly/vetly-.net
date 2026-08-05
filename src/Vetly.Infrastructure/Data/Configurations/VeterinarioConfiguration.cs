@@ -83,6 +83,16 @@ public class VeterinarioConfiguration : IEntityTypeConfiguration<Veterinario>
         builder.Property(v => v.SuspensoAte)
             .HasColumnName("SUSPENSO_ATE");
 
+        // NUMBER(3,2) comporta 0.00 a 5.00 — faixa de NotaMedia (RN-078)
+        builder.Property(v => v.NotaMedia)
+            .HasColumnType("NUMBER(3,2)")
+            .HasColumnName("NOTA_MEDIA");
+
+        builder.Property(v => v.TotalAvaliacoes)
+            .HasColumnType("NUMBER(10)")
+            .HasColumnName("TOTAL_AVALIACOES")
+            .IsRequired();
+
         // Historico de strikes de reputacao (RN-065/066/067) — owned collection em tabela
         // propria; nunca apagado, so deixa de contar para o limiar fora da janela de 90 dias.
         builder.OwnsMany(v => v.StrikesAtivos, strike =>

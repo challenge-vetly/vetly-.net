@@ -24,6 +24,7 @@ public class VetlyDbContext : DbContext
     public DbSet<LogAuditoriaIA> LogsAuditoriaIA => Set<LogAuditoriaIA>();
     public DbSet<ConcessaoAcessoProntuario> ConcessoesAcessoProntuario => Set<ConcessaoAcessoProntuario>();
     public DbSet<LogAcessoProntuario> LogsAcessoProntuario => Set<LogAcessoProntuario>();
+    public DbSet<Avaliacao> Avaliacoes => Set<Avaliacao>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Vetly.Application.DTOs.Avaliacao;
 using Vetly.Application.DTOs.Cancelamento;
 using Vetly.Application.DTOs.Consulta;
 using Vetly.Application.DTOs.IA;
@@ -20,11 +21,13 @@ public class ConsultasController : ControllerBase
 {
     private readonly IConsultaService _service;
     private readonly IConsultaIaService _iaService;
+    private readonly IAvaliacaoService _avaliacaoService;
 
-    public ConsultasController(IConsultaService service, IConsultaIaService iaService)
+    public ConsultasController(IConsultaService service, IConsultaIaService iaService, IAvaliacaoService avaliacaoService)
     {
         _service = service;
         _iaService = iaService;
+        _avaliacaoService = avaliacaoService;
     }
 
     /// <summary>Retorna todas as consultas com filtros opcionais.</summary>
@@ -166,4 +169,20 @@ public class ConsultasController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> ObterAuditoriaIA(Guid id) =>
         Ok(await _iaService.ObterAuditoriaAsync(id));
+
+    /// <summary>
+    /// Publica a avaliação de uma consulta realizada (RN-076/077): janela de 7 dias a
+    /// partir de "realizada", uma avaliação por consulta.
+    /// </summary>
+    [HttpPost("{id:guid}/avaliacao")]
+    [ProducesResponseType(typeof(AvaliacaoDto), StatusCodes.Status201Created)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
+    public async Task<IActionResult> Avaliar(Guid id, [FromBody] CriarAvaliacaoDto dto)
+    {
+        var criada = await _avaliacaoService.CriarAsync(id, dto);
+        return CreatedAtAction(
+            nameof(AvaliacoesController.ObterPorId), "Avaliacoes", new { id = criada.Id }, criada);
+    }
 }

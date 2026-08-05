@@ -81,4 +81,30 @@ public class VeterinarioServiceTests
         Assert.Single(agendamentos);
         Assert.False(vet.Ativo);
     }
+
+    [Fact]
+    public async Task ObterPorIdAsync_MenosDeTresAvaliacoes_NotaMediaNaoExibidaPublicamente()
+    {
+        var vet = new Veterinario("Dr. Vet", new Crmv("12345-SP"), "SP", PersonaVeterinario.Autonomo, PlanoAssinatura.Profissional);
+        vet.RecalcularReputacao([(5, DateTime.UtcNow), (5, DateTime.UtcNow)], DateTime.UtcNow); // só 2
+        _repoMock.Setup(r => r.ObterPorIdAsync(vet.Id)).ReturnsAsync(vet);
+
+        var resultado = await CriarServico().ObterPorIdAsync(vet.Id);
+
+        Assert.Null(resultado.NotaMedia); // RN-078: exige >= 3 avaliações para exibir
+        Assert.Equal(2, resultado.TotalAvaliacoes);
+    }
+
+    [Fact]
+    public async Task ObterPorIdAsync_TresOuMaisAvaliacoes_ExibeNotaMediaPublicamente()
+    {
+        var vet = new Veterinario("Dr. Vet", new Crmv("12345-SP"), "SP", PersonaVeterinario.Autonomo, PlanoAssinatura.Profissional);
+        vet.RecalcularReputacao([(5, DateTime.UtcNow), (5, DateTime.UtcNow), (5, DateTime.UtcNow)], DateTime.UtcNow);
+        _repoMock.Setup(r => r.ObterPorIdAsync(vet.Id)).ReturnsAsync(vet);
+
+        var resultado = await CriarServico().ObterPorIdAsync(vet.Id);
+
+        Assert.Equal(5m, resultado.NotaMedia);
+        Assert.Equal(3, resultado.TotalAvaliacoes);
+    }
 }
