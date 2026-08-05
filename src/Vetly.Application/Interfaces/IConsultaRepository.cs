@@ -17,4 +17,7 @@ public interface IConsultaRepository : IRepositoryBase<Consulta>
 
     /// <summary>Retorna consultas com filtros compostos (data, veterinário, status).</summary>
     Task<IEnumerable<Consulta>> ObterComFiltrosAsync(DateTime? dataInicio, DateTime? dataFim, Guid? veterinarioId, StatusConsulta? status);
+
+    /// <summary>Indica se o veterinário já teve alguma consulta com este animal (base do acesso restrito clássico — RN-010).</summary>
+    Task<bool> ExisteConsultaAsync(Guid veterinarioId, Guid animalId);
 }

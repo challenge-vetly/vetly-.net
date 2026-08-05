@@ -26,4 +26,7 @@ public interface IAnimalService
 
     /// <summary>Reexibe um prontuário previamente ocultado.</summary>
     Task ReexibirRegistroAsync(Guid animalId, Guid prontuarioId);
+
+    /// <summary>Retorna o log completo de acessos ao prontuário do animal — visível ao Responsável (RN-086).</summary>
+    Task<IEnumerable<LogAcessoProntuarioDto>> ObterLogAcessosAsync(Guid animalId);
 }

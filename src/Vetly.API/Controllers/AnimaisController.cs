@@ -28,12 +28,20 @@ public class AnimaisController : ControllerBase
     public async Task<IActionResult> ObterPorId(Guid id) =>
         Ok(await _service.ObterPorIdAsync(id));
 
-    /// <summary>Retorna o historico longitudinal de prontuarios de um animal.</summary>
+    /// <summary>Retorna o historico longitudinal de prontuarios de um animal (RN-010/083 — colmeia).</summary>
     [HttpGet("{id:guid}/prontuarios")]
     [ProducesResponseType(typeof(IEnumerable<object>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> ObterProntuarios(Guid id) =>
         Ok(await _service.ObterHistoricoAsync(id));
+
+    /// <summary>Retorna o log de acessos ao prontuario do animal — visivel ao responsavel (RN-086).</summary>
+    [HttpGet("{id:guid}/log-acessos")]
+    [ProducesResponseType(typeof(IEnumerable<object>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ObterLogAcessos(Guid id) =>
+        Ok(await _service.ObterLogAcessosAsync(id));
 
     /// <summary>Retorna todos os exames de um animal.</summary>
     [HttpGet("{id:guid}/exames")]

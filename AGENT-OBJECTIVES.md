@@ -29,7 +29,7 @@ Plano de referência completo (decisões de arquitetura, mapeamento fase→arqui
       (RN-062..067)
 - [x] Fase 7 — IA v2: decisão Aprovar/NãoAprovar/Corrigir + LogAuditoriaIA
       (RN-096..100)
-- [ ] Fase 8 — Colmeia por evento clínico: ConcessaoAcessoProntuario +
+- [x] Fase 8 — Colmeia por evento clínico: ConcessaoAcessoProntuario +
       LogAcessoProntuario (RN-083..088)
 - [ ] Fase 9 — Avaliação: entidade Avaliacao, moderação, média ponderada
       (RN-076..082)
@@ -143,51 +143,66 @@ README de contratos (Fase 13).
   Fase 13 pede uma "tabela de enums (nome → valores aceitos no JSON)" — decisão
   de contrato tomada cedo para não quebrar retroativamente os payloads já
   documentados nas fases seguintes.
+- **Revogar `CompartilhamentoRede` (Fase 2) não revoga em cascata as
+  `ConcessaoAcessoProntuario` já concedidas** (desvio pontual da Fase 8, onde o
+  plano original cogitava isso). Justificativa: cada concessão já nasce com
+  `ExpiraEm` curto (fim do ciclo da consulta + 24h) — o pior caso de exposição
+  é o mesmo já assumido pela janela normal de acesso, então uma varredura
+  ativa em `RevogarConsentimentoAsync` para revogar concessões futuras
+  adicionaria complexidade (nova dependência de `IConcessaoAcessoProntuarioRepository`
+  dentro de `ResponsavelService`, cruzando um limite de domínio que hoje não
+  existe) sem mudar o pior caso real de exposição de dados. Revogar o
+  consentimento apenas impede a criação de **novas** concessões a partir da
+  próxima consulta confirmada (`ConcederAcessoPorConsultaAsync` checa o
+  consentimento ativo no momento da confirmação) — concessões já emitidas
+  seguem seu próprio ciclo de vida via `EstaAtiva(agora)`/`ExpiraEm`.
 
 ## ESTADO ATUAL
 
-**Fase corrente:** Fase 7 concluída (commit a registrar, tag `v2-fase-07-ia`).
-Iniciando Fase 8.
-**Baseline de testes:** 137/137 verdes (131 unit + 6 integration) — cresceu a
-partir dos 121 da Fase 6 com `LogAuditoriaIATests` (6 casos, domínio puro),
-`ConsultaIaServiceTests` (7 casos, Moq), 3 novos casos em `OllamaServiceTests`
-(disclaimer sempre presente, escalonamento de emergência) e ajustes em
-`ConsultaStateMachineTests`/`DocumentoServiceTests` para o novo gate
-`EstadoFinalDefinido`.
-**O que mudou na Fase 7:** nova entidade `LogAuditoriaIA` com ciclo
-pendente→finalizado (ver "Decisões de fundação" acima) e enums novos
-`TipoSugestaoIA`/`DecisaoVeterinario`. `Consulta` ganha `DiagnosticoFinal`,
-`ProtocoloFinal`, `EstadoFinalDefinido`, `DefinirDiagnosticoFinal(texto)`,
-`DefinirProtocoloFinal(texto)`; `PodeGerarDocumentos()` migrou de
-`DiagnosticoValidado` para `EstadoFinalDefinido` (ver "Decisões de fundação").
-Novo serviço `ConsultaIaService` (não amontoado em `ConsultaService`, já grande
-demais) orquestra: monta o contexto clínico (espécie/raça/idade/peso/pré-sintomas/
-condições) → chama `IOllamaService` (v1, inalterado) → grava
-`LogAuditoriaIA` pendente com um `logId` retornado ao cliente.
-`SugerirProtocoloAsync` recusa com `BusinessRuleException("IA-001", ...)`
-**antes** de chamar o modelo se `Animal.PesoKg` for nulo, e cruza os
-medicamentos sugeridos contra `Animal.MedicacoesEmUso` para gerar alertas de
-interação. `RegistrarDecisaoAsync` busca o log pendente mais recente por
-consulta+tipo (`IA-003` se `Corrigir` sem `conteudoCorrigido`), finaliza-o e,
-se houver conteúdo final (Aprovar/Corrigir), define o campo final
-correspondente na `Consulta`. `DocumentoService.GerarAsync` passa a gravar um
-log `DocumentoGerado` (via `RegistrarArtefatoAutomatico`, já finalizado — RN-097).
-`OllamaService.RealizarTriagemAsync` (RN-100) agora sempre preenche
-`TriagemResultadoDto.Disclaimer` e força menção a atendimento presencial
-imediato quando o nível de urgência é "Emergência". Novos endpoints
-`POST /api/consultas/{id}/ia/{diagnostico|protocolo|decisao}`,
-`GET /{id}/ia/auditoria`. Migration `Fase07_IADecisaoAuditoria`: puramente
-aditiva (`AddColumn` em `TB_CONSULTA` + `CreateTable TB_LOG_AUDITORIA_IA`).
-**Próximos passos:** Fase 8 — colmeia por evento clínico: novas entidades
-`ConcessaoAcessoProntuario` (`AnimalId`, `VeterinarioId`, `ConsultaId`,
-`BaseAcesso` enum `{ConsentimentoRede, AtendimentoDireto}`, `ConcedidoEm`,
-`ExpiraEm`, `Revogada`) e `LogAcessoProntuario` (somente inserção). Ao
-confirmar uma consulta (`Consulta.ConfirmarPagamento`, já existe), se o
-Responsável tem `CompartilhamentoRede` ativo (Fase 2), cria concessão com
-expiração no fim do ciclo (consulta + 24h). Novo `AcessoProntuarioService.
-PodeAcessarAsync(vetId, animalId, agora)`, usado por
-`ConsultaService.ObterBriefingAsync` e pelos endpoints de prontuário; todo
-acesso efetivo grava `LogAcessoProntuario`. Reaproveita o filtro de
-`RegistroOcultado` (Fase 3). Endpoints `GET /api/animais/{id}/prontuarios`
-(403 `ACESSO-001` se negado), `GET /api/animais/{id}/log-acessos`,
-`GET /api/veterinarios/{id}/concessoes`.
+**Fase corrente:** Fase 8 concluída (commit a registrar, tag
+`v2-fase-08-colmeia`). Iniciando Fase 9.
+**Baseline de testes:** 150/150 verdes (144 unit + 6 integration) — cresceu a
+partir dos 137 da Fase 7 com `ConcessaoAcessoProntuarioTests` (4 casos,
+domínio puro), `AcessoProntuarioServiceTests` (6 casos, Moq) e reescrita de
+`AnimalServiceTests`/`ConsultaServiceTests` para cobrir acesso completo ×
+restrito × negado.
+**O que mudou na Fase 8:** novas entidades `ConcessaoAcessoProntuario`
+(`AnimalId`, `VeterinarioId`, `ConsultaId`, `BaseAcesso` enum
+`{ConsentimentoRede, AtendimentoDireto}`, `ConcedidoEm`, `ExpiraEm`,
+`Revogada`, com `EstaAtiva(agora)`/`Revogar()`) e `LogAcessoProntuario`
+(somente inserção). Novo `AcessoProntuarioService` (`PodeAcessarAsync`,
+`TemAcessoCompletoAsync`, `RegistrarAcessoAsync`,
+`ConcederAcessoPorConsultaAsync`, `ObterConcessoesAtivasAsync`,
+`ObterLogAcessosAsync`). `ConsultaService.ConfirmarPagamentoAsync` chama
+`ConcederAcessoPorConsultaAsync` após confirmar (cria concessão só se o
+Responsável tem `CompartilhamentoRede` ativo — Fase 2 — com
+`ExpiraEm = dataConsulta.AddHours(24)`); `ObterBriefingAsync` agora exige
+`PodeAcessarAsync` (403 `ACESSO-001` se negado) e registra log. `IConsultaRepository`
+ganhou `ExisteConsultaAsync` (base "atendimento direto" — vet já atendeu o
+animal alguma vez) e `IAnimalRepository` ganhou
+`ObterHistoricoLongitudinalPorVeterinarioAsync` (join com `Consultas` — histórico
+restrito ao que o vet chamador produziu). `AnimalService.ObterHistoricoAsync`
+reescrito: chamador `Veterinario` sem nenhum acesso → 403 `ACESSO-001`;
+com concessão ativa → histórico completo (menos ocultados, Fase 3); só
+"atendimento direto" → apenas os próprios prontuários, sem checar ocultados
+(vet nunca vê o que não produziu, ocultado ou não); chamador `Responsavel`
+sempre vê tudo, sem consultar a colmeia. Novo
+`AnimalService.ObterLogAcessosAsync`. Endpoints novos:
+`GET /api/animais/{id}/log-acessos`,
+`GET /api/veterinarios/{id}/concessoes`. Migration
+`Fase08_ColmeiaAcessoProntuario`: puramente aditiva (`CreateTable` para as
+duas tabelas novas, sem nenhum rename — scaffold do EF não teve ambiguidade
+desta vez).
+**Próximos passos:** Fase 9 — avaliação e notoriedade: nova entidade
+`Avaliacao` (`ConsultaId` único, `ResponsavelId`, `VeterinarioId`,
+`NotaGeral` 1-5 obrigatória, subnotas opcionais, `Comentario`, `Data`,
+`StatusModeracao` enum, `RespostaVeterinario` 0..1, `Invalidada`). Regras via
+`DomainException`: fora da janela de 7 dias (`AVALIACAO-001`), consulta não
+realizada (`AVALIACAO-002`), edição após 48h (`AVALIACAO-003`), segunda
+resposta do vet (`AVALIACAO-004`). `Veterinario` ganha
+`NotaMedia`/`TotalAvaliacoes` com recálculo ponderado por recência (últimos
+90 dias pesam 2×), só exposto com ≥3 avaliações. Cancelamento/reembolso
+invalida avaliação e recalcula (RN-081, reaproveita `ICancelamentoStrategy`
+da Fase 6). Endpoints `POST /api/consultas/{id}/avaliacao`,
+`PUT /api/avaliacoes/{id}`, `POST /{id}/resposta`, `POST /{id}/moderar`,
+`GET /api/veterinarios/{id}/avaliacoes`.

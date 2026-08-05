@@ -24,4 +24,10 @@ public interface IAnimalRepository : IRepositoryBase<Animal>
 
     /// <summary>Retorna um único prontuário pelo Id, ou nulo se não existir.</summary>
     Task<Prontuario?> ObterProntuarioPorIdAsync(Guid prontuarioId);
+
+    /// <summary>
+    /// Retorna apenas os prontuários produzidos pelo veterinário informado (acesso restrito
+    /// clássico, sem consentimento de rede — RN-010).
+    /// </summary>
+    Task<IEnumerable<Prontuario>> ObterHistoricoLongitudinalPorVeterinarioAsync(Guid animalId, Guid veterinarioId);
 }

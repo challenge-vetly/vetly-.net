@@ -9,16 +9,19 @@ namespace Vetly.UnitTests;
 
 /// <summary>
 /// Testes unitarios do AnimalService.
-/// Cobre atualizacao de peso, ocultacao de prontuarios (RN-088) e o filtro por papel do chamador.
+/// Cobre atualizacao de peso, ocultacao de prontuarios (RN-088) e a colmeia por evento
+/// clinico ao listar o historico (RN-010/083 — acesso completo x restrito x negado).
 /// </summary>
 public class AnimalServiceTests
 {
     private readonly Mock<IAnimalRepository> _repoMock = new();
     private readonly Mock<IRegistroOcultadoRepository> _registroOcultadoRepoMock = new();
+    private readonly Mock<IAcessoProntuarioService> _acessoProntuarioServiceMock = new();
     private readonly Mock<ICurrentUserService> _currentUserMock = new();
 
     private AnimalService CriarServico() =>
-        new(_repoMock.Object, _registroOcultadoRepoMock.Object, _currentUserMock.Object, TimeProvider.System);
+        new(_repoMock.Object, _registroOcultadoRepoMock.Object, _acessoProntuarioServiceMock.Object,
+            _currentUserMock.Object, TimeProvider.System);
 
     private static Animal CriarAnimal() =>
         new("Rex", "Canino", "Labrador", SexoAnimal.Macho, new DateTime(2020, 1, 1), Guid.NewGuid());
@@ -69,22 +72,65 @@ public class AnimalServiceTests
     }
 
     [Fact]
-    public async Task ObterHistoricoAsync_ChamadorVeterinario_FiltraProntuarioOcultado()
+    public async Task ObterHistoricoAsync_VeterinarioComAcessoCompleto_FiltraProntuarioOcultado()
     {
         var animal = CriarAnimal();
+        var vetId = Guid.NewGuid();
         var prontuarioVisivel = new Prontuario(Guid.NewGuid(), animal.Id, "Consulta 1");
         var prontuarioOcultado = new Prontuario(Guid.NewGuid(), animal.Id, "Consulta 2 - dado sensivel");
 
+        _currentUserMock.Setup(c => c.Role).Returns("Veterinario");
+        _currentUserMock.Setup(c => c.EntidadeId).Returns(vetId);
+        _acessoProntuarioServiceMock.Setup(s => s.PodeAcessarAsync(vetId, animal.Id, It.IsAny<DateTime>())).ReturnsAsync(true);
+        _acessoProntuarioServiceMock.Setup(s => s.TemAcessoCompletoAsync(vetId, animal.Id, It.IsAny<DateTime>())).ReturnsAsync(true);
         _repoMock.Setup(r => r.ObterHistoricoLongitudinalAsync(animal.Id))
             .ReturnsAsync([prontuarioVisivel, prontuarioOcultado]);
         _registroOcultadoRepoMock.Setup(r => r.ObterPorAnimalAsync(animal.Id))
             .ReturnsAsync([new RegistroOcultado(animal.Id, prontuarioOcultado.Id, DateTime.UtcNow)]);
-        _currentUserMock.Setup(c => c.Role).Returns("Veterinario");
 
         var resultado = (await CriarServico().ObterHistoricoAsync(animal.Id)).ToList();
 
         Assert.Single(resultado);
         Assert.Equal(prontuarioVisivel.Id, resultado[0].Id);
+        _acessoProntuarioServiceMock.Verify(
+            s => s.RegistrarAcessoAsync(vetId, animal.Id, It.IsAny<string>(), It.IsAny<DateTime>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task ObterHistoricoAsync_VeterinarioComAcessoRestrito_VeSoOQueProduziu()
+    {
+        var animal = CriarAnimal();
+        var vetId = Guid.NewGuid();
+        var prontuarioProprio = new Prontuario(Guid.NewGuid(), animal.Id, "Consulta que este vet fez");
+
+        _currentUserMock.Setup(c => c.Role).Returns("Veterinario");
+        _currentUserMock.Setup(c => c.EntidadeId).Returns(vetId);
+        _acessoProntuarioServiceMock.Setup(s => s.PodeAcessarAsync(vetId, animal.Id, It.IsAny<DateTime>())).ReturnsAsync(true);
+        _acessoProntuarioServiceMock.Setup(s => s.TemAcessoCompletoAsync(vetId, animal.Id, It.IsAny<DateTime>())).ReturnsAsync(false);
+        _repoMock.Setup(r => r.ObterHistoricoLongitudinalPorVeterinarioAsync(animal.Id, vetId))
+            .ReturnsAsync([prontuarioProprio]);
+        _registroOcultadoRepoMock.Setup(r => r.ObterPorAnimalAsync(animal.Id)).ReturnsAsync([]);
+
+        var resultado = (await CriarServico().ObterHistoricoAsync(animal.Id)).ToList();
+
+        Assert.Single(resultado);
+        Assert.Equal(prontuarioProprio.Id, resultado[0].Id);
+        _repoMock.Verify(r => r.ObterHistoricoLongitudinalAsync(It.IsAny<Guid>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ObterHistoricoAsync_VeterinarioSemNenhumAcesso_LancaForbiddenExceptionACESSO001()
+    {
+        var animal = CriarAnimal();
+        var vetId = Guid.NewGuid();
+
+        _currentUserMock.Setup(c => c.Role).Returns("Veterinario");
+        _currentUserMock.Setup(c => c.EntidadeId).Returns(vetId);
+        _acessoProntuarioServiceMock.Setup(s => s.PodeAcessarAsync(vetId, animal.Id, It.IsAny<DateTime>())).ReturnsAsync(false);
+
+        var ex = await Assert.ThrowsAsync<ForbiddenException>(() => CriarServico().ObterHistoricoAsync(animal.Id));
+
+        Assert.Equal("ACESSO-001", ex.Codigo);
     }
 
     [Fact]
@@ -101,7 +147,9 @@ public class AnimalServiceTests
         var resultado = (await CriarServico().ObterHistoricoAsync(animal.Id)).ToList();
 
         Assert.Equal(2, resultado.Count);
-        // Papel Responsavel nunca precisa consultar quais prontuarios estao ocultados.
+        // Papel Responsavel nunca precisa consultar quais prontuarios estao ocultados nem a colmeia.
         _registroOcultadoRepoMock.Verify(r => r.ObterPorAnimalAsync(It.IsAny<Guid>()), Times.Never);
+        _acessoProntuarioServiceMock.Verify(
+            s => s.PodeAcessarAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<DateTime>()), Times.Never);
     }
 }

@@ -12,17 +12,20 @@ public class AnimalService : IAnimalService
 {
     private readonly IAnimalRepository _repo;
     private readonly IRegistroOcultadoRepository _registroOcultadoRepo;
+    private readonly IAcessoProntuarioService _acessoProntuarioService;
     private readonly ICurrentUserService _currentUser;
     private readonly TimeProvider _timeProvider;
 
     public AnimalService(
         IAnimalRepository repo,
         IRegistroOcultadoRepository registroOcultadoRepo,
+        IAcessoProntuarioService acessoProntuarioService,
         ICurrentUserService currentUser,
         TimeProvider timeProvider)
     {
         _repo = repo;
         _registroOcultadoRepo = registroOcultadoRepo;
+        _acessoProntuarioService = acessoProntuarioService;
         _currentUser = currentUser;
         _timeProvider = timeProvider;
     }
@@ -41,17 +44,40 @@ public class AnimalService : IAnimalService
     }
 
     /// <summary>
-    /// Retorna o histórico longitudinal de prontuários. Quando o chamador é um
-    /// veterinário, os prontuários ocultados pelo Responsável (RN-088) são
-    /// filtrados da lista — o Responsável sempre vê tudo.
+    /// Retorna o histórico longitudinal de prontuários. Para o Responsável (ou Admin),
+    /// sempre tudo. Para um veterinário, aplica a colmeia por evento clínico (RN-010/083):
+    /// com concessão ativa, vê tudo (menos os ocultados — RN-088); sem concessão, só o que
+    /// ele próprio produziu; sem nenhum vínculo com o animal, 403 (ACESSO-001). Todo acesso
+    /// de veterinário é registrado no log de auditoria (RN-086).
     /// </summary>
     public async Task<IEnumerable<ProntuarioDto>> ObterHistoricoAsync(Guid animalId)
     {
-        var prontuarios = await _repo.ObterHistoricoLongitudinalAsync(animalId);
+        IEnumerable<Prontuario> prontuarios;
+        HashSet<Guid> ocultadosIds = [];
 
-        var ocultadosIds = _currentUser.Role == "Veterinario"
-            ? (await _registroOcultadoRepo.ObterPorAnimalAsync(animalId)).Select(r => r.ProntuarioId).ToHashSet()
-            : [];
+        if (_currentUser.Role == "Veterinario")
+        {
+            var vetId = _currentUser.EntidadeId
+                ?? throw new ForbiddenException("ACESSO-001", "Acesso ao prontuario negado.");
+            var agora = _timeProvider.GetUtcNow().UtcDateTime;
+
+            if (!await _acessoProntuarioService.PodeAcessarAsync(vetId, animalId, agora))
+                throw new ForbiddenException("ACESSO-001", "Acesso ao prontuario negado.");
+
+            var acessoCompleto = await _acessoProntuarioService.TemAcessoCompletoAsync(vetId, animalId, agora);
+            prontuarios = acessoCompleto
+                ? await _repo.ObterHistoricoLongitudinalAsync(animalId)
+                : await _repo.ObterHistoricoLongitudinalPorVeterinarioAsync(animalId, vetId);
+
+            ocultadosIds = (await _registroOcultadoRepo.ObterPorAnimalAsync(animalId))
+                .Select(r => r.ProntuarioId).ToHashSet();
+
+            await _acessoProntuarioService.RegistrarAcessoAsync(vetId, animalId, "Listagem de prontuários do animal", agora);
+        }
+        else
+        {
+            prontuarios = await _repo.ObterHistoricoLongitudinalAsync(animalId);
+        }
 
         return prontuarios
             .Where(p => !ocultadosIds.Contains(p.Id))
@@ -64,6 +90,13 @@ public class AnimalService : IAnimalService
                 DataCriacao = p.DataCriacao, ExigeJustificativa = p.ExigeJustificativa(),
                 AlertaSeguranca = p.AlertaSeguranca, Ocultado = ocultadosIds.Contains(p.Id)
             });
+    }
+
+    /// <summary>Retorna o log completo de acessos ao prontuário do animal — visível ao Responsável (RN-086).</summary>
+    public async Task<IEnumerable<LogAcessoProntuarioDto>> ObterLogAcessosAsync(Guid animalId)
+    {
+        _ = await _repo.ObterPorIdAsync(animalId) ?? throw new NotFoundException("Animal", animalId);
+        return await _acessoProntuarioService.ObterLogAcessosAsync(animalId);
     }
 
     public async Task<IEnumerable<ExameDto>> ObterExamesAsync(Guid animalId)

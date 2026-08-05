@@ -41,4 +41,14 @@ public class AnimalRepository : RepositoryBase<Animal>, IAnimalRepository
     /// <inheritdoc/>
     public async Task<Prontuario?> ObterProntuarioPorIdAsync(Guid prontuarioId) =>
         await _context.Prontuarios.FirstOrDefaultAsync(p => p.Id == prontuarioId);
+
+    /// <inheritdoc/>
+    public async Task<IEnumerable<Prontuario>> ObterHistoricoLongitudinalPorVeterinarioAsync(Guid animalId, Guid veterinarioId) =>
+        await _context.Prontuarios
+            .Where(p => p.AnimalId == animalId)
+            .Join(_context.Consultas, p => p.ConsultaId, c => c.Id, (p, c) => new { Prontuario = p, c.VeterinarioId })
+            .Where(x => x.VeterinarioId == veterinarioId)
+            .Select(x => x.Prontuario)
+            .OrderByDescending(p => p.DataCriacao)
+            .ToListAsync();
 }

@@ -26,6 +26,7 @@ public class ConsultaServiceTests
     private readonly Mock<IConsentimentoLgpdRepository> _consentimentoRepoMock = new();
     private readonly Mock<IResponsavelRepository> _responsavelRepoMock = new();
     private readonly Mock<IVeterinarioRepository> _vetRepoMock = new();
+    private readonly Mock<IAcessoProntuarioService> _acessoProntuarioServiceMock = new();
     private readonly Mock<ICurrentUserService> _currentUserMock = new();
     private readonly FakeTimeProvider _timeProvider = new(new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc));
 
@@ -41,7 +42,7 @@ public class ConsultaServiceTests
     private ConsultaService CriarServico(params ICancelamentoStrategy[] strategies) =>
         new(_repoMock.Object, _pagamentoRepoMock.Object, _documentoRepoMock.Object, _animalRepoMock.Object,
             _consentimentoRepoMock.Object, _responsavelRepoMock.Object, _vetRepoMock.Object,
-            _currentUserMock.Object, _timeProvider, strategies);
+            _acessoProntuarioServiceMock.Object, _currentUserMock.Object, _timeProvider, strategies);
 
     private static CriarConsultaDto CriarDto(TipoServico tipoServico = TipoServico.Consulta, ModalidadeAtendimento modalidade = ModalidadeAtendimento.Presencial) => new()
     {

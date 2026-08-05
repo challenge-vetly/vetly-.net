@@ -28,6 +28,7 @@ public class ConsultaService : IConsultaService
     private readonly IConsentimentoLgpdRepository _consentimentoRepo;
     private readonly IResponsavelRepository _responsavelRepo;
     private readonly IVeterinarioRepository _vetRepo;
+    private readonly IAcessoProntuarioService _acessoProntuarioService;
     private readonly ICurrentUserService _currentUser;
     private readonly TimeProvider _timeProvider;
     private readonly IEnumerable<ICancelamentoStrategy> _strategies;
@@ -40,6 +41,7 @@ public class ConsultaService : IConsultaService
         IConsentimentoLgpdRepository consentimentoRepo,
         IResponsavelRepository responsavelRepo,
         IVeterinarioRepository vetRepo,
+        IAcessoProntuarioService acessoProntuarioService,
         ICurrentUserService currentUser,
         TimeProvider timeProvider,
         IEnumerable<ICancelamentoStrategy> strategies)
@@ -51,6 +53,7 @@ public class ConsultaService : IConsultaService
         _consentimentoRepo = consentimentoRepo;
         _responsavelRepo = responsavelRepo;
         _vetRepo = vetRepo;
+        _acessoProntuarioService = acessoProntuarioService;
         _currentUser = currentUser;
         _timeProvider = timeProvider;
         _strategies = strategies;
@@ -111,15 +114,23 @@ public class ConsultaService : IConsultaService
         return MapearParaDto(consulta);
     }
 
-    /// <summary>Confirma o pagamento da consulta, transicionando EmCheckout → Confirmada (RN-058).</summary>
+    /// <summary>
+    /// Confirma o pagamento da consulta, transicionando EmCheckout → Confirmada (RN-058).
+    /// Se o Responsável tem consentimento de compartilhamento na rede ativo, concede acesso
+    /// de colmeia ao vet da consulta (RN-083).
+    /// </summary>
     public async Task<ConsultaDto> ConfirmarPagamentoAsync(Guid consultaId)
     {
         var consulta = await _repo.ObterPorIdAsync(consultaId)
             ?? throw new NotFoundException("Consulta", consultaId);
 
-        consulta.ConfirmarPagamento(_timeProvider.GetUtcNow().UtcDateTime);
+        var agora = _timeProvider.GetUtcNow().UtcDateTime;
+        consulta.ConfirmarPagamento(agora);
         _repo.Atualizar(consulta);
         await _repo.SalvarAsync();
+
+        await _acessoProntuarioService.ConcederAcessoPorConsultaAsync(
+            consulta.Id, consulta.VeterinarioId, consulta.AnimalId, consulta.ResponsavelId, consulta.DataHora, agora);
 
         return MapearParaDto(consulta);
     }
@@ -299,6 +310,8 @@ public class ConsultaService : IConsultaService
 
     /// <summary>
     /// Agrega dados pre-consulta: animal, pré-sintomas, historico (ultimas 5), exames recentes (ultimos 3).
+    /// Para um veterinário, exige acesso ao animal (colmeia ou atendimento direto — RN-010/083)
+    /// e registra o acesso no log de auditoria (RN-086).
     /// </summary>
     public async Task<BriefingConsultaDto> ObterBriefingAsync(Guid consultaId)
     {
@@ -307,6 +320,19 @@ public class ConsultaService : IConsultaService
 
         var animal = await _animalRepo.ObterPorIdAsync(consulta.AnimalId)
             ?? throw new NotFoundException("Animal", consulta.AnimalId);
+
+        if (_currentUser.Role == "Veterinario")
+        {
+            var vetId = _currentUser.EntidadeId
+                ?? throw new ForbiddenException("ACESSO-001", "Acesso ao prontuario negado.");
+            var agora = _timeProvider.GetUtcNow().UtcDateTime;
+
+            if (!await _acessoProntuarioService.PodeAcessarAsync(vetId, animal.Id, agora))
+                throw new ForbiddenException("ACESSO-001", "Acesso ao prontuario negado.");
+
+            await _acessoProntuarioService.RegistrarAcessoAsync(
+                vetId, animal.Id, $"Briefing pré-consulta {consultaId}", agora);
+        }
 
         var historico = (await _repo.ObterPorAnimalAsync(consulta.AnimalId))
             .OrderByDescending(c => c.DataHora)

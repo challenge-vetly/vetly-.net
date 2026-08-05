@@ -56,4 +56,8 @@ public class ConsultaRepository : RepositoryBase<Consulta>, IConsultaRepository
 
         return await query.OrderByDescending(c => c.DataHora).ToListAsync();
     }
+
+    /// <inheritdoc/>
+    public async Task<bool> ExisteConsultaAsync(Guid veterinarioId, Guid animalId) =>
+        await _dbSet.AnyAsync(c => c.VeterinarioId == veterinarioId && c.AnimalId == animalId);
 }
