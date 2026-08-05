@@ -11,4 +11,10 @@ public class TriagemResultadoDto
 
     /// <summary>Possíveis causas dos sintomas identificadas pela triagem.</summary>
     public List<string> PossiveisCausas { get; set; } = [];
+
+    /// <summary>
+    /// Disclaimer fixo: esta triagem nunca é um diagnóstico (RN-100). Sempre preenchido,
+    /// independente do resultado do modelo.
+    /// </summary>
+    public string Disclaimer { get; set; } = string.Empty;
 }

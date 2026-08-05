@@ -194,20 +194,31 @@ public class ConsultaStateMachineTests
     }
 
     [Fact]
-    public void PodeGerarDocumentos_DiagnosticoValidadoEConfirmada_RetornaTrue()
+    public void PodeGerarDocumentos_EstadoFinalDefinidoEConfirmada_RetornaTrue()
     {
         var consulta = LevarA(StatusConsulta.Confirmada);
-        consulta.ValidarDiagnostico();
+        consulta.DefinirDiagnosticoFinal("Diagnostico final de teste");
 
         Assert.True(consulta.PodeGerarDocumentos());
     }
 
     [Fact]
-    public void PodeGerarDocumentos_SemDiagnosticoValidado_RetornaFalse()
+    public void PodeGerarDocumentos_SemEstadoFinalDefinido_RetornaFalse()
     {
         var consulta = LevarA(StatusConsulta.Confirmada);
 
         Assert.False(consulta.PodeGerarDocumentos());
+    }
+
+    [Fact]
+    public void DefinirDiagnosticoFinal_MarcaEstadoFinalDefinido()
+    {
+        var consulta = CriarConsulta();
+
+        consulta.DefinirDiagnosticoFinal("Otite externa");
+
+        Assert.True(consulta.EstadoFinalDefinido);
+        Assert.Equal("Otite externa", consulta.DiagnosticoFinal);
     }
 
     /// <summary>Utilitário de teste: avança a consulta pelas transições necessárias até o estado desejado.</summary>

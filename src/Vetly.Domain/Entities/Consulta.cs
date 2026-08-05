@@ -68,6 +68,21 @@ public class Consulta
     /// <summary>Indica se o veterinário validou o protocolo de tratamento sugerido pela IA.</summary>
     public bool ProtocoloValidado { get; private set; }
 
+    /// <summary>
+    /// Diagnóstico final autoritativo (aprovado ou reescrito pelo vet — RN-099). Gate
+    /// principal de <see cref="EstadoFinalDefinido"/>.
+    /// </summary>
+    public string? DiagnosticoFinal { get; private set; }
+
+    /// <summary>Protocolo final autoritativo (aprovado ou reescrito pelo vet — RN-099).</summary>
+    public string? ProtocoloFinal { get; private set; }
+
+    /// <summary>
+    /// True assim que o diagnóstico final é definido (RN-099). Gate de geração de
+    /// documentos clínicos — evolução da RN-024 (CONSULTA-012 se ainda false).
+    /// </summary>
+    public bool EstadoFinalDefinido { get; private set; }
+
     /// <summary>Construtor privado reservado ao EF Core para materialização de entidades.</summary>
     private Consulta() { }
 
@@ -180,10 +195,20 @@ public class Consulta
         ContadorRemarcacoes++;
     }
 
+    /// <summary>Define o diagnóstico final autoritativo (RN-099) e abre o gate de documentos (RN-024).</summary>
+    public void DefinirDiagnosticoFinal(string diagnosticoFinal)
+    {
+        DiagnosticoFinal = diagnosticoFinal;
+        EstadoFinalDefinido = true;
+    }
+
+    /// <summary>Define o protocolo final autoritativo (RN-099).</summary>
+    public void DefinirProtocoloFinal(string protocoloFinal) => ProtocoloFinal = protocoloFinal;
+
     /// <summary>
     /// Verifica se a consulta está apta para geração de documentos.
-    /// Requer diagnóstico validado E pagamento confirmado (Confirmada ou já Realizada).
+    /// Requer estado final definido (RN-099/024) E pagamento confirmado (Confirmada ou já Realizada).
     /// </summary>
     public bool PodeGerarDocumentos() =>
-        DiagnosticoValidado && Status is StatusConsulta.Confirmada or StatusConsulta.Realizada;
+        EstadoFinalDefinido && Status is StatusConsulta.Confirmada or StatusConsulta.Realizada;
 }

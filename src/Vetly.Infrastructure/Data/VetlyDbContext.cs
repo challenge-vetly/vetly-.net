@@ -21,6 +21,7 @@ public class VetlyDbContext : DbContext
     public DbSet<LembreteAgendado> Lembretes => Set<LembreteAgendado>();
     public DbSet<ConsentimentoLgpd> ConsentimentosLgpd => Set<ConsentimentoLgpd>();
     public DbSet<RegistroOcultado> RegistrosOcultados => Set<RegistroOcultado>();
+    public DbSet<LogAuditoriaIA> LogsAuditoriaIA => Set<LogAuditoriaIA>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

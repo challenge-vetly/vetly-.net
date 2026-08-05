@@ -23,10 +23,17 @@ public class DocumentoServiceTests
     private readonly Mock<IConsultaRepository> _consultaRepoMock = new();
     private readonly Mock<IVeterinarioRepository> _vetRepoMock = new();
     private readonly Mock<IAnimalRepository> _animalRepoMock = new();
+    private readonly Mock<ILogAuditoriaIARepository> _logAuditoriaRepoMock = new();
+
+    public DocumentoServiceTests()
+    {
+        _logAuditoriaRepoMock.Setup(r => r.AdicionarAsync(It.IsAny<LogAuditoriaIA>())).Returns(Task.CompletedTask);
+        _logAuditoriaRepoMock.Setup(r => r.SalvarAsync()).ReturnsAsync(1);
+    }
 
     private DocumentoService CriarServico(params IDocumentoFactory[] factories) =>
-        new(_docRepoMock.Object, _consultaRepoMock.Object,
-            _vetRepoMock.Object, _animalRepoMock.Object, factories);
+        new(_docRepoMock.Object, _consultaRepoMock.Object, _vetRepoMock.Object,
+            _animalRepoMock.Object, _logAuditoriaRepoMock.Object, factories, TimeProvider.System);
 
     private static Consulta CriarConsultaValidada()
     {
@@ -37,6 +44,7 @@ public class DocumentoServiceTests
         consulta.IniciarCheckout(agora);
         consulta.ConfirmarPagamento(agora);
         consulta.ValidarDiagnostico();
+        consulta.DefinirDiagnosticoFinal("Diagnostico final de teste");
         return consulta;
     }
 
@@ -103,7 +111,7 @@ public class DocumentoServiceTests
         var ex = await Assert.ThrowsAsync<BusinessRuleException>(
             () => service.GerarAsync(consulta.Id, TipoDocumento.Prontuario));
 
-        Assert.Equal("RN-024", ex.Codigo);
+        Assert.Equal("CONSULTA-012", ex.Codigo);
     }
 
     // ── Helper para controlar DataGeracao nos testes de correção ─────────────

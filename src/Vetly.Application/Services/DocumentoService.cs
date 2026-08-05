@@ -2,6 +2,7 @@ using Vetly.Application.DTOs.Documento;
 using Vetly.Application.Exceptions;
 using Vetly.Application.Factories;
 using Vetly.Application.Interfaces;
+using Vetly.Domain.Entities;
 using Vetly.Domain.Enums;
 
 namespace Vetly.Application.Services;
@@ -16,20 +17,26 @@ public class DocumentoService : IDocumentoService
     private readonly IConsultaRepository _consultaRepo;
     private readonly IVeterinarioRepository _vetRepo;
     private readonly IAnimalRepository _animalRepo;
+    private readonly ILogAuditoriaIARepository _logAuditoriaRepo;
     private readonly IEnumerable<IDocumentoFactory> _factories;
+    private readonly TimeProvider _timeProvider;
 
     public DocumentoService(
         IDocumentoRepository repo,
         IConsultaRepository consultaRepo,
         IVeterinarioRepository vetRepo,
         IAnimalRepository animalRepo,
-        IEnumerable<IDocumentoFactory> factories)
+        ILogAuditoriaIARepository logAuditoriaRepo,
+        IEnumerable<IDocumentoFactory> factories,
+        TimeProvider timeProvider)
     {
         _repo = repo;
         _consultaRepo = consultaRepo;
         _vetRepo = vetRepo;
         _animalRepo = animalRepo;
+        _logAuditoriaRepo = logAuditoriaRepo;
         _factories = factories;
+        _timeProvider = timeProvider;
     }
 
     public async Task<IEnumerable<DocumentoDto>> ObterPorConsultaAsync(Guid consultaId)
@@ -55,8 +62,8 @@ public class DocumentoService : IDocumentoService
             ?? throw new NotFoundException("Consulta", consultaId);
 
         if (!consulta.PodeGerarDocumentos())
-            throw new BusinessRuleException("RN-024",
-                "O diagnostico deve ser validado pelo veterinario antes de gerar documentos.");
+            throw new BusinessRuleException("CONSULTA-012",
+                "O estado final (diagnostico) precisa estar definido antes de gerar documentos (RN-024/099).");
 
         var vet = await _vetRepo.ObterPorIdAsync(consulta.VeterinarioId)
             ?? throw new NotFoundException("Veterinario", consulta.VeterinarioId);
@@ -80,6 +87,16 @@ public class DocumentoService : IDocumentoService
         var documento = factory.Criar(consultaDto, vetDto, animalDto);
         await _repo.AdicionarAsync(documento);
         await _repo.SalvarAsync();
+
+        // RN-099.1: a geracao e formatacao a partir do estado final, nao nova inferencia —
+        // o log ja nasce com decisao/conteudo final definidos (RegistrarArtefatoAutomatico).
+        var conteudoGerado = $"{tipo}: {consulta.DiagnosticoFinal}";
+        var log = LogAuditoriaIA.RegistrarArtefatoAutomatico(
+            consulta.Id, vet.Id, vet.Crmv.Valor, "formatacao-documento", TipoSugestaoIA.DocumentoGerado,
+            conteudoGerado, _timeProvider.GetUtcNow().UtcDateTime);
+        await _logAuditoriaRepo.AdicionarAsync(log);
+        await _logAuditoriaRepo.SalvarAsync();
+
         return MapearParaDto(documento);
     }
 

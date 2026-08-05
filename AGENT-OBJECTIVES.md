@@ -27,7 +27,7 @@ Plano de referência completo (decisões de arquitetura, mapeamento fase→arqui
 - [x] Fase 5 — Pagamento simulado + IComissaoStrategy por plano (RN-037, RN-089)
 - [x] Fase 6 — Cancelamento/no-show v2: crédito de cortesia, strikes, suspensão
       (RN-062..067)
-- [ ] Fase 7 — IA v2: decisão Aprovar/NãoAprovar/Corrigir + LogAuditoriaIA
+- [x] Fase 7 — IA v2: decisão Aprovar/NãoAprovar/Corrigir + LogAuditoriaIA
       (RN-096..100)
 - [ ] Fase 8 — Colmeia por evento clínico: ConcessaoAcessoProntuario +
       LogAcessoProntuario (RN-083..088)
@@ -117,6 +117,25 @@ README de contratos (Fase 13).
   a partir de qualquer estado (inclusive cancelar uma consulta já cancelada), então
   `CONSULTA-001` ficou redundante. Testes antigos que dependiam desses dois foram
   atualizados/removidos (ver corpo do commit da Fase 4).
+- **`LogAuditoriaIA` tem um único método de mutação (`RegistrarDecisao`), chamável
+  uma única vez** — desvio pontual do texto literal "imutável — sem métodos de
+  mutação após criação" (Fase 7). Justificativa: o próprio contrato de endpoints
+  exige isso — `POST .../ia/diagnostico` devolve um `logId` no momento da
+  sugestão, e `POST .../ia/decisao` não recebe nenhum id nem o conteúdo sugerido
+  de volta (só `tipo`/`decisao`/`conteudoCorrigido`). Isso só fecha se o log
+  nascer "pendente" na sugestão (com o conteúdo sugerido já gravado) e for
+  finalizado na decisão (a `ObterPendenteAsync` busca o pendente mais recente por
+  consulta+tipo). Uma segunda chamada a `RegistrarDecisao` lança
+  `DomainException("IA-002", ...)` — depois de finalizado, o registro é imutável
+  de verdade. Artefatos sem decisão de vet (`DocumentoGerado`, gerados via
+  `LogAuditoriaIA.RegistrarArtefatoAutomatico`) nascem já finalizados, sem passar
+  pelo ciclo pendente.
+- **`PodeGerarDocumentos()` trocou o gate de `DiagnosticoValidado` (bool, v1) para
+  `EstadoFinalDefinido` (bool, v2)** — evolução explícita da RN-024 pedida na
+  Fase 7. O erro também mudou: `DocumentoService.GerarAsync` agora lança
+  `BusinessRuleException("CONSULTA-012", ...)` em vez de `"RN-024"`.
+  `DiagnosticoValidado`/`ValidarDiagnostico()` (v1) continuam existindo e
+  funcionando — só pararam de ser o gate de geração de documentos.
 - **Enums trafegam como string no JSON** (`"finalidade": "CompartilhamentoRede"`):
   `Program.cs` ganhou `AddJsonOptions` com `JsonStringEnumConverter` global,
   aplicado a partir da Fase 2. O v1 serializava enums como int; a spec v2 mostra
@@ -127,44 +146,48 @@ README de contratos (Fase 13).
 
 ## ESTADO ATUAL
 
-**Fase corrente:** Fase 6 concluída (commit a registrar, tag `v2-fase-06-cancelamento`).
-Iniciando Fase 7.
-**Baseline de testes:** 121/121 verdes (115 unit + 6 integration) — cresceu a
-partir dos 112 da Fase 5 com `VeterinarioStrikeTests` (4 casos, domínio puro),
-2 novos casos em `ResponsavelTests` (crédito) e 4 novos casos em
-`ConsultaServiceTests` (no-show do responsável/veterinário, teto do crédito,
-3º strike suspende).
-**O que mudou na Fase 6:** `Veterinario` ganha `StrikesAtivos` (owned collection
-`StrikeReputacao { Data, Motivo }`, mapeada via `OwnsMany` em
-`TB_VETERINARIO_STRIKE` — histórico nunca apagado), `SuspensoAte`,
-`RegistrarStrike(agora, motivo)` (3 strikes na janela móvel de 90 dias ⇒
-suspenso 7 dias), `EstaSuspenso(agora)`, `StrikesNaJanela(agora)`. `Responsavel`
-ganha `CreditarSaldoCreditosVetly(valor)` (`DomainException("RESPONSAVEL-002", ...)`
-se valor ≤ 0). Novo `ConsultaService.CancelamentoPeloVeterinarioAsync`: crédito
-de cortesia = min(10% do valor pago, R$30) + strike — não exige pagamento
-vinculado (cancelar a partir de `EmCheckout` sem pagamento ainda só aplica o
-strike). `RegistrarNoShowAsync` (Fase 4) ganha as consequências reais: no-show
-do Responsável chama `Responsavel.RegistrarNoShow(agora)` (Fase 1); no-show do
-vet recebe o mesmo tratamento do cancelamento pelo vet (crédito + strike),
-via helper privado compartilhado `AplicarConsequenciasVeterinarioAsync`.
-`CancelarAsync` (Fase 4) ganha os campos `Janela` (">24h"/"24h-2h"/"&lt;2h") e
-`Liquidado` (sempre `false`) em `ResultadoCancelamentoDto` — estendido, não
-substituído, para não quebrar o contrato já existente. `VeterinarioDto` ganha
-`StrikesAtivos` (int, contagem na janela de 90 dias — mesma convenção de
-`ResponsavelDto.NoShowsAtivos`) e `SuspensoAte`. Novo endpoint
-`POST /api/consultas/{id}/cancelar-pelo-veterinario`. Migration
-`Fase06_CancelamentoNoShowV2`: puramente aditiva (`AddColumn SUSPENSO_ATE` +
-`CreateTable TB_VETERINARIO_STRIKE` com FK cascade), gerada corretamente pela
-scaffold automática sem necessidade de edição manual.
-**Próximos passos:** Fase 7 — IA v2: nova entidade imutável `LogAuditoriaIA`
-(`ConsultaId`, `VeterinarioId`, `Crmv`, `Timestamp`, `VersaoModelo`,
-`TipoSugestao`, `ConteudoSugerido`, `Decisao`, `ConteudoFinal`). `Consulta`
-ganha `DiagnosticoFinal`/`ProtocoloFinal`/`EstadoFinalDefinido` — documentos só
-gerados com esse flag (`DomainException("CONSULTA-012", ...)`). `OllamaService`
-já existe (v1) mas está desconectado do fluxo clínico — Fase 7 conecta
-`SugerirDiagnosticoAsync`/`SugerirProtocoloAsync` (recusa com
-`BusinessRuleException("IA-001", ...)` se `Animal.PesoKg` for nulo, antes de
-chamar o modelo) e `RegistrarDecisaoAsync` (Aprovar/Corrigir/NãoAprovar,
-grava `LogAuditoriaIA` a cada chamada). Endpoints
+**Fase corrente:** Fase 7 concluída (commit a registrar, tag `v2-fase-07-ia`).
+Iniciando Fase 8.
+**Baseline de testes:** 137/137 verdes (131 unit + 6 integration) — cresceu a
+partir dos 121 da Fase 6 com `LogAuditoriaIATests` (6 casos, domínio puro),
+`ConsultaIaServiceTests` (7 casos, Moq), 3 novos casos em `OllamaServiceTests`
+(disclaimer sempre presente, escalonamento de emergência) e ajustes em
+`ConsultaStateMachineTests`/`DocumentoServiceTests` para o novo gate
+`EstadoFinalDefinido`.
+**O que mudou na Fase 7:** nova entidade `LogAuditoriaIA` com ciclo
+pendente→finalizado (ver "Decisões de fundação" acima) e enums novos
+`TipoSugestaoIA`/`DecisaoVeterinario`. `Consulta` ganha `DiagnosticoFinal`,
+`ProtocoloFinal`, `EstadoFinalDefinido`, `DefinirDiagnosticoFinal(texto)`,
+`DefinirProtocoloFinal(texto)`; `PodeGerarDocumentos()` migrou de
+`DiagnosticoValidado` para `EstadoFinalDefinido` (ver "Decisões de fundação").
+Novo serviço `ConsultaIaService` (não amontoado em `ConsultaService`, já grande
+demais) orquestra: monta o contexto clínico (espécie/raça/idade/peso/pré-sintomas/
+condições) → chama `IOllamaService` (v1, inalterado) → grava
+`LogAuditoriaIA` pendente com um `logId` retornado ao cliente.
+`SugerirProtocoloAsync` recusa com `BusinessRuleException("IA-001", ...)`
+**antes** de chamar o modelo se `Animal.PesoKg` for nulo, e cruza os
+medicamentos sugeridos contra `Animal.MedicacoesEmUso` para gerar alertas de
+interação. `RegistrarDecisaoAsync` busca o log pendente mais recente por
+consulta+tipo (`IA-003` se `Corrigir` sem `conteudoCorrigido`), finaliza-o e,
+se houver conteúdo final (Aprovar/Corrigir), define o campo final
+correspondente na `Consulta`. `DocumentoService.GerarAsync` passa a gravar um
+log `DocumentoGerado` (via `RegistrarArtefatoAutomatico`, já finalizado — RN-097).
+`OllamaService.RealizarTriagemAsync` (RN-100) agora sempre preenche
+`TriagemResultadoDto.Disclaimer` e força menção a atendimento presencial
+imediato quando o nível de urgência é "Emergência". Novos endpoints
 `POST /api/consultas/{id}/ia/{diagnostico|protocolo|decisao}`,
-`GET /{id}/ia/auditoria`.
+`GET /{id}/ia/auditoria`. Migration `Fase07_IADecisaoAuditoria`: puramente
+aditiva (`AddColumn` em `TB_CONSULTA` + `CreateTable TB_LOG_AUDITORIA_IA`).
+**Próximos passos:** Fase 8 — colmeia por evento clínico: novas entidades
+`ConcessaoAcessoProntuario` (`AnimalId`, `VeterinarioId`, `ConsultaId`,
+`BaseAcesso` enum `{ConsentimentoRede, AtendimentoDireto}`, `ConcedidoEm`,
+`ExpiraEm`, `Revogada`) e `LogAcessoProntuario` (somente inserção). Ao
+confirmar uma consulta (`Consulta.ConfirmarPagamento`, já existe), se o
+Responsável tem `CompartilhamentoRede` ativo (Fase 2), cria concessão com
+expiração no fim do ciclo (consulta + 24h). Novo `AcessoProntuarioService.
+PodeAcessarAsync(vetId, animalId, agora)`, usado por
+`ConsultaService.ObterBriefingAsync` e pelos endpoints de prontuário; todo
+acesso efetivo grava `LogAcessoProntuario`. Reaproveita o filtro de
+`RegistroOcultado` (Fase 3). Endpoints `GET /api/animais/{id}/prontuarios`
+(403 `ACESSO-001` se negado), `GET /api/animais/{id}/log-acessos`,
+`GET /api/veterinarios/{id}/concessoes`.

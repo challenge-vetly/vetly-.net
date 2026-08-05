@@ -82,6 +82,7 @@ builder.Services.AddScoped<IEmpresaRepository, EmpresaRepository>();
 builder.Services.AddScoped<ILembreteRepository, LembreteRepository>();
 builder.Services.AddScoped<IConsentimentoLgpdRepository, ConsentimentoLgpdRepository>();
 builder.Services.AddScoped<IRegistroOcultadoRepository, RegistroOcultadoRepository>();
+builder.Services.AddScoped<ILogAuditoriaIARepository, LogAuditoriaIARepository>();
 
 // ── Serviços de Aplicação ────────────────────────────────────────────────────
 builder.Services.AddScoped<IVeterinarioService, VeterinarioService>();
@@ -94,6 +95,7 @@ builder.Services.AddScoped<IExameService, ExameService>();
 builder.Services.AddScoped<IPagamentoService, PagamentoService>();
 builder.Services.AddScoped<IEmpresaService, EmpresaService>();
 builder.Services.AddScoped<ILembreteService, LembreteService>();
+builder.Services.AddScoped<IConsultaIaService, ConsultaIaService>();
 
 // ── Factories (IEnumerable<IDocumentoFactory> — resolvidas pelo DI) ──────────
 builder.Services.AddScoped<IDocumentoFactory, ProntuarioFactory>();

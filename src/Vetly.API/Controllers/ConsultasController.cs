@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Vetly.Application.DTOs.Cancelamento;
 using Vetly.Application.DTOs.Consulta;
+using Vetly.Application.DTOs.IA;
 using Vetly.Application.Interfaces;
 using Vetly.Domain.Enums;
 
@@ -18,8 +19,13 @@ namespace Vetly.API.Controllers;
 public class ConsultasController : ControllerBase
 {
     private readonly IConsultaService _service;
+    private readonly IConsultaIaService _iaService;
 
-    public ConsultasController(IConsultaService service) => _service = service;
+    public ConsultasController(IConsultaService service, IConsultaIaService iaService)
+    {
+        _service = service;
+        _iaService = iaService;
+    }
 
     /// <summary>Retorna todas as consultas com filtros opcionais.</summary>
     [HttpGet]
@@ -130,4 +136,34 @@ public class ConsultasController : ControllerBase
         await _service.ValidarDiagnosticoAsync(id);
         return NoContent();
     }
+
+    /// <summary>Sugere hipoteses diagnosticas ordenadas por probabilidade (RN-096.1).</summary>
+    [HttpPost("{id:guid}/ia/diagnostico")]
+    [ProducesResponseType(typeof(SugestaoDiagnosticoResponseDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> SugerirDiagnosticoIA(Guid id) =>
+        Ok(await _iaService.SugerirDiagnosticoAsync(id));
+
+    /// <summary>Sugere protocolo de tratamento com dose calculada pelo peso (RN-096.2).</summary>
+    [HttpPost("{id:guid}/ia/protocolo")]
+    [ProducesResponseType(typeof(SugestaoProtocoloResponseDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
+    public async Task<IActionResult> SugerirProtocoloIA(Guid id) =>
+        Ok(await _iaService.SugerirProtocoloAsync(id));
+
+    /// <summary>Registra a decisao do veterinario (Aprovar/NaoAprovar/Corrigir) sobre uma sugestao de IA (RN-099).</summary>
+    [HttpPost("{id:guid}/ia/decisao")]
+    [ProducesResponseType(typeof(RegistrarDecisaoIAResponseDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
+    public async Task<IActionResult> RegistrarDecisaoIA(Guid id, [FromBody] RegistrarDecisaoIADto dto) =>
+        Ok(await _iaService.RegistrarDecisaoAsync(id, dto));
+
+    /// <summary>Retorna a trilha completa de auditoria de IA da consulta (RN-098).</summary>
+    [HttpGet("{id:guid}/ia/auditoria")]
+    [ProducesResponseType(typeof(IEnumerable<LogAuditoriaIADto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ObterAuditoriaIA(Guid id) =>
+        Ok(await _iaService.ObterAuditoriaAsync(id));
 }

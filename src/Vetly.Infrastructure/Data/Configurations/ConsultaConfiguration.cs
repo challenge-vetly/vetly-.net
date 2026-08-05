@@ -76,6 +76,19 @@ public class ConsultaConfiguration : IEntityTypeConfiguration<Consulta>
         builder.Property(c => c.DataRealizada)
             .HasColumnName("DATA_REALIZADA");
 
+        // Estado final da decisao clinica (RN-099) — v2 IA
+        builder.Property(c => c.DiagnosticoFinal)
+            .HasColumnType("CLOB")
+            .HasColumnName("DIAGNOSTICO_FINAL");
+
+        builder.Property(c => c.ProtocoloFinal)
+            .HasColumnType("CLOB")
+            .HasColumnName("PROTOCOLO_FINAL");
+
+        builder.Property(c => c.EstadoFinalDefinido)
+            .HasColumnType("NUMBER(1)")
+            .HasColumnName("ESTADO_FINAL_DEFINIDO");
+
         // Índice composto para as buscas mais comuns: por veterinário + data
         builder.HasIndex(c => c.VeterinarioId).HasDatabaseName("IX_CONSULTA_VETERINARIO");
         builder.HasIndex(c => c.AnimalId).HasDatabaseName("IX_CONSULTA_ANIMAL");
