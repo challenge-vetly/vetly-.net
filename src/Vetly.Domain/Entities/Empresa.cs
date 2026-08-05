@@ -31,6 +31,13 @@ public class Empresa
     /// <summary>Indica se a empresa está ativa na plataforma.</summary>
     public bool Ativa { get; private set; }
 
+    /// <summary>
+    /// Valor da assinatura Enterprise, por faixa de nº de veterinários ativos vinculados
+    /// (RN-092). Recalculado pela Fase 11 sempre que o nº de vets é conhecido de fresh
+    /// (vinculação, dashboard, assinatura) — não navega para <c>Veterinario</c>.
+    /// </summary>
+    public decimal FaixaEnterprise { get; private set; }
+
     /// <summary>Construtor privado reservado ao EF Core para materialização de entidades.</summary>
     private Empresa()
     {
@@ -60,4 +67,19 @@ public class Empresa
 
     /// <summary>Desativa a empresa (soft delete).</summary>
     public void Desativar() => Ativa = false;
+
+    /// <summary>
+    /// Recalcula <see cref="FaixaEnterprise"/> pela contagem de veterinários ativos (RN-092):
+    /// R$ 599 até 5, R$ 999 até 10, R$ 1.699 até 20, +R$ 70 por vet acima de 20.
+    /// </summary>
+    public void RecalcularFaixaEnterprise(int qtdVeterinariosAtivos)
+    {
+        FaixaEnterprise = qtdVeterinariosAtivos switch
+        {
+            <= 5 => 599m,
+            <= 10 => 999m,
+            <= 20 => 1699m,
+            _ => 1699m + (qtdVeterinariosAtivos - 20) * 70m
+        };
+    }
 }

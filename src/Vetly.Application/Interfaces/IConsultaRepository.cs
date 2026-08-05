@@ -20,4 +20,7 @@ public interface IConsultaRepository : IRepositoryBase<Consulta>
 
     /// <summary>Indica se o veterinário já teve alguma consulta com este animal (base do acesso restrito clássico — RN-010).</summary>
     Task<bool> ExisteConsultaAsync(Guid veterinarioId, Guid animalId);
+
+    /// <summary>Retorna todas as consultas de um conjunto de veterinários — usado no dashboard consolidado da empresa (RN-007).</summary>
+    Task<IEnumerable<Consulta>> ObterPorVeterinariosAsync(IEnumerable<Guid> veterinarioIds);
 }

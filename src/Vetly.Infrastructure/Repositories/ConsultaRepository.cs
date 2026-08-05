@@ -60,4 +60,10 @@ public class ConsultaRepository : RepositoryBase<Consulta>, IConsultaRepository
     /// <inheritdoc/>
     public async Task<bool> ExisteConsultaAsync(Guid veterinarioId, Guid animalId) =>
         await _dbSet.AnyAsync(c => c.VeterinarioId == veterinarioId && c.AnimalId == animalId);
+
+    /// <inheritdoc/>
+    public async Task<IEnumerable<Consulta>> ObterPorVeterinariosAsync(IEnumerable<Guid> veterinarioIds) =>
+        await _dbSet
+            .Where(c => veterinarioIds.Contains(c.VeterinarioId))
+            .ToListAsync();
 }

@@ -74,4 +74,24 @@ public class EmpresasController : ControllerBase
         await _service.DesativarAsync(id);
         return NoContent();
     }
+
+    /// <summary>
+    /// Dashboard financeiro consolidado da empresa (RN-007): produção agregada dos vets
+    /// vinculados, sem dados bancários pessoais nem remuneração individual. Restrito ao
+    /// Admin da própria empresa.
+    /// </summary>
+    [HttpGet("{id:guid}/dashboard")]
+    [ProducesResponseType(typeof(DashboardConsolidadoDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ObterDashboard(Guid id) =>
+        Ok(await _service.ObterDashboardConsolidadoAsync(id));
+
+    /// <summary>Retorna o estado atual da assinatura Enterprise por faixa de nº de vets (RN-092).</summary>
+    [HttpGet("{id:guid}/assinatura")]
+    [ProducesResponseType(typeof(AssinaturaEmpresaDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ObterAssinatura(Guid id) =>
+        Ok(await _service.ObterAssinaturaAsync(id));
 }

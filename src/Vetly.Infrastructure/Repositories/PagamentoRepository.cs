@@ -21,4 +21,12 @@ public class PagamentoRepository : RepositoryBase<Pagamento>, IPagamentoReposito
     public async Task<Pagamento?> ObterPorConsultaAsync(Guid consultaId) =>
         await _dbSet
             .FirstOrDefaultAsync(p => p.ConsultaId == consultaId);
+
+    /// <inheritdoc/>
+    public async Task<IEnumerable<Pagamento>> ObterPorVeterinariosAsync(IEnumerable<Guid> veterinarioIds) =>
+        await _dbSet
+            .Join(_context.Consultas, p => p.ConsultaId, c => c.Id, (p, c) => new { Pagamento = p, c.VeterinarioId })
+            .Where(x => veterinarioIds.Contains(x.VeterinarioId))
+            .Select(x => x.Pagamento)
+            .ToListAsync();
 }

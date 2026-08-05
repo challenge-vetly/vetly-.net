@@ -35,7 +35,7 @@ Plano de referência completo (decisões de arquitetura, mapeamento fase→arqui
       (RN-076..082)
 - [x] Fase 10 — Fidelidade: ObrigacaoDoPet (Factory por espécie), PontosFidelidade
       FIFO, tiers, IDescontoFidelidadeStrategy (RN-069..075)
-- [ ] Fase 11 — Dashboard consolidado do Administrador + FaixaEnterprise +
+- [x] Fase 11 — Dashboard consolidado do Administrador + FaixaEnterprise +
       autorização por posse via claim entidadeId (RN-007, RN-092, RN-001..006)
 - [ ] Fase 12 — Documento: assinatura por nome digitado (RN-031, RN-091)
 - [ ] Fase 13 — Documentação final: README de contratos + FLUXO-DE-TESTE.md +
@@ -197,62 +197,78 @@ README de contratos (Fase 13).
   grande, e uma camada — Application — chamando outro serviço da mesma
   camada dentro de um fluxo que hoje não previa isso). Efeito observável para
   o cliente é o mesmo se o frontend encadear as duas chamadas.
+- **`Empresa.FaixaEnterprise` é recalculada no read (dashboard, assinatura,
+  vinculação), não em todo evento que muda a contagem de vets** — desvio do
+  texto original do plano ("recalculada ao vincular/desativar vet"). Contar
+  vets ativos de uma empresa é uma query barata
+  (`IVeterinarioRepository.ObterPorEmpresaAsync`, já filtra `Ativo`), então
+  recalcular a cada leitura financeira é tão correto quanto recalcular em
+  todo evento de mutação, sem exigir que `VeterinarioService.DesativarAsync`
+  passe a depender de `IEmpresaRepository` (acoplamento novo, cruzando
+  serviços, só para manter um campo denormalizado sempre atualizado que
+  ninguém lê fora do próprio `EmpresaService`). `ObterPorIdAsync`/
+  `ObterTodosAsync` (listagens simples) mostram o último valor persistido,
+  que pode ficar levemente desatualizado até a próxima
+  vinculação/dashboard/assinatura — aceitável, documentado no DTO.
+- **RN-001..006 (vet vinculado só vê a própria agenda/pacientes) foi
+  implementado só em `VeterinarioService.ObterAgendaAsync` e
+  `ConsultaService.ObterPorVeterinarioAsync`** — os dois endpoints
+  literalmente rotulados "agenda"/"minhas consultas". Não foi retrofitado em
+  `ConsultasController.ObterTodas` (que aceita `veterinarioId` como filtro
+  opcional de uma listagem geral, usada também por Admin) nem em outros
+  endpoints de leitura — expandir a checagem de posse para todo endpoint que
+  toque em `VeterinarioId` é um escopo maior, não pedido explicitamente por
+  nenhuma RN além da agenda/consultas do próprio vet, e arriscaria quebrar
+  fluxos administrativos existentes sem um caso de teste que os cubra.
+- **Dashboard consolidado (RN-007) não inclui contagem de Notas Fiscais** —
+  a vedação de dados bancários/remuneração individual/dados de outra empresa
+  é garantida *por construção* do `DashboardConsolidadoDto` (a lista de
+  campos que ele tem), mas o conjunto de KPIs ficou restrito a
+  faturamento/comissão/repasse/reembolso/contagem de consultas — os
+  explicitamente nomeados por RN-007 ("faturamento bruto, comissões/
+  repasses"). Agregar NFs exigiria uma nova consulta por `Documento` tipo
+  `NotaFiscal` cruzada por vet, sem um pedido explícito além da menção
+  genérica "NFs" no texto da RN — fica de fora para não inflar o escopo
+  sem necessidade concreta.
 
 ## ESTADO ATUAL
 
-**Fase corrente:** Fase 10 concluída (commit a registrar, tag
-`v2-fase-10-fidelidade`). Iniciando Fase 11.
-**Baseline de testes:** 211/211 verdes (205 unit + 6 integration) — cresceu a
-partir dos 173 da Fase 9 com `ObrigacaoDoPetTests` (6 casos, domínio puro),
-`PontosFidelidadeTests` (6 casos, domínio puro), `ObrigacaoFactoryTests` (6
-casos), `ObrigacaoServiceTests` (5 casos, Moq), `FidelidadeServiceTests` (11
-casos, Moq) e 5 novos casos em `ResponsavelTests` (limiares de tier).
-**O que mudou na Fase 10:** novas entidades `ObrigacaoDoPet` (`AnimalId`,
-`Tipo: TipoObrigacao`, `DataLimite`, `Status: StatusObrigacao`,
-`ConsultaId?`, `DataCumprimento?`, com `MarcarCumprida`/`EstaNoPrazo`/
-`EstaAtrasada`) e `PontosFidelidade` (`ResponsavelId`, `ConsultaId`,
-`Origem: OrigemPontos`, `Pontos`, `Data`, `ExpiraEm = Data+12m`,
-`Estornado`) — FIFO resolvido pela própria `ExpiraEm` de cada lançamento,
-sem fila separada (ver "Decisões de fundação"). `Responsavel` ganha
-`RecalcularFidelidade(saldoValido)` (Prata≥300, Ouro≥800 em 12m — RN-071).
-`IObrigacaoFactory` (canina/felina/genérica — mesmo padrão de seleção do
-`IDocumentoFactory`, genérica sempre aplicável como fallback) gera o
-calendário via `POST /api/animais/{id}/obrigacoes` (não automático no
-cadastro do animal — ver "Decisões de fundação"). Novo `ObrigacaoService`
-(gerar calendário com trava `OBRIGACAO-002` contra duplicar, listar com
-"atrasada" derivada). Novo `IDescontoFidelidadeStrategy` por tier (Bronze
-0%, Prata 5%=3%+2%, Ouro 10%=6%+4% — RN-072). Novo `FidelidadeService`:
-`PontuarConsultaRealizadaAsync` (casa `TipoServico` com uma
-`ObrigacaoDoPet` pendente no prazo — se achar, cumpre e dá pontos cheios;
-senão, pontua como avulsa com peso menor — RN-070), sempre recalculando o
-tier; `EstornarPontosPorCancelamentoAsync` (RN-075); `CalcularDescontoAsync`
-(zera se `Responsavel.BloqueadoDescontosAte` ativo, mesmo com tier
-elegível — RN-064 tem precedência sobre RN-072).
-`ConsultaService.MarcarRealizadaAsync` chama `PontuarConsultaRealizadaAsync`
-após marcar realizada; `CancelarAsync` chama
-`EstornarPontosPorCancelamentoAsync` (mesma ressalva de alcançabilidade do
-RN-081 na Fase 9). `PagamentoService.ProcessarSimuladoAsync` chama
-`CalcularDescontoAsync` e grava o resultado via
-`Pagamento.RegistrarDescontoFidelidade` (campos
-`DescontoFidelidadeCalculado`/`IncidenciaVetly`/`IncidenciaVeterinario`, já
-existentes e zerados desde a Fase 5) — `SimularPagamentoResponseDto` passa a
-expor os três campos. Endpoints novos: `POST/GET
-/api/animais/{id}/obrigacoes`, `GET /api/responsaveis/{id}/fidelidade`,
-`GET /api/responsaveis/{id}/fidelidade/extrato`, `GET
-/api/consultas/{id}/desconto-previsto?valorServico=X`. Migration
-`Fase10_Fidelidade`: puramente aditiva (`CreateTable` para as duas tabelas
-novas, sem rename — scaffold correto desta vez, incluindo `ESTORNADO` como
-`bool` de verdade).
-**Próximos passos:** Fase 11 — financeiro consolidado do Administrador +
-faixas Enterprise: `Empresa` ganha `FaixaEnterprise` calculada pelo nº de
-vets ativos (R$599 até 5, R$999 até 10, R$1.699 até 20, +R$70/vet acima de
-20 — RN-092), recalculada ao vincular/desativar vet.
-`EmpresaService.ObterDashboardConsolidadoAsync` agrega
-faturamento/comissões/repasses/reembolsos — DTO sem nenhum campo de dados
-bancários pessoais/outra empresa por construção (RN-007, não por filtro).
-Autorização por posse via `ICurrentUserService.EntidadeId` (decisão de
-fundação da Fase 0, ainda não exercitada em nenhum endpoint até aqui): vet
-vinculado só acessa a própria agenda/pacientes; Admin só acessa `EmpresaId`
-que bate com sua claim — tentativa cruzada ⇒ `ForbiddenException`
-`ACESSO-002`. Endpoints `GET /api/empresas/{id}/dashboard`,
-`GET /api/empresas/{id}/assinatura`.
+**Fase corrente:** Fase 11 concluída (commit a registrar, tag
+`v2-fase-11-empresa`). Iniciando Fase 12.
+**Baseline de testes:** 230/230 verdes (224 unit + 6 integration) — cresceu a
+partir dos 211 da Fase 10 com `EmpresaFaixaEnterpriseTests` (6 casos,
+domínio puro), `EmpresaServiceTests` (5 casos, Moq) e 4 novos casos em
+`VeterinarioServiceTests`/`ConsultaServiceTests` (posse da agenda/consultas).
+**O que mudou na Fase 11:** `Empresa` ganha `FaixaEnterprise` (decimal) e
+`RecalcularFaixaEnterprise(qtdVetsAtivos)` (R$599 até 5, R$999 até 10,
+R$1.699 até 20, +R$70/vet acima de 20 — RN-092), recalculada no read
+(vinculação, dashboard, assinatura — ver "Decisões de fundação" sobre por
+que não é em todo evento de mutação). Novos métodos em `IConsultaRepository`/
+`IPagamentoRepository` (`ObterPorVeterinariosAsync`, o segundo via join
+Pagamento×Consulta) para agregação por conjunto de vets sem N+1. Novo
+`EmpresaService.ObterDashboardConsolidadoAsync`: agrega faturamento bruto,
+comissões, repasses e reembolsos dos vets vinculados, mais contagem de
+consultas realizadas/canceladas — `DashboardConsolidadoDto` nunca tem campo
+de dado bancário pessoal, remuneração individual ou dado de outra empresa,
+por construção (RN-007). Novo `ObterAssinaturaAsync` retorna a faixa
+Enterprise atual. Ambos checam posse via `ICurrentUserService.EntidadeId`:
+Admin só acessa a própria `EmpresaId`, senão `ForbiddenException`
+`ACESSO-002` — primeira vez que essa claim (criada na Fase 0) é
+efetivamente exercitada. RN-001..006 (vet só vê a própria agenda/pacientes)
+implementado em `VeterinarioService.ObterAgendaAsync` e
+`ConsultaService.ObterPorVeterinarioAsync` — mesmo código de erro, mesmo
+padrão de checagem já usado em `MarcarRealizadaAsync` (Fase 4). Endpoints
+novos: `GET /api/empresas/{id}/dashboard`, `GET /api/empresas/{id}/assinatura`.
+Migration `Fase11_FinanceiroEmpresa`: puramente aditiva (`AddColumn
+FAIXA_ENTERPRISE` em `TB_EMPRESA`, default 0).
+**Próximos passos:** Fase 12 — documento com assinatura por nome digitado:
+`Documento` ganha `AssinaturaNomeDigitado` (string?), `TipoAssinatura` (enum
+novo, só `NomeDigitado` aceito no MVP) e
+`HabilitaDispensacaoControlados` (sempre `false` enquanto
+`TipoAssinatura == NomeDigitado` — RN-091: receita com nome digitado nunca
+habilita dispensação externa de controlados). `DocumentoService.AssinarAsync`
+recebe o nome digitado, valida não-vazio e coincidência com o nome do vet
+autenticado (via `ICurrentUserService` + `IVeterinarioRepository`), grava
+CRMV + timestamp (`TimeProvider`). Endpoint `POST /api/documentos/{id}/assinar`.
+Deve preservar o fluxo de correção já existente (RN-032..035) — testes atuais
+de `DocumentoServiceTests` continuam verdes.

@@ -10,4 +10,10 @@ public interface IPagamentoRepository : IRepositoryBase<Pagamento>
 
     /// <summary>Retorna o pagamento vinculado a uma consulta, se existir.</summary>
     Task<Pagamento?> ObterPorConsultaAsync(Guid consultaId);
+
+    /// <summary>
+    /// Retorna os pagamentos de consultas de um conjunto de veterinários (join via
+    /// Consulta.VeterinarioId) — usado no dashboard financeiro consolidado da empresa (RN-007).
+    /// </summary>
+    Task<IEnumerable<Pagamento>> ObterPorVeterinariosAsync(IEnumerable<Guid> veterinarioIds);
 }

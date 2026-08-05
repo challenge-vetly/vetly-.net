@@ -81,6 +81,10 @@ public class ConsultaService : IConsultaService
 
     public async Task<IEnumerable<ConsultaDto>> ObterPorVeterinarioAsync(Guid veterinarioId)
     {
+        // RN-001..006: veterinário vinculado só vê as próprias consultas.
+        if (_currentUser.Role == "Veterinario" && _currentUser.EntidadeId is { } id && id != veterinarioId)
+            throw new ForbiddenException("ACESSO-002", "Veterinario so pode acessar as proprias consultas.");
+
         var consultas = await _repo.ObterPorVeterinarioAsync(veterinarioId);
         return consultas.Select(MapearParaDto);
     }

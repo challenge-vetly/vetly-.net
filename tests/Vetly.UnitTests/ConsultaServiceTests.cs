@@ -398,4 +398,29 @@ public class ConsultaServiceTests
 
         Assert.Equal("CONSULTA-003", ex.Codigo);
     }
+
+    [Fact]
+    public async Task ObterPorVeterinarioAsync_VeterinarioTentaAcessarConsultasDeOutroVet_LancaForbiddenExceptionACESSO002()
+    {
+        var vetId = Guid.NewGuid();
+        _currentUserMock.Setup(c => c.Role).Returns("Veterinario");
+        _currentUserMock.Setup(c => c.EntidadeId).Returns(Guid.NewGuid()); // vet diferente do solicitado
+
+        var ex = await Assert.ThrowsAsync<ForbiddenException>(() => CriarServico().ObterPorVeterinarioAsync(vetId));
+
+        Assert.Equal("ACESSO-002", ex.Codigo);
+    }
+
+    [Fact]
+    public async Task ObterPorVeterinarioAsync_VeterinarioAcessaAsPropriasConsultas_RetornaNormalmente()
+    {
+        var vetId = Guid.NewGuid();
+        _currentUserMock.Setup(c => c.Role).Returns("Veterinario");
+        _currentUserMock.Setup(c => c.EntidadeId).Returns(vetId);
+        _repoMock.Setup(r => r.ObterPorVeterinarioAsync(vetId, null, null)).ReturnsAsync([]);
+
+        var resultado = await CriarServico().ObterPorVeterinarioAsync(vetId);
+
+        Assert.Empty(resultado);
+    }
 }

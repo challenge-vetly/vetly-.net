@@ -16,8 +16,9 @@ namespace Vetly.UnitTests;
 public class VeterinarioServiceTests
 {
     private readonly Mock<IVeterinarioRepository> _repoMock = new();
+    private readonly Mock<ICurrentUserService> _currentUserMock = new();
 
-    private VeterinarioService CriarServico() => new(_repoMock.Object, TimeProvider.System);
+    private VeterinarioService CriarServico() => new(_repoMock.Object, _currentUserMock.Object, TimeProvider.System);
 
     private static CriarVeterinarioDto CriarDto(string crmv = "12345-SP") => new()
     {
@@ -106,5 +107,43 @@ public class VeterinarioServiceTests
 
         Assert.Equal(5m, resultado.NotaMedia);
         Assert.Equal(3, resultado.TotalAvaliacoes);
+    }
+
+    [Fact]
+    public async Task ObterAgendaAsync_VeterinarioTentaAcessarAgendaDeOutroVet_LancaForbiddenExceptionACESSO002()
+    {
+        var vetId = Guid.NewGuid();
+        _currentUserMock.Setup(c => c.Role).Returns("Veterinario");
+        _currentUserMock.Setup(c => c.EntidadeId).Returns(Guid.NewGuid()); // vet diferente do solicitado
+
+        var ex = await Assert.ThrowsAsync<ForbiddenException>(() => CriarServico().ObterAgendaAsync(vetId));
+
+        Assert.Equal("ACESSO-002", ex.Codigo);
+    }
+
+    [Fact]
+    public async Task ObterAgendaAsync_VeterinarioAcessaAPropriaAgenda_RetornaNormalmente()
+    {
+        var vetId = Guid.NewGuid();
+        _currentUserMock.Setup(c => c.Role).Returns("Veterinario");
+        _currentUserMock.Setup(c => c.EntidadeId).Returns(vetId);
+        _repoMock.Setup(r => r.ObterAgendaFuturaAsync(vetId)).ReturnsAsync([]);
+
+        var resultado = await CriarServico().ObterAgendaAsync(vetId);
+
+        Assert.Empty(resultado);
+    }
+
+    [Fact]
+    public async Task ObterAgendaAsync_ChamadorAdmin_NaoAplicaRestricaoDePosse()
+    {
+        var vetId = Guid.NewGuid();
+        _currentUserMock.Setup(c => c.Role).Returns("Admin");
+        _currentUserMock.Setup(c => c.EntidadeId).Returns(Guid.NewGuid());
+        _repoMock.Setup(r => r.ObterAgendaFuturaAsync(vetId)).ReturnsAsync([]);
+
+        var resultado = await CriarServico().ObterAgendaAsync(vetId);
+
+        Assert.Empty(resultado);
     }
 }

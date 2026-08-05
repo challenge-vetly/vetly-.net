@@ -17,11 +17,13 @@ public class VeterinarioService : IVeterinarioService
     private static readonly Regex CrmvRegex = new(@"^\d{4,6}-[A-Z]{2}$", RegexOptions.Compiled);
 
     private readonly IVeterinarioRepository _repo;
+    private readonly ICurrentUserService _currentUser;
     private readonly TimeProvider _timeProvider;
 
-    public VeterinarioService(IVeterinarioRepository repo, TimeProvider timeProvider)
+    public VeterinarioService(IVeterinarioRepository repo, ICurrentUserService currentUser, TimeProvider timeProvider)
     {
         _repo = repo;
+        _currentUser = currentUser;
         _timeProvider = timeProvider;
     }
 
@@ -50,6 +52,10 @@ public class VeterinarioService : IVeterinarioService
     /// <inheritdoc/>
     public async Task<IEnumerable<ConsultaDto>> ObterAgendaAsync(Guid veterinarioId)
     {
+        // RN-001..006: veterinário vinculado só vê a própria agenda.
+        if (_currentUser.Role == "Veterinario" && _currentUser.EntidadeId is { } id && id != veterinarioId)
+            throw new ForbiddenException("ACESSO-002", "Veterinario so pode acessar a propria agenda.");
+
         var consultas = await _repo.ObterAgendaFuturaAsync(veterinarioId);
         return consultas.Select(MapearConsultaParaDto);
     }
