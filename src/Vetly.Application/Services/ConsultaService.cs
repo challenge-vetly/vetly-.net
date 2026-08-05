@@ -19,6 +19,7 @@ public class ConsultaService : IConsultaService
     private readonly IPagamentoRepository _pagamentoRepo;
     private readonly IDocumentoRepository _documentoRepo;
     private readonly IAnimalRepository _animalRepo;
+    private readonly IConsentimentoLgpdRepository _consentimentoRepo;
     private readonly IEnumerable<ICancelamentoStrategy> _strategies;
 
     public ConsultaService(
@@ -26,12 +27,14 @@ public class ConsultaService : IConsultaService
         IPagamentoRepository pagamentoRepo,
         IDocumentoRepository documentoRepo,
         IAnimalRepository animalRepo,
+        IConsentimentoLgpdRepository consentimentoRepo,
         IEnumerable<ICancelamentoStrategy> strategies)
     {
         _repo = repo;
         _pagamentoRepo = pagamentoRepo;
         _documentoRepo = documentoRepo;
         _animalRepo = animalRepo;
+        _consentimentoRepo = consentimentoRepo;
         _strategies = strategies;
     }
 
@@ -66,6 +69,12 @@ public class ConsultaService : IConsultaService
     /// </summary>
     public async Task<ConsultaDto> AgendarAsync(CriarConsultaDto dto)
     {
+        var temConsentimentoClinico = await _consentimentoRepo.ObterAtivoAsync(
+            dto.ResponsavelId, FinalidadeConsentimento.AtendimentoClinico) is not null;
+        if (!temConsentimentoClinico)
+            throw new BusinessRuleException("LGPD-001",
+                "O responsavel precisa ter o consentimento de atendimento clinico ativo para agendar consultas.");
+
         var pagamento = await _pagamentoRepo.ObterPorIdAsync(dto.PagamentoId)
             ?? throw new NotFoundException("Pagamento", dto.PagamentoId);
 

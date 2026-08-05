@@ -20,9 +20,20 @@ public class ConsultaServiceTests
     private readonly Mock<IPagamentoRepository> _pagamentoRepoMock = new();
     private readonly Mock<IDocumentoRepository> _documentoRepoMock = new();
     private readonly Mock<IAnimalRepository> _animalRepoMock = new();
+    private readonly Mock<IConsentimentoLgpdRepository> _consentimentoRepoMock = new();
+
+    public ConsultaServiceTests()
+    {
+        // Por padrão, todo responsavel tem o consentimento clinico ativo (LGPD-001) —
+        // os testes que precisam do cenário contrário sobrescrevem este setup.
+        _consentimentoRepoMock
+            .Setup(r => r.ObterAtivoAsync(It.IsAny<Guid>(), FinalidadeConsentimento.AtendimentoClinico))
+            .ReturnsAsync(new ConsentimentoLgpd(Guid.NewGuid(), FinalidadeConsentimento.AtendimentoClinico, DateTime.UtcNow));
+    }
 
     private ConsultaService CriarServico(params ICancelamentoStrategy[] strategies) =>
-        new(_repoMock.Object, _pagamentoRepoMock.Object, _documentoRepoMock.Object, _animalRepoMock.Object, strategies);
+        new(_repoMock.Object, _pagamentoRepoMock.Object, _documentoRepoMock.Object, _animalRepoMock.Object,
+            _consentimentoRepoMock.Object, strategies);
 
     private static CriarConsultaDto CriarDto(Guid pagamentoId) => new()
     {
@@ -52,6 +63,20 @@ public class ConsultaServiceTests
 
         Assert.NotEqual(Guid.Empty, resultado.Id);
         Assert.Equal(StatusPagamento.Confirmado, resultado.StatusPagamento);
+    }
+
+    [Fact]
+    public async Task AgendarAsync_SemConsentimentoClinicoAtivo_LancaBusinessRuleExceptionLGPD001()
+    {
+        var pagamentoId = Guid.NewGuid();
+        _consentimentoRepoMock
+            .Setup(r => r.ObterAtivoAsync(It.IsAny<Guid>(), FinalidadeConsentimento.AtendimentoClinico))
+            .ReturnsAsync((ConsentimentoLgpd?)null);
+
+        var ex = await Assert.ThrowsAsync<BusinessRuleException>(
+            () => CriarServico().AgendarAsync(CriarDto(pagamentoId)));
+
+        Assert.Equal("LGPD-001", ex.Codigo);
     }
 
     [Fact]

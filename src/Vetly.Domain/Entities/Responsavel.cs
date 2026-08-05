@@ -28,24 +28,6 @@ public class Responsavel
     [MaxLength(20)]
     public string Telefone { get; private set; }
 
-    /// <summary>
-    /// Consentimento para realização de atendimentos clínicos.
-    /// Obrigatório para agendar consultas (LGPD Art. 7º).
-    /// </summary>
-    public bool ConsentimentoAtendimento { get; private set; }
-
-    /// <summary>Consentimento para envio de lembretes de consulta e vacinas.</summary>
-    public bool ConsentimentoLembretes { get; private set; }
-
-    /// <summary>Consentimento para compartilhamento de dados com parceiros.</summary>
-    public bool ConsentimentoCompartilhamento { get; private set; }
-
-    /// <summary>
-    /// Data e hora em que o consentimento foi registrado.
-    /// Nulo enquanto o responsavel não tiver registrado nenhum consentimento.
-    /// </summary>
-    public DateTime? DataConsentimento { get; private set; }
-
     /// <summary>Indica se o cadastro está ativo. Desativação é feita via soft delete.</summary>
     public bool Ativo { get; private set; }
 
@@ -95,19 +77,6 @@ public class Responsavel
         Nome = nome;
         Email = email;
         Telefone = telefone;
-    }
-
-    /// <summary>
-    /// Registra o consentimento LGPD de forma granular.
-    /// Cada campo é independente — o responsavel pode consentir parcialmente.
-    /// Atualiza DataConsentimento sempre que chamado.
-    /// </summary>
-    public void RegistrarConsentimento(bool atendimento, bool lembretes, bool compartilhamento)
-    {
-        ConsentimentoAtendimento = atendimento;
-        ConsentimentoLembretes = lembretes;
-        ConsentimentoCompartilhamento = compartilhamento;
-        DataConsentimento = DateTime.UtcNow;
     }
 
     /// <summary>Desativa o cadastro do responsavel (soft delete).</summary>

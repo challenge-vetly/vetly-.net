@@ -18,7 +18,7 @@ Plano de referência completo (decisões de arquitetura, mapeamento fase→arqui
       entidadeId no AuthController, baseline build/test)
 - [x] Fase 1 — Renomeação Tutor→Responsavel + TierFidelidade/SaldoPontos/
       SaldoCreditosVetly/ContadorNoShows/BloqueadoDescontosAte (RN-064)
-- [ ] Fase 2 — Consentimento LGPD granular: ConsentimentoLgpd (5+1 finalidades),
+- [x] Fase 2 — Consentimento LGPD granular: ConsentimentoLgpd (5+1 finalidades),
       revogação com histórico (RN-041..046, RN-084, RN-094)
 - [ ] Fase 3 — Extensão de Animal: Sexo/PesoKg/Castrado/Condições/Alergias/
       CarteiraVacinacao/MedicacoesEmUso + RegistroOcultado (RN-088, RN-096.2)
@@ -79,32 +79,49 @@ README de contratos (Fase 13).
   `ArgumentException` cru (`Pagamento.VincularConsulta`, `Internacao.DarAlta`,
   `Exame.LiberarAoTutor`, `Crmv`) não são refatorados — fora do escopo de cada
   fase.
+- **`ConsentimentoLgpd` como entidade standalone, não coleção navegada por
+  `Responsavel`** (desvio pontual da Fase 2): o v1 nunca usa navigation
+  properties — todo relacionamento é FK (`Guid`) + repositório próprio
+  (`IDocumentoRepository`, `IExameRepository` etc.), nunca uma `List<T>` navegada
+  a partir do "pai". `ConsentimentoLgpd` ganhou repositório próprio
+  (`IConsentimentoLgpdRepository`); as regras (nova concessão sempre cria
+  registro; revogação só grava `DataRevogacao`, nunca apaga) viraram métodos em
+  `ConsentimentoLgpd` (ctor + `Revogar(agora)`), orquestrados pelo
+  `ResponsavelService` — mesmo resultado funcional, mais consistente com o resto
+  da base.
+- **Enums trafegam como string no JSON** (`"finalidade": "CompartilhamentoRede"`):
+  `Program.cs` ganhou `AddJsonOptions` com `JsonStringEnumConverter` global,
+  aplicado a partir da Fase 2. O v1 serializava enums como int; a spec v2 mostra
+  valores de enum como strings exatas em todos os payloads de exemplo, e a
+  Fase 13 pede uma "tabela de enums (nome → valores aceitos no JSON)" — decisão
+  de contrato tomada cedo para não quebrar retroativamente os payloads já
+  documentados nas fases seguintes.
 
 ## ESTADO ATUAL
 
-**Fase corrente:** Fase 1 concluída (commit a registrar, tag `v2-fase-01-responsavel`).
-Iniciando Fase 2.
-**Baseline de testes:** 54/54 verdes (48 unit + 6 integration) — cresceu a partir dos
-51 da Fase 0 com os 3 novos casos de `ResponsavelTests` (janela móvel de no-show).
-**O que mudou na Fase 1:** `Tutor`→`Responsavel` renomeado em todas as camadas
-(entidade em `src/Vetly.Domain/Entities/Responsavel.cs`, FKs `TutorId`→
-`ResponsavelId` em Consulta/Animal/Pagamento/LembreteAgendado, repositório,
-`ResponsavelConfiguration`, service, DTOs em `DTOs/Responsavel/`, controller
-`ResponsaveisController` com rotas `/api/responsaveis`, código de erro
-`TUTOR-001`→`RESPONSAVEL-001`). Novo enum `TierFidelidade`. Novos campos em
-`Responsavel`: `TierFidelidade`, `SaldoPontos`, `SaldoCreditosVetly`,
-`ContadorNoShows`/`DataUltimoNoShow`/`BloqueadoDescontosAte` + métodos
-`RegistrarNoShow(agora)`/`NoShowsAtivos(agora)`. Role `"Responsavel"` adicionada
-ao `AuthController`. Migration `Fase01_RenomeiaResponsavel` gerada via
-`dotnet ef migrations add` e depois editada à mão para usar `RenameTable`/
-`RenameColumn`/`AddColumn` em vez do `DropTable`/`CreateTable` que a scaffold
-automática propôs (preserva dados — a scaffold do EF não detecta rename de
-*classe*, só de propriedade/coluna, que já veio correta automaticamente).
-**Próximos passos:** Fase 2 — consentimento LGPD granular: nova entidade
-`ConsentimentoLgpd` (filha de `Responsavel`), enum `FinalidadeConsentimento` (6
-valores), métodos `ConcederConsentimento`/`RevogarConsentimento` substituindo os
-3 booleanos antigos + `RegistrarConsentimento`; migration de dados migrando os
-3 booleanos existentes para registros de consentimento; `ConsultaService.AgendarAsync`
-passa a exigir `ConsentimentoAtendimento` ativo (`LGPD-001`); endpoints
-`GET/POST /api/responsaveis/{id}/consentimentos` e
-`DELETE /api/responsaveis/{id}/consentimentos/{finalidade}`.
+**Fase corrente:** Fase 2 concluída (commit a registrar, tag `v2-fase-02-lgpd`).
+Iniciando Fase 3.
+**Baseline de testes:** 63/63 verdes (57 unit + 6 integration) — cresceu a partir dos
+54 da Fase 1 com `ConsentimentoLgpdTests` (3 casos), `ResponsavelServiceTests` (5
+casos) e o novo caso `AgendarAsync_SemConsentimentoClinicoAtivo_LancaBusinessRuleExceptionLGPD001`.
+**O que mudou na Fase 2:** nova entidade `ConsentimentoLgpd` (standalone, ver
+"Decisões de fundação" acima) com enum `FinalidadeConsentimento` (6 valores).
+`Responsavel` perdeu os 3 booleanos de consentimento + `RegistrarConsentimento`
+(substituídos). `ResponsavelService` ganhou `ConcederConsentimentoAsync`/
+`RevogarConsentimentoAsync`/`ListarConsentimentosAsync`. `ConsultaService.AgendarAsync`
+agora exige consentimento `AtendimentoClinico` ativo antes de agendar (`LGPD-001`).
+Novos endpoints em `ResponsaveisController`: `GET/POST /api/responsaveis/{id}/consentimentos`,
+`DELETE /api/responsaveis/{id}/consentimentos/{finalidade}`. `Program.cs` ganhou
+`JsonStringEnumConverter` global (ver "Decisões de fundação"). Migration
+`Fase02_ConsentimentoLgpd`: cria `TB_CONSENTIMENTO_LGPD`, faz backfill dos 3
+booleanos antigos via `INSERT...SELECT` (um por finalidade) antes de dropar as
+colunas antigas de `TB_RESPONSAVEL`; `Down()` restaura os booleanos por
+melhor-esforço (perde o histórico de revogações, que só existe no modelo v2).
+**Próximos passos:** Fase 3 — extensão de `Animal`: `Sexo` (enum novo
+`SexoAnimal`), `PesoKg` (decimal?, método `AtualizarPeso`), `Castrado`,
+`CondicoesPreExistentes`/`Alergias`/`CarteiraVacinacao`/`MedicacoesEmUso`
+(`List<string>`, mesmo padrão de `AlertasAtivos`), `FotoUrl?`; nova entidade
+filha `RegistroOcultado` com invariante "alerta de segurança nunca pode ser
+ocultado" (`ANIMAL-002` via `DomainException`); endpoints
+`PUT /api/animais/{id}/peso`, `POST/DELETE /api/animais/{id}/ocultar-registro[/{prontuarioId}]`,
+filtro de prontuários ocultados por papel do chamador (`ICurrentUserService.Role`).

@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Vetly.Application.DTOs.Responsavel;
 using Vetly.Application.Interfaces;
+using Vetly.Domain.Enums;
 
 namespace Vetly.API.Controllers;
 
@@ -65,4 +66,29 @@ public class ResponsaveisController : ControllerBase
         await _service.DesativarAsync(id);
         return NoContent();
     }
+
+    /// <summary>Lista o historico completo de consentimentos LGPD do responsavel (RN-044, RN-086).</summary>
+    [HttpGet("{id:guid}/consentimentos")]
+    [ProducesResponseType(typeof(IEnumerable<ConsentimentoLgpdDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ListarConsentimentos(Guid id) =>
+        Ok(await _service.ListarConsentimentosAsync(id));
+
+    /// <summary>Concede um novo consentimento LGPD para a finalidade informada (RN-041/042/043).</summary>
+    [HttpPost("{id:guid}/consentimentos")]
+    [ProducesResponseType(typeof(ConsentimentoLgpdDto), StatusCodes.Status201Created)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ConcederConsentimento(Guid id, [FromBody] ConcederConsentimentoDto dto)
+    {
+        var concedido = await _service.ConcederConsentimentoAsync(id, dto);
+        return CreatedAtAction(nameof(ListarConsentimentos), new { id }, concedido);
+    }
+
+    /// <summary>Revoga o consentimento ativo da finalidade informada, preservando o historico (RN-044).</summary>
+    [HttpDelete("{id:guid}/consentimentos/{finalidade}")]
+    [ProducesResponseType(typeof(ConsentimentoLgpdDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> RevogarConsentimento(Guid id, FinalidadeConsentimento finalidade) =>
+        Ok(await _service.RevogarConsentimentoAsync(id, finalidade));
 }

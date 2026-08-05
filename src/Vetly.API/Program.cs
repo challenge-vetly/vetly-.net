@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -24,7 +25,11 @@ builder.Configuration
         reloadOnChange: true);
 
 // ── Controllers ───────────────────────────────────────────────────────────────
-builder.Services.AddControllers();
+// Enums trafegam como string no JSON (ex: "finalidade": "CompartilhamentoRede") —
+// contrato exigido pelos payloads da spec v2 (ver README de contratos, Fase 13).
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+        options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 
 // ── Infraestrutura transversal (relógio testável + identidade do usuário atual) ─
 builder.Services.AddSingleton(TimeProvider.System);
@@ -74,6 +79,7 @@ builder.Services.AddScoped<IDocumentoRepository, DocumentoRepository>();
 builder.Services.AddScoped<IPagamentoRepository, PagamentoRepository>();
 builder.Services.AddScoped<IEmpresaRepository, EmpresaRepository>();
 builder.Services.AddScoped<ILembreteRepository, LembreteRepository>();
+builder.Services.AddScoped<IConsentimentoLgpdRepository, ConsentimentoLgpdRepository>();
 
 // ── Serviços de Aplicação ────────────────────────────────────────────────────
 builder.Services.AddScoped<IVeterinarioService, VeterinarioService>();

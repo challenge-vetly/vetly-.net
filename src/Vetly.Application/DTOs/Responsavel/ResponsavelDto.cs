@@ -9,10 +9,6 @@ public class ResponsavelDto
     public string Nome { get; set; } = string.Empty;
     public string Email { get; set; } = string.Empty;
     public string Telefone { get; set; } = string.Empty;
-    public bool ConsentimentoAtendimento { get; set; }
-    public bool ConsentimentoLembretes { get; set; }
-    public bool ConsentimentoCompartilhamento { get; set; }
-    public DateTime? DataConsentimento { get; set; }
     public bool Ativo { get; set; }
     public TierFidelidade TierFidelidade { get; set; }
     public int SaldoPontos { get; set; }

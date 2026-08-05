@@ -35,21 +35,8 @@ public class ResponsavelConfiguration : IEntityTypeConfiguration<Responsavel>
             .HasColumnName("TELEFONE")
             .IsRequired();
 
-        // Campos de consentimento LGPD — NUMBER(1) para boolean Oracle
-        builder.Property(t => t.ConsentimentoAtendimento)
-            .HasColumnType("NUMBER(1)")
-            .HasColumnName("CONSENTIMENTO_ATENDIMENTO");
-
-        builder.Property(t => t.ConsentimentoLembretes)
-            .HasColumnType("NUMBER(1)")
-            .HasColumnName("CONSENTIMENTO_LEMBRETES");
-
-        builder.Property(t => t.ConsentimentoCompartilhamento)
-            .HasColumnType("NUMBER(1)")
-            .HasColumnName("CONSENTIMENTO_COMPARTILHAMENTO");
-
-        builder.Property(t => t.DataConsentimento)
-            .HasColumnName("DATA_CONSENTIMENTO");
+        // Consentimento LGPD passa a ser modelado pela entidade ConsentimentoLgpd (v2,
+        // ConsentimentoLgpdConfiguration) — os 3 booleanos antigos foram removidos daqui.
 
         builder.Property(t => t.Ativo)
             .HasColumnType("NUMBER(1)")
