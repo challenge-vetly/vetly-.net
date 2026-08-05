@@ -19,9 +19,9 @@ public class PagamentoConfiguration : IEntityTypeConfiguration<Pagamento>
             .HasColumnType("CHAR(36)")
             .HasColumnName("ID");
 
-        builder.Property(p => p.TutorId)
+        builder.Property(p => p.ResponsavelId)
             .HasColumnType("CHAR(36)")
-            .HasColumnName("TUTOR_ID")
+            .HasColumnName("RESPONSAVEL_ID")
             .IsRequired();
 
         builder.Property(p => p.ConsultaId)
@@ -61,7 +61,7 @@ public class PagamentoConfiguration : IEntityTypeConfiguration<Pagamento>
             .HasColumnType("NUMBER(18,2)")
             .HasColumnName("VALOR_ESTORNADO");
 
-        builder.HasIndex(p => p.TutorId).HasDatabaseName("IX_PAGAMENTO_TUTOR");
+        builder.HasIndex(p => p.ResponsavelId).HasDatabaseName("IX_PAGAMENTO_RESPONSAVEL");
         builder.HasIndex(p => p.ConsultaId).HasDatabaseName("IX_PAGAMENTO_CONSULTA");
     }
 }

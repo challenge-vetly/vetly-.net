@@ -30,7 +30,7 @@ public class ConsultaServiceTests
         Modalidade = ModalidadeAtendimento.Presencial,
         VeterinarioId = Guid.NewGuid(),
         AnimalId = Guid.NewGuid(),
-        TutorId = Guid.NewGuid(),
+        ResponsavelId = Guid.NewGuid(),
         PagamentoId = pagamentoId
     };
 
@@ -38,7 +38,7 @@ public class ConsultaServiceTests
     public async Task AgendarAsync_PagamentoConfirmado_RetornaConsultaDto()
     {
         var pagamentoId = Guid.NewGuid();
-        // Pagamento sem consultaId — cenário real: tutor paga antes de agendar
+        // Pagamento sem consultaId — cenário real: responsavel paga antes de agendar
         var pagamento = new Pagamento(Guid.NewGuid(), 200m, MeioPagamento.Pix);
         pagamento.Confirmar();
 

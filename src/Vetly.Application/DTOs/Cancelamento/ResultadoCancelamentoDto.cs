@@ -6,7 +6,7 @@ namespace Vetly.Application.DTOs.Cancelamento;
 /// </summary>
 public class ResultadoCancelamentoDto
 {
-    /// <summary>Valor a ser devolvido ao tutor.</summary>
+    /// <summary>Valor a ser devolvido ao responsavel.</summary>
     public decimal ValorReembolso { get; set; }
 
     /// <summary>Percentual do valor original que foi retido pela plataforma.</summary>

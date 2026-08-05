@@ -15,9 +15,9 @@ public class LembreteService : ILembreteService
 
     public LembreteService(ILembreteRepository repo) => _repo = repo;
 
-    public async Task<LembreteAgendado> AgendarLembreteAsync(Guid animalId, Guid tutorId, TipoLembrete tipo, DateTime dataEvento)
+    public async Task<LembreteAgendado> AgendarLembreteAsync(Guid animalId, Guid responsavelId, TipoLembrete tipo, DateTime dataEvento)
     {
-        var lembrete = new LembreteAgendado(animalId, tutorId, tipo, dataEvento);
+        var lembrete = new LembreteAgendado(animalId, responsavelId, tipo, dataEvento);
         await _repo.AdicionarAsync(lembrete);
         await _repo.SalvarAsync();
         return lembrete;
@@ -25,15 +25,15 @@ public class LembreteService : ILembreteService
 
     /// <summary>
     /// Registra tentativa de contato. Aciona alerta para clinica apos 3 tentativas (RN-030).
-    /// Se o tutor ja respondeu, a regua esta encerrada e nao registra nova tentativa.
+    /// Se o responsavel ja respondeu, a regua esta encerrada e nao registra nova tentativa.
     /// </summary>
     public async Task<LembreteAgendado> ProcessarTentativaAsync(Guid lembreteId)
     {
         var lembrete = await _repo.ObterPorIdAsync(lembreteId)
             ?? throw new NotFoundException("LembreteAgendado", lembreteId);
 
-        if (lembrete.TutorRespondeu)
-            throw new BusinessRuleException("LEMBRETE-001", "Regua encerrada: tutor ja respondeu ao lembrete.");
+        if (lembrete.ResponsavelRespondeu)
+            throw new BusinessRuleException("LEMBRETE-001", "Regua encerrada: responsavel ja respondeu ao lembrete.");
 
         lembrete.RegistrarTentativa();
         _repo.Atualizar(lembrete);

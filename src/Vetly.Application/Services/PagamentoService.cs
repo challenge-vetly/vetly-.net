@@ -41,7 +41,7 @@ public class PagamentoService : IPagamentoService
 
     public async Task<PagamentoDto> CriarAsync(CriarPagamentoDto dto)
     {
-        var pagamento = new Pagamento(dto.TutorId, dto.Valor, dto.MeioPagamento, dto.ConsultaId, dto.InternacaoId);
+        var pagamento = new Pagamento(dto.ResponsavelId, dto.Valor, dto.MeioPagamento, dto.ConsultaId, dto.InternacaoId);
         pagamento.Confirmar(); // pagamento confirmado ao criar (integracao com gateway real seria assincrona)
         await _repo.AdicionarAsync(pagamento);
         await _repo.SalvarAsync();
@@ -77,7 +77,7 @@ public class PagamentoService : IPagamentoService
 
     private static PagamentoDto MapearParaDto(Pagamento p) => new()
     {
-        Id = p.Id, TutorId = p.TutorId, ConsultaId = p.ConsultaId, InternacaoId = p.InternacaoId,
+        Id = p.Id, ResponsavelId = p.ResponsavelId, ConsultaId = p.ConsultaId, InternacaoId = p.InternacaoId,
         Valor = p.Valor, MeioPagamento = p.MeioPagamento, Momento = p.Momento,
         StatusPagamento = p.StatusPagamento, PercentualSplit = p.PercentualSplit,
         ValorEstornado = p.ValorEstornado

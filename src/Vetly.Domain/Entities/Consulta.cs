@@ -28,9 +28,9 @@ public class Consulta
     [Required]
     public Guid AnimalId { get; private set; }
 
-    /// <summary>Id do tutor responsável. Chave estrangeira para TB_TUTOR.</summary>
+    /// <summary>Id do responsavel responsável. Chave estrangeira para TB_RESPONSAVEL.</summary>
     [Required]
-    public Guid TutorId { get; private set; }
+    public Guid ResponsavelId { get; private set; }
 
     /// <summary>
     /// Indica se o veterinário validou o diagnóstico sugerido pela IA.
@@ -58,14 +58,14 @@ public class Consulta
     /// Cria uma nova consulta com status de pagamento pendente.
     /// O agendamento só deve ser confirmado após chamar <see cref="ConfirmarPagamento"/> (RN-015).
     /// </summary>
-    public Consulta(DateTime dataHora, ModalidadeAtendimento modalidade, Guid veterinarioId, Guid animalId, Guid tutorId)
+    public Consulta(DateTime dataHora, ModalidadeAtendimento modalidade, Guid veterinarioId, Guid animalId, Guid responsavelId)
     {
         Id = Guid.NewGuid();
         DataHora = dataHora;
         Modalidade = modalidade;
         VeterinarioId = veterinarioId;
         AnimalId = animalId;
-        TutorId = tutorId;
+        ResponsavelId = responsavelId;
         StatusPagamento = StatusPagamento.Pendente; // pagamento confirmado é pré-requisito (RN-015)
     }
 

@@ -6,7 +6,7 @@ public class TriagemResultadoDto
     /// <summary>Nível de urgência: Baixo, Médio, Alto, Emergência.</summary>
     public string NivelUrgencia { get; set; } = string.Empty;
 
-    /// <summary>Recomendação de conduta para o tutor.</summary>
+    /// <summary>Recomendação de conduta para o responsavel.</summary>
     public string Recomendacao { get; set; } = string.Empty;
 
     /// <summary>Possíveis causas dos sintomas identificadas pela triagem.</summary>

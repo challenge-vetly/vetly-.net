@@ -42,7 +42,7 @@ public class OllamaController : ControllerBase
     public async Task<IActionResult> RealizarTriagem([FromBody] SintomasDto sintomas) =>
         Ok(await _service.RealizarTriagemAsync(sintomas));
 
-    /// <summary>Gera orientacoes pos-atendimento personalizadas para o tutor.</summary>
+    /// <summary>Gera orientacoes pos-atendimento personalizadas para o responsavel.</summary>
     [HttpPost("orientacoes")]
     [ProducesResponseType(typeof(string), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]

@@ -10,7 +10,7 @@ public class VetlyDbContext : DbContext
 
     public DbSet<Veterinario> Veterinarios => Set<Veterinario>();
     public DbSet<Animal> Animais => Set<Animal>();
-    public DbSet<Tutor> Tutores => Set<Tutor>();
+    public DbSet<Responsavel> Responsaveis => Set<Responsavel>();
     public DbSet<Consulta> Consultas => Set<Consulta>();
     public DbSet<Prontuario> Prontuarios => Set<Prontuario>();
     public DbSet<Exame> Exames => Set<Exame>();

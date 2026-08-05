@@ -8,7 +8,7 @@ public class ExameDto
     public Guid VeterinarioId { get; set; }
     public string TipoSolicitacao { get; set; } = string.Empty;
     public string? Resultado { get; set; }
-    public bool LiberadoAoTutor { get; set; }
+    public bool LiberadoAoResponsavel { get; set; }
     public DateTime DataSolicitacao { get; set; }
     public DateTime? DataResultado { get; set; }
 }

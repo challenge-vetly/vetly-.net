@@ -11,9 +11,9 @@ public class PagamentoRepository : RepositoryBase<Pagamento>, IPagamentoReposito
     public PagamentoRepository(VetlyDbContext context) : base(context) { }
 
     /// <inheritdoc/>
-    public async Task<IEnumerable<Pagamento>> ObterPorTutorAsync(Guid tutorId) =>
+    public async Task<IEnumerable<Pagamento>> ObterPorResponsavelAsync(Guid responsavelId) =>
         await _dbSet
-            .Where(p => p.TutorId == tutorId)
+            .Where(p => p.ResponsavelId == responsavelId)
             .OrderByDescending(p => p.Momento)
             .ToListAsync();
 

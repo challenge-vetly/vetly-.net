@@ -39,9 +39,9 @@ public class ExameConfiguration : IEntityTypeConfiguration<Exame>
             .HasColumnType("CLOB")
             .HasColumnName("RESULTADO");
 
-        builder.Property(e => e.LiberadoAoTutor)
+        builder.Property(e => e.LiberadoAoResponsavel)
             .HasColumnType("NUMBER(1)")
-            .HasColumnName("LIBERADO_AO_TUTOR");
+            .HasColumnName("LIBERADO_AO_RESPONSAVEL");
 
         builder.Property(e => e.DataSolicitacao)
             .HasColumnName("DATA_SOLICITACAO")

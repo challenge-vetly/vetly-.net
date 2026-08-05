@@ -71,7 +71,7 @@ public class DocumentoService : IDocumentoService
         var consultaDto = new DTOs.Consulta.ConsultaDto
         {
             Id = consulta.Id, VeterinarioId = consulta.VeterinarioId, AnimalId = consulta.AnimalId,
-            TutorId = consulta.TutorId, DataHora = consulta.DataHora, Modalidade = consulta.Modalidade,
+            ResponsavelId = consulta.ResponsavelId, DataHora = consulta.DataHora, Modalidade = consulta.Modalidade,
             StatusPagamento = consulta.StatusPagamento
         };
         var vetDto = new DTOs.Veterinario.VeterinarioDto { Id = vet.Id, Crmv = vet.Crmv.Valor, Nome = vet.Nome };

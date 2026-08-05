@@ -5,7 +5,7 @@ using Vetly.Domain.Entities;
 
 namespace Vetly.Application.Services;
 
-/// <summary>Servico de exames. Gerencia solicitacao, resultado e liberacao ao tutor.</summary>
+/// <summary>Servico de exames. Gerencia solicitacao, resultado e liberacao ao responsavel.</summary>
 public class ExameService : IExameService
 {
     private readonly IExameRepository _repo;
@@ -43,11 +43,11 @@ public class ExameService : IExameService
         return MapearParaDto(exame);
     }
 
-    public async Task LiberarAoTutorAsync(Guid id)
+    public async Task LiberarAoResponsavelAsync(Guid id)
     {
         var exame = await _repo.ObterPorIdAsync(id)
             ?? throw new NotFoundException("Exame", id);
-        exame.LiberarAoTutor(); // lanca InvalidOperationException se sem resultado
+        exame.LiberarAoResponsavel(); // lanca InvalidOperationException se sem resultado
         _repo.Atualizar(exame);
         await _repo.SalvarAsync();
     }
@@ -56,7 +56,7 @@ public class ExameService : IExameService
     {
         Id = e.Id, AnimalId = e.AnimalId, VeterinarioId = e.VeterinarioId,
         TipoSolicitacao = e.TipoSolicitacao, Resultado = e.Resultado,
-        LiberadoAoTutor = e.LiberadoAoTutor,
+        LiberadoAoResponsavel = e.LiberadoAoResponsavel,
         DataSolicitacao = e.DataSolicitacao, DataResultado = e.DataResultado
     };
 }

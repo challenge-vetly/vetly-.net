@@ -1,9 +1,9 @@
 using System.ComponentModel.DataAnnotations;
 
-namespace Vetly.Application.DTOs.Tutor;
+namespace Vetly.Application.DTOs.Responsavel;
 
-/// <summary>DTO de entrada para cadastro de um novo tutor.</summary>
-public class CriarTutorDto
+/// <summary>DTO de entrada para cadastro de um novo responsavel.</summary>
+public class CriarResponsavelDto
 {
     [Required(ErrorMessage = "O nome é obrigatório.")]
     [MaxLength(200)]

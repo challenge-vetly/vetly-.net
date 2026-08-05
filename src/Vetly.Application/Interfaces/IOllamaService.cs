@@ -14,7 +14,7 @@ public interface IOllamaService
     /// <summary>Sugere protocolo de tratamento dado um diagnóstico, espécie e peso.</summary>
     Task<ProtocoloTratamentoDto> SugerirProtocoloAsync(string diagnostico, string especie, decimal pesoKg);
 
-    /// <summary>Gera orientações pós-atendimento personalizadas para o tutor.</summary>
+    /// <summary>Gera orientações pós-atendimento personalizadas para o responsavel.</summary>
     Task<string> GerarOrientacoesPostAtendimentoAsync(ConsultaResumoDto consulta);
 
     /// <summary>Realiza triagem de sintomas e retorna nível de urgência e recomendações.</summary>

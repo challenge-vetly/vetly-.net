@@ -38,9 +38,9 @@ public class AnimalConfiguration : IEntityTypeConfiguration<Animal>
             .HasColumnName("DATA_NASCIMENTO")
             .IsRequired();
 
-        builder.Property(a => a.TutorId)
+        builder.Property(a => a.ResponsavelId)
             .HasColumnType("CHAR(36)")
-            .HasColumnName("TUTOR_ID")
+            .HasColumnName("RESPONSAVEL_ID")
             .IsRequired();
 
         // NUMBER(1) para boolean — padrão Oracle
@@ -58,7 +58,7 @@ public class AnimalConfiguration : IEntityTypeConfiguration<Animal>
             .HasColumnType("VARCHAR2(2000)")
             .HasColumnName("ALERTAS_ATIVOS");
 
-        // Índice para buscar todos os animais de um tutor eficientemente
-        builder.HasIndex(a => a.TutorId).HasDatabaseName("IX_ANIMAL_TUTOR");
+        // Índice para buscar todos os animais de um responsavel eficientemente
+        builder.HasIndex(a => a.ResponsavelId).HasDatabaseName("IX_ANIMAL_RESPONSAVEL");
     }
 }

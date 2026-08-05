@@ -42,7 +42,7 @@ public class AnimaisController : ControllerBase
     public async Task<IActionResult> ObterExames(Guid id) =>
         Ok(await _service.ObterExamesAsync(id));
 
-    /// <summary>Cadastra um novo animal vinculado a um tutor.</summary>
+    /// <summary>Cadastra um novo animal vinculado a um responsavel.</summary>
     [HttpPost]
     [ProducesResponseType(typeof(AnimalDto), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]

@@ -6,7 +6,7 @@ namespace Vetly.Application.DTOs.Pagamento;
 public class PagamentoDto
 {
     public Guid Id { get; set; }
-    public Guid TutorId { get; set; }
+    public Guid ResponsavelId { get; set; }
     public Guid? ConsultaId { get; set; }
     public Guid? InternacaoId { get; set; }
     public decimal Valor { get; set; }

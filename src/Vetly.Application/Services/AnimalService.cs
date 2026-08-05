@@ -47,14 +47,14 @@ public class AnimalService : IAnimalService
         {
             Id = e.Id, AnimalId = e.AnimalId, VeterinarioId = e.VeterinarioId,
             TipoSolicitacao = e.TipoSolicitacao, Resultado = e.Resultado,
-            LiberadoAoTutor = e.LiberadoAoTutor,
+            LiberadoAoResponsavel = e.LiberadoAoResponsavel,
             DataSolicitacao = e.DataSolicitacao, DataResultado = e.DataResultado
         });
     }
 
     public async Task<AnimalDto> CriarAsync(CriarAnimalDto dto)
     {
-        var animal = new Animal(dto.Nome, dto.Especie, dto.Raca, dto.DataNascimento, dto.TutorId);
+        var animal = new Animal(dto.Nome, dto.Especie, dto.Raca, dto.DataNascimento, dto.ResponsavelId);
         await _repo.AdicionarAsync(animal);
         await _repo.SalvarAsync();
         return MapearParaDto(animal);
@@ -82,6 +82,6 @@ public class AnimalService : IAnimalService
     {
         Id = a.Id, Nome = a.Nome, Especie = a.Especie, Raca = a.Raca,
         DataNascimento = a.DataNascimento, IdadeEmAnos = a.IdadeEmAnos(),
-        TutorId = a.TutorId, AlertasAtivos = a.AlertasAtivos, Ativo = a.Ativo
+        ResponsavelId = a.ResponsavelId, AlertasAtivos = a.AlertasAtivos, Ativo = a.Ativo
     };
 }

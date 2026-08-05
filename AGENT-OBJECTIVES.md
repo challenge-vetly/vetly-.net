@@ -16,7 +16,7 @@ Plano de referência completo (decisões de arquitetura, mapeamento fase→arqui
 - [x] Fase 0 — Preparação (branch, este arquivo, infra fundacional: DomainException,
       ForbiddenException, middleware, TimeProvider, ICurrentUserService, claim
       entidadeId no AuthController, baseline build/test)
-- [ ] Fase 1 — Renomeação Tutor→Responsavel + TierFidelidade/SaldoPontos/
+- [x] Fase 1 — Renomeação Tutor→Responsavel + TierFidelidade/SaldoPontos/
       SaldoCreditosVetly/ContadorNoShows/BloqueadoDescontosAte (RN-064)
 - [ ] Fase 2 — Consentimento LGPD granular: ConsentimentoLgpd (5+1 finalidades),
       revogação com histórico (RN-041..046, RN-084, RN-094)
@@ -82,8 +82,29 @@ README de contratos (Fase 13).
 
 ## ESTADO ATUAL
 
-**Fase corrente:** Fase 0 concluída, iniciando Fase 1.
-**Último commit:** (a registrar após o commit da Fase 0)
-**Baseline de testes:** a confirmar via `dotnet test` antes do commit da Fase 0.
-**Próximos passos:** commit + tag `v2-fase-00-baseline`; em seguida iniciar Fase 1
-(rename Tutor→Responsavel).
+**Fase corrente:** Fase 1 concluída (commit a registrar, tag `v2-fase-01-responsavel`).
+Iniciando Fase 2.
+**Baseline de testes:** 54/54 verdes (48 unit + 6 integration) — cresceu a partir dos
+51 da Fase 0 com os 3 novos casos de `ResponsavelTests` (janela móvel de no-show).
+**O que mudou na Fase 1:** `Tutor`→`Responsavel` renomeado em todas as camadas
+(entidade em `src/Vetly.Domain/Entities/Responsavel.cs`, FKs `TutorId`→
+`ResponsavelId` em Consulta/Animal/Pagamento/LembreteAgendado, repositório,
+`ResponsavelConfiguration`, service, DTOs em `DTOs/Responsavel/`, controller
+`ResponsaveisController` com rotas `/api/responsaveis`, código de erro
+`TUTOR-001`→`RESPONSAVEL-001`). Novo enum `TierFidelidade`. Novos campos em
+`Responsavel`: `TierFidelidade`, `SaldoPontos`, `SaldoCreditosVetly`,
+`ContadorNoShows`/`DataUltimoNoShow`/`BloqueadoDescontosAte` + métodos
+`RegistrarNoShow(agora)`/`NoShowsAtivos(agora)`. Role `"Responsavel"` adicionada
+ao `AuthController`. Migration `Fase01_RenomeiaResponsavel` gerada via
+`dotnet ef migrations add` e depois editada à mão para usar `RenameTable`/
+`RenameColumn`/`AddColumn` em vez do `DropTable`/`CreateTable` que a scaffold
+automática propôs (preserva dados — a scaffold do EF não detecta rename de
+*classe*, só de propriedade/coluna, que já veio correta automaticamente).
+**Próximos passos:** Fase 2 — consentimento LGPD granular: nova entidade
+`ConsentimentoLgpd` (filha de `Responsavel`), enum `FinalidadeConsentimento` (6
+valores), métodos `ConcederConsentimento`/`RevogarConsentimento` substituindo os
+3 booleanos antigos + `RegistrarConsentimento`; migration de dados migrando os
+3 booleanos existentes para registros de consentimento; `ConsultaService.AgendarAsync`
+passa a exigir `ConsentimentoAtendimento` ativo (`LGPD-001`); endpoints
+`GET/POST /api/responsaveis/{id}/consentimentos` e
+`DELETE /api/responsaveis/{id}/consentimentos/{finalidade}`.

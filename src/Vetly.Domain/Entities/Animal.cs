@@ -4,7 +4,7 @@ namespace Vetly.Domain.Entities;
 
 /// <summary>
 /// Representa um animal (paciente) cadastrado na plataforma Vetly.
-/// Está sempre associado a um tutor responsável.
+/// Está sempre associado a um responsavel responsável.
 /// </summary>
 public class Animal
 {
@@ -30,9 +30,9 @@ public class Animal
     [Required]
     public DateTime DataNascimento { get; private set; }
 
-    /// <summary>Id do tutor responsável pelo animal. Chave estrangeira para TB_TUTOR.</summary>
+    /// <summary>Id do responsavel responsável pelo animal. Chave estrangeira para TB_RESPONSAVEL.</summary>
     [Required]
-    public Guid TutorId { get; private set; }
+    public Guid ResponsavelId { get; private set; }
 
     /// <summary>
     /// Lista de alertas clínicos ativos (ex: "Alergia a penicilina", "Epiléptico").
@@ -52,15 +52,15 @@ public class Animal
         AlertasAtivos = [];
     }
 
-    /// <summary>Cria um novo animal associado a um tutor.</summary>
-    public Animal(string nome, string especie, string raca, DateTime dataNascimento, Guid tutorId)
+    /// <summary>Cria um novo animal associado a um responsavel.</summary>
+    public Animal(string nome, string especie, string raca, DateTime dataNascimento, Guid responsavelId)
     {
         Id = Guid.NewGuid();
         Nome = nome;
         Especie = especie;
         Raca = raca;
         DataNascimento = dataNascimento;
-        TutorId = tutorId;
+        ResponsavelId = responsavelId;
         AlertasAtivos = [];
         Ativo = true;
     }

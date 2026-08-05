@@ -66,7 +66,7 @@ builder.Services.AddAuthorization(options =>
 // ── Repositórios ─────────────────────────────────────────────────────────────
 builder.Services.AddScoped<IVeterinarioRepository, VeterinarioRepository>();
 builder.Services.AddScoped<IAnimalRepository, AnimalRepository>();
-builder.Services.AddScoped<ITutorRepository, TutorRepository>();
+builder.Services.AddScoped<IResponsavelRepository, ResponsavelRepository>();
 builder.Services.AddScoped<IConsultaRepository, ConsultaRepository>();
 builder.Services.AddScoped<IInternacaoRepository, InternacaoRepository>();
 builder.Services.AddScoped<IExameRepository, ExameRepository>();
@@ -78,7 +78,7 @@ builder.Services.AddScoped<ILembreteRepository, LembreteRepository>();
 // ── Serviços de Aplicação ────────────────────────────────────────────────────
 builder.Services.AddScoped<IVeterinarioService, VeterinarioService>();
 builder.Services.AddScoped<IAnimalService, AnimalService>();
-builder.Services.AddScoped<ITutorService, TutorService>();
+builder.Services.AddScoped<IResponsavelService, ResponsavelService>();
 builder.Services.AddScoped<IConsultaService, ConsultaService>();
 builder.Services.AddScoped<IDocumentoService, DocumentoService>();
 builder.Services.AddScoped<IInternacaoService, InternacaoService>();

@@ -119,7 +119,7 @@ public class VeterinarioService : IVeterinarioService
     private static ConsultaDto MapearConsultaParaDto(Consulta c) => new()
     {
         Id = c.Id, DataHora = c.DataHora, Modalidade = c.Modalidade,
-        VeterinarioId = c.VeterinarioId, AnimalId = c.AnimalId, TutorId = c.TutorId,
+        VeterinarioId = c.VeterinarioId, AnimalId = c.AnimalId, ResponsavelId = c.ResponsavelId,
         DiagnosticoValidado = c.DiagnosticoValidado, ProtocoloValidado = c.ProtocoloValidado,
         StatusPagamento = c.StatusPagamento, Cancelada = c.Cancelada
     };

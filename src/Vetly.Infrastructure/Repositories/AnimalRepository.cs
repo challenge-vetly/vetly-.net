@@ -13,9 +13,9 @@ public class AnimalRepository : RepositoryBase<Animal>, IAnimalRepository
     public AnimalRepository(VetlyDbContext context) : base(context) { }
 
     /// <inheritdoc/>
-    public async Task<IEnumerable<Animal>> ObterPorTutorAsync(Guid tutorId) =>
+    public async Task<IEnumerable<Animal>> ObterPorResponsavelAsync(Guid responsavelId) =>
         await _dbSet
-            .Where(a => a.TutorId == tutorId && a.Ativo)
+            .Where(a => a.ResponsavelId == responsavelId && a.Ativo)
             .ToListAsync();
 
     /// <inheritdoc/>

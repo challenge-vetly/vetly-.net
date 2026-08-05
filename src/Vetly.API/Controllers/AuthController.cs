@@ -20,18 +20,19 @@ public class AuthController : ControllerBase
 
     public AuthController(IConfiguration config) => _config = config;
 
+    private static readonly string[] RolesValidas = ["Admin", "Veterinario", "Responsavel"];
+
     /// <summary>
     /// Gera um token JWT para uso nos demais endpoints.
-    /// Role disponíveis: Admin, Veterinario.
+    /// Role disponíveis: Admin, Veterinario, Responsavel.
     /// </summary>
     [HttpPost("token")]
     [ProducesResponseType(typeof(TokenResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public IActionResult GerarToken([FromBody] TokenRequestDto request)
     {
-        if (string.IsNullOrWhiteSpace(request.Role) ||
-            (request.Role != "Admin" && request.Role != "Veterinario"))
-            return BadRequest(new { erro = "Role invalida. Use 'Admin' ou 'Veterinario'." });
+        if (string.IsNullOrWhiteSpace(request.Role) || !RolesValidas.Contains(request.Role))
+            return BadRequest(new { erro = "Role invalida. Use 'Admin', 'Veterinario' ou 'Responsavel'." });
 
         var key = new SymmetricSecurityKey(
             Encoding.UTF8.GetBytes(_config["Jwt:Key"]!));

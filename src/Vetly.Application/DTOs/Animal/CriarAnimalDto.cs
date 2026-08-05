@@ -20,6 +20,6 @@ public class CriarAnimalDto
     [Required(ErrorMessage = "A data de nascimento é obrigatória.")]
     public DateTime DataNascimento { get; set; }
 
-    [Required(ErrorMessage = "O id do tutor é obrigatório.")]
-    public Guid TutorId { get; set; }
+    [Required(ErrorMessage = "O id do responsavel é obrigatório.")]
+    public Guid ResponsavelId { get; set; }
 }

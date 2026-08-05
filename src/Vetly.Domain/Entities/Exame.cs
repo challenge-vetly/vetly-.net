@@ -4,7 +4,7 @@ namespace Vetly.Domain.Entities;
 
 /// <summary>
 /// Representa um exame laboratorial ou de imagem solicitado durante o atendimento.
-/// O resultado só pode ser liberado ao tutor após validação do veterinário.
+/// O resultado só pode ser liberado ao responsavel após validação do veterinário.
 /// </summary>
 public class Exame
 {
@@ -31,10 +31,10 @@ public class Exame
     public string? Resultado { get; private set; }
 
     /// <summary>
-    /// Indica se o resultado foi liberado para visualização pelo tutor.
+    /// Indica se o resultado foi liberado para visualização pelo responsavel.
     /// Só pode ser liberado após o resultado estar disponível.
     /// </summary>
-    public bool LiberadoAoTutor { get; private set; }
+    public bool LiberadoAoResponsavel { get; private set; }
 
     /// <summary>Data e hora em que o exame foi solicitado.</summary>
     public DateTime DataSolicitacao { get; private set; }
@@ -66,14 +66,14 @@ public class Exame
     }
 
     /// <summary>
-    /// Libera o resultado para visualização pelo tutor.
+    /// Libera o resultado para visualização pelo responsavel.
     /// Lança exceção se o resultado ainda não foi registrado.
     /// </summary>
-    public void LiberarAoTutor()
+    public void LiberarAoResponsavel()
     {
         if (string.IsNullOrWhiteSpace(Resultado))
             throw new InvalidOperationException("Não é possível liberar exame sem resultado registrado.");
 
-        LiberadoAoTutor = true;
+        LiberadoAoResponsavel = true;
     }
 }

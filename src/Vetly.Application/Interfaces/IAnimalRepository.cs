@@ -7,8 +7,8 @@ namespace Vetly.Application.Interfaces;
 /// </summary>
 public interface IAnimalRepository : IRepositoryBase<Animal>
 {
-    /// <summary>Retorna todos os animais ativos de um tutor.</summary>
-    Task<IEnumerable<Animal>> ObterPorTutorAsync(Guid tutorId);
+    /// <summary>Retorna todos os animais ativos de um responsavel.</summary>
+    Task<IEnumerable<Animal>> ObterPorResponsavelAsync(Guid responsavelId);
 
     /// <summary>
     /// Retorna o histórico longitudinal de prontuários de um animal,

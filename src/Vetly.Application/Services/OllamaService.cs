@@ -71,7 +71,7 @@ public class OllamaService : IOllamaService
             : string.Empty;
 
         var prompt =
-            $"Voce e um assistente veterinario. Gere orientacoes pos-atendimento claras para o tutor, em linguagem simples e acessivel.\n\n" +
+            $"Voce e um assistente veterinario. Gere orientacoes pos-atendimento claras para o responsavel, em linguagem simples e acessivel.\n\n" +
             $"Especie: {consulta.Especie}. Diagnostico: {consulta.Diagnostico}.\n" +
             $"Medicamentos prescritos: {meds}. Conduta: {consulta.Conduta}.{dieta}";
 

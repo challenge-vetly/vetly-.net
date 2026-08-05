@@ -4,7 +4,7 @@ using Vetly.Domain.Enums;
 namespace Vetly.Domain.Entities;
 
 /// <summary>
-/// Representa um pagamento realizado por um tutor na plataforma Vetly.
+/// Representa um pagamento realizado por um responsavel na plataforma Vetly.
 /// Suporta split financeiro entre veterinário autônomo e empresa (RN-Strategy).
 /// </summary>
 public class Pagamento
@@ -12,9 +12,9 @@ public class Pagamento
     /// <summary>Identificador único do pagamento (chave primária).</summary>
     public Guid Id { get; private set; }
 
-    /// <summary>Id do tutor que realizou o pagamento. Chave estrangeira para TB_TUTOR.</summary>
+    /// <summary>Id do responsavel que realizou o pagamento. Chave estrangeira para TB_RESPONSAVEL.</summary>
     [Required]
-    public Guid TutorId { get; private set; }
+    public Guid ResponsavelId { get; private set; }
 
     /// <summary>
     /// Id da consulta vinculada ao pagamento.
@@ -51,17 +51,17 @@ public class Pagamento
     [Range(0, 100)]
     public decimal PercentualSplit { get; private set; }
 
-    /// <summary>Valor estornado ao tutor em caso de cancelamento. Nulo se não houve estorno.</summary>
+    /// <summary>Valor estornado ao responsavel em caso de cancelamento. Nulo se não houve estorno.</summary>
     public decimal? ValorEstornado { get; private set; }
 
     /// <summary>Construtor privado reservado ao EF Core para materialização de entidades.</summary>
     private Pagamento() { }
 
     /// <summary>Cria um novo pagamento com status inicial Pendente.</summary>
-    public Pagamento(Guid tutorId, decimal valor, MeioPagamento meio, Guid? consultaId = null, Guid? internacaoId = null)
+    public Pagamento(Guid responsavelId, decimal valor, MeioPagamento meio, Guid? consultaId = null, Guid? internacaoId = null)
     {
         Id = Guid.NewGuid();
-        TutorId = tutorId;
+        ResponsavelId = responsavelId;
         Valor = valor;
         MeioPagamento = meio;
         ConsultaId = consultaId;

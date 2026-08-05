@@ -73,7 +73,7 @@ public class ConsultaService : IConsultaService
             throw new BusinessRuleException("RN-015",
                 "A consulta so pode ser agendada apos confirmacao do pagamento.");
 
-        var consulta = new Consulta(dto.DataHora, dto.Modalidade, dto.VeterinarioId, dto.AnimalId, dto.TutorId);
+        var consulta = new Consulta(dto.DataHora, dto.Modalidade, dto.VeterinarioId, dto.AnimalId, dto.ResponsavelId);
         consulta.ConfirmarPagamento();
 
         await _repo.AdicionarAsync(consulta);
@@ -170,7 +170,7 @@ public class ConsultaService : IConsultaService
             {
                 Id = e.Id, AnimalId = e.AnimalId, VeterinarioId = e.VeterinarioId,
                 TipoSolicitacao = e.TipoSolicitacao, Resultado = e.Resultado,
-                LiberadoAoTutor = e.LiberadoAoTutor,
+                LiberadoAoResponsavel = e.LiberadoAoResponsavel,
                 DataSolicitacao = e.DataSolicitacao, DataResultado = e.DataResultado
             })
             .ToList();
@@ -182,7 +182,7 @@ public class ConsultaService : IConsultaService
             {
                 Id = animal.Id, Nome = animal.Nome, Especie = animal.Especie,
                 Raca = animal.Raca, DataNascimento = animal.DataNascimento,
-                IdadeEmAnos = animal.IdadeEmAnos(), TutorId = animal.TutorId,
+                IdadeEmAnos = animal.IdadeEmAnos(), ResponsavelId = animal.ResponsavelId,
                 AlertasAtivos = animal.AlertasAtivos, Ativo = animal.Ativo
             },
             HistoricoResumido = historico,
@@ -213,7 +213,7 @@ public class ConsultaService : IConsultaService
     private static ConsultaDto MapearParaDto(Consulta c) => new()
     {
         Id = c.Id, DataHora = c.DataHora, Modalidade = c.Modalidade,
-        VeterinarioId = c.VeterinarioId, AnimalId = c.AnimalId, TutorId = c.TutorId,
+        VeterinarioId = c.VeterinarioId, AnimalId = c.AnimalId, ResponsavelId = c.ResponsavelId,
         DiagnosticoValidado = c.DiagnosticoValidado, ProtocoloValidado = c.ProtocoloValidado,
         StatusPagamento = c.StatusPagamento, Cancelada = c.Cancelada, Finalizada = c.Finalizada
     };

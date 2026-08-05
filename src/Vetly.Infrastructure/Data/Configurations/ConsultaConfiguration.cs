@@ -39,9 +39,9 @@ public class ConsultaConfiguration : IEntityTypeConfiguration<Consulta>
             .HasColumnName("ANIMAL_ID")
             .IsRequired();
 
-        builder.Property(c => c.TutorId)
+        builder.Property(c => c.ResponsavelId)
             .HasColumnType("CHAR(36)")
-            .HasColumnName("TUTOR_ID")
+            .HasColumnName("RESPONSAVEL_ID")
             .IsRequired();
 
         builder.Property(c => c.DiagnosticoValidado)

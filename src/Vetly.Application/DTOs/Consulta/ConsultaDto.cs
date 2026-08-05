@@ -10,7 +10,7 @@ public class ConsultaDto
     public ModalidadeAtendimento Modalidade { get; set; }
     public Guid VeterinarioId { get; set; }
     public Guid AnimalId { get; set; }
-    public Guid TutorId { get; set; }
+    public Guid ResponsavelId { get; set; }
     public bool DiagnosticoValidado { get; set; }
     public bool ProtocoloValidado { get; set; }
     public StatusPagamento StatusPagamento { get; set; }

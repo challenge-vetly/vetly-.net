@@ -8,7 +8,7 @@ public class AltaInternacaoDto
     public decimal ValorCaucao { get; set; }
     public decimal ValorTotalApurado { get; set; }
 
-    /// <summary>Saldo devedor apos desconto da caucao (negativo = reembolso ao tutor).</summary>
+    /// <summary>Saldo devedor apos desconto da caucao (negativo = reembolso ao responsavel).</summary>
     public decimal SaldoRestante { get; set; }
 
     public DateTime DataAlta { get; set; }

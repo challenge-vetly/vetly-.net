@@ -9,5 +9,5 @@ public interface IExameService
     Task<ExameDto> ObterPorIdAsync(Guid id);
     Task<ExameDto> CriarAsync(CriarExameDto dto);
     Task<ExameDto> RegistrarResultadoAsync(Guid id, string resultado);
-    Task LiberarAoTutorAsync(Guid id);
+    Task LiberarAoResponsavelAsync(Guid id);
 }

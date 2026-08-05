@@ -18,8 +18,8 @@ public class CriarConsultaDto
     [Required(ErrorMessage = "O animal é obrigatório.")]
     public Guid AnimalId { get; set; }
 
-    [Required(ErrorMessage = "O tutor é obrigatório.")]
-    public Guid TutorId { get; set; }
+    [Required(ErrorMessage = "O responsavel é obrigatório.")]
+    public Guid ResponsavelId { get; set; }
 
     /// <summary>
     /// Id do pagamento já processado.
