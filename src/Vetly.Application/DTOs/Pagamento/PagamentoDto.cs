@@ -15,4 +15,11 @@ public class PagamentoDto
     public StatusPagamento StatusPagamento { get; set; }
     public decimal PercentualSplit { get; set; }
     public decimal? ValorEstornado { get; set; }
+    public bool Simulado { get; set; }
+    public decimal PercentualComissao { get; set; }
+    public decimal ValorComissao { get; set; }
+    public decimal ValorRepasse { get; set; }
+    public decimal DescontoFidelidadeCalculado { get; set; }
+    public decimal IncidenciaVetly { get; set; }
+    public decimal IncidenciaVeterinario { get; set; }
 }

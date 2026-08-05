@@ -8,6 +8,7 @@ using Vetly.Application.Factories;
 using Vetly.Application.Interfaces;
 using Vetly.Application.Services;
 using Vetly.Application.Strategies.Cancelamento;
+using Vetly.Application.Strategies.Comissao;
 using Vetly.Application.Strategies.Split;
 using Vetly.Infrastructure.Data;
 using Vetly.Infrastructure.Repositories;
@@ -108,6 +109,11 @@ builder.Services.AddScoped<ICancelamentoStrategy, SemReembolsoStrategy>();
 // ── Strategies — Split Financeiro ────────────────────────────────────────────
 builder.Services.AddScoped<ISplitFinanceiroStrategy, SplitAutonomoStrategy>();
 builder.Services.AddScoped<ISplitFinanceiroStrategy, SplitEmpresaStrategy>();
+
+// ── Strategies — Comissao por plano (RN-089) ─────────────────────────────────
+builder.Services.AddScoped<IComissaoStrategy, ComissaoBasicoStrategy>();
+builder.Services.AddScoped<IComissaoStrategy, ComissaoProfissionalStrategy>();
+builder.Services.AddScoped<IComissaoStrategy, ComissaoEnterpriseStrategy>();
 
 // ── OllamaService — HttpClient com timeout de 120s ──────────────────────────
 builder.Services.AddHttpClient<IOllamaService, OllamaService>(client =>

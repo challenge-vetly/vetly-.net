@@ -24,7 +24,7 @@ Plano de referência completo (decisões de arquitetura, mapeamento fase→arqui
       CarteiraVacinacao/MedicacoesEmUso + RegistroOcultado (RN-088, RN-096.2)
 - [x] Fase 4 — Máquina de estados da Consulta: StatusConsulta, lock de checkout,
       no-show, pré-sintomas (RN-057..061)
-- [ ] Fase 5 — Pagamento simulado + IComissaoStrategy por plano (RN-037, RN-089)
+- [x] Fase 5 — Pagamento simulado + IComissaoStrategy por plano (RN-037, RN-089)
 - [ ] Fase 6 — Cancelamento/no-show v2: crédito de cortesia, strikes, suspensão
       (RN-062..067)
 - [ ] Fase 7 — IA v2: decisão Aprovar/NãoAprovar/Corrigir + LogAuditoriaIA
@@ -127,39 +127,38 @@ README de contratos (Fase 13).
 
 ## ESTADO ATUAL
 
-**Fase corrente:** Fase 4 concluída (commit a registrar, tag `v2-fase-04-consulta`).
-Iniciando Fase 5.
-**Baseline de testes:** 102/102 verdes (96 unit + 6 integration) — cresceu a partir
-dos 73 da Fase 3 com `ConsultaStateMachineTests` (20 casos, domínio puro,
-transições válidas/inválidas) e a reescrita de `ConsultaServiceTests` (17 casos
-cobrindo LGPD-001, RN-057, confirmar-pagamento, cancelar, marcar-realizada com
-posse, no-show, remarcar).
-**O que mudou na Fase 4:** `Consulta` reescrita em torno de `StatusConsulta`
-(`EmCheckout/Confirmada/Realizada/Cancelada/NoShowResponsavel/NoShowVeterinario`)
-substituindo os booleanos `Cancelada`/`Finalizada` e o campo `StatusPagamento`.
-Novos campos `TipoServico` (enum novo), `PreSintomas`, `ContadorRemarcacoes`,
-`LockCheckoutExpiraEm`, `DataRealizada`. Métodos de transição
-(`IniciarCheckout`, `ConfirmarPagamento`, `Cancelar`, `MarcarRealizada`,
-`RegistrarNoShowResponsavel`/`Veterinario`, `Reagendar`) lançam
-`DomainException("CONSULTA-010", ...)` em transição inválida e
-`("CONSULTA-011", ...)` em lock de checkout expirado (ver "Decisões de fundação"
-acima para os desvios de `FinalizarAsync`→`MarcarRealizadaAsync`, remoção de
-`PagamentoId` do agendamento e retirada de `CONSULTA-001`/RN-015). Novo enum
-`ParteNoShow`. `ConsultaService.AgendarAsync` valida consentimento clínico
-(LGPD-001, já existia) e agora também RN-057 (serviço físico exige presencial).
-Novos endpoints: `POST /api/consultas/{id}/confirmar-pagamento`,
-`POST /{id}/realizada` (substitui `/finalizar`), `POST /{id}/no-show`,
-`POST /{id}/remarcar`; `GET /{id}/briefing` agora inclui `preSintomas`.
-Migration `Fase04_MaquinaEstadosConsulta`: editada à mão porque a scaffold
-automática tentou "renomear" `STATUS_PAGAMENTO`→`TIPO_SERVICO` só por
-coincidência de forma (dois enums sem relação nenhuma) — virou `AddColumn`/
-`DropColumn` separados, com backfill de `STATUS` a partir de
-`CANCELADA`/`FINALIZADA`/`STATUS_PAGAMENTO` antes de dropá-los.
-**Próximos passos:** Fase 5 — pagamento simulado + comissão por plano: `Pagamento`
-ganha `Simulado`/`PercentualComissao`/`ValorComissao`/`ValorRepasse`/
-`DescontoFidelidadeCalculado`/`IncidenciaVetly`/`IncidenciaVeterinario`; nova
-Strategy `IComissaoStrategy` (Básico 15% / Profissional 12% / Enterprise 10%)
-selecionada por `Veterinario.Plano`; `PagamentoService.ProcessarSimuladoAsync`
-cria o pagamento, calcula comissão/repasse e chama
-`consulta.ConfirmarPagamento(agora)` (método já existe desde a Fase 4); endpoint
-`POST /api/pagamentos/simular`.
+**Fase corrente:** Fase 5 concluída (commit a registrar, tag `v2-fase-05-pagamento`).
+Iniciando Fase 6.
+**Baseline de testes:** 112/112 verdes (106 unit + 6 integration) — cresceu a
+partir dos 102 da Fase 4 com `ComissaoStrategyTests` (3 casos), `PagamentoTests`
+(3 casos, domínio puro) e novos casos em `PagamentoServiceTests` (exemplo
+canônico R$150/Profissional/comissão R$18/repasse R$132 + Theory por plano).
+**O que mudou na Fase 5:** `Pagamento` ganha `Simulado` (sempre true no ctor),
+`PercentualComissao`/`ValorComissao`/`ValorRepasse` (calculados por
+`RegistrarComissao(percentual)`, com arredondamento para 2 casas),
+`DescontoFidelidadeCalculado`/`IncidenciaVetly`/`IncidenciaVeterinario` (ainda
+zerados — Fase 10 preenche). Nova Strategy `IComissaoStrategy`
+(`ComissaoBasicoStrategy` 15% / `ComissaoProfissionalStrategy` 12% /
+`ComissaoEnterpriseStrategy` 10%) selecionada por `Veterinario.Plano` — decide
+**quanto** a plataforma retém; a `ISplitFinanceiroStrategy` existente (por
+persona) continua decidindo **quem** recebe o repasse; as duas são
+complementares. `PagamentoService.ProcessarSimuladoAsync`: cria o pagamento
+(sempre "sucesso" — RN-037), aplica a comissão do plano do vet da consulta e
+chama `consulta.ConfirmarPagamento(agora)` (método já existe desde a Fase 4).
+`ProcessarSplitAsync` (endpoint v1) mantido compatível e agora também aplica a
+comissão por plano, além do split por persona já existente — assim pagamentos
+criados fora do fluxo `/simular` também recebem os campos de comissão. Novo
+endpoint `POST /api/pagamentos/simular`. Migration `Fase05_PagamentoSimuladoComissao`:
+puramente aditiva, sem backfill necessário (`SIMULADO` default `false` em
+linhas pré-existentes é aceitável — não há como saber retroativamente).
+**Próximos passos:** Fase 6 — cancelamento/no-show v2: `Veterinario` ganha
+`StrikesAtivos` (coleção `StrikeReputacao`), `SuspensoAte`,
+`RegistrarStrike(agora)` (3 em 90 dias ⇒ suspenso 7 dias), `EstaSuspenso(agora)`.
+Novo `ConsultaService.CancelamentoPeloVeterinarioAsync`: crédito de cortesia =
+min(10% do valor, R$30) somado a `Responsavel.SaldoCreditosVetly` (método já
+existe desde a Fase 1, só falta o mutador) + `Veterinario.RegistrarStrike`.
+`RegistrarNoShowAsync` (Fase 4) ganha as consequências reais: no-show do
+Responsável chama `Responsavel.RegistrarNoShow(agora)` (Fase 1); no-show do vet
+= mesmo tratamento do cancelamento pelo vet + strike. Reaproveita
+`ICancelamentoStrategy` existente para o reembolso registrado (não liquidado).
+Novo endpoint `POST /api/consultas/{id}/cancelar-pelo-veterinario`.
