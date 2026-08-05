@@ -125,4 +125,21 @@ public class Responsavel
 
         return ContadorNoShows;
     }
+
+    /// <summary>
+    /// Recalcula <see cref="SaldoPontos"/> e <see cref="TierFidelidade"/> a partir da soma
+    /// de pontos ainda válidos (RN-071: Prata ≥ 300, Ouro ≥ 800). Quem chama já somou os
+    /// lançamentos válidos via repositório — como o resto da base, esta entidade não navega
+    /// para <c>PontosFidelidade</c>.
+    /// </summary>
+    public void RecalcularFidelidade(int saldoPontosValidos)
+    {
+        SaldoPontos = saldoPontosValidos;
+        TierFidelidade = saldoPontosValidos switch
+        {
+            >= 800 => TierFidelidade.Ouro,
+            >= 300 => TierFidelidade.Prata,
+            _ => TierFidelidade.Bronze
+        };
+    }
 }

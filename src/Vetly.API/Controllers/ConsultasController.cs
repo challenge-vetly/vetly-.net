@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Vetly.Application.DTOs.Avaliacao;
 using Vetly.Application.DTOs.Cancelamento;
 using Vetly.Application.DTOs.Consulta;
+using Vetly.Application.DTOs.Fidelidade;
 using Vetly.Application.DTOs.IA;
 using Vetly.Application.Interfaces;
 using Vetly.Domain.Enums;
@@ -22,12 +23,18 @@ public class ConsultasController : ControllerBase
     private readonly IConsultaService _service;
     private readonly IConsultaIaService _iaService;
     private readonly IAvaliacaoService _avaliacaoService;
+    private readonly IFidelidadeService _fidelidadeService;
+    private readonly TimeProvider _timeProvider;
 
-    public ConsultasController(IConsultaService service, IConsultaIaService iaService, IAvaliacaoService avaliacaoService)
+    public ConsultasController(
+        IConsultaService service, IConsultaIaService iaService, IAvaliacaoService avaliacaoService,
+        IFidelidadeService fidelidadeService, TimeProvider timeProvider)
     {
         _service = service;
         _iaService = iaService;
         _avaliacaoService = avaliacaoService;
+        _fidelidadeService = fidelidadeService;
+        _timeProvider = timeProvider;
     }
 
     /// <summary>Retorna todas as consultas com filtros opcionais.</summary>
@@ -184,5 +191,20 @@ public class ConsultasController : ControllerBase
         var criada = await _avaliacaoService.CriarAsync(id, dto);
         return CreatedAtAction(
             nameof(AvaliacoesController.ObterPorId), "Avaliacoes", new { id = criada.Id }, criada);
+    }
+
+    /// <summary>
+    /// Calcula o desconto de fidelidade previsto para um valor de serviço, pelo tier atual
+    /// do responsável da consulta (RN-071/072) — sem abatimento real, pagamento simulado.
+    /// </summary>
+    [HttpGet("{id:guid}/desconto-previsto")]
+    [ProducesResponseType(typeof(ResultadoDescontoFidelidadeDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ObterDescontoPrevisto(Guid id, [FromQuery] decimal valorServico)
+    {
+        var consulta = await _service.ObterPorIdAsync(id);
+        var resultado = await _fidelidadeService.CalcularDescontoAsync(
+            consulta.ResponsavelId, valorServico, _timeProvider.GetUtcNow().UtcDateTime);
+        return Ok(resultado);
     }
 }

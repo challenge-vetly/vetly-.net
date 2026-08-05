@@ -124,6 +124,17 @@ public class Pagamento
     }
 
     /// <summary>
+    /// Registra o desconto de fidelidade calculado e sua divisão de incidência (RN-072).
+    /// Só calculado/exibido — sem abatimento real do valor, já que o pagamento é simulado.
+    /// </summary>
+    public void RegistrarDescontoFidelidade(decimal descontoCalculado, decimal incidenciaVetly, decimal incidenciaVeterinario)
+    {
+        DescontoFidelidadeCalculado = descontoCalculado;
+        IncidenciaVetly = incidenciaVetly;
+        IncidenciaVeterinario = incidenciaVeterinario;
+    }
+
+    /// <summary>
     /// Registra o estorno total ou parcial do pagamento.
     /// Estorno igual ou maior que o valor original define status como Estornado;
     /// estorno parcial define como Parcial.

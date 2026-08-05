@@ -78,4 +78,31 @@ public class ResponsavelTests
 
         Assert.Equal("RESPONSAVEL-002", ex.Codigo);
     }
+
+    [Theory]
+    [InlineData(0, Vetly.Domain.Enums.TierFidelidade.Bronze)]
+    [InlineData(299, Vetly.Domain.Enums.TierFidelidade.Bronze)]
+    [InlineData(300, Vetly.Domain.Enums.TierFidelidade.Prata)]
+    [InlineData(799, Vetly.Domain.Enums.TierFidelidade.Prata)]
+    [InlineData(800, Vetly.Domain.Enums.TierFidelidade.Ouro)]
+    public void RecalcularFidelidade_NosLimiaresDeTier_AtualizaTierCorretamente(int saldo, Vetly.Domain.Enums.TierFidelidade tierEsperado)
+    {
+        var responsavel = CriarResponsavel();
+
+        responsavel.RecalcularFidelidade(saldo);
+
+        Assert.Equal(saldo, responsavel.SaldoPontos);
+        Assert.Equal(tierEsperado, responsavel.TierFidelidade);
+    }
+
+    [Fact]
+    public void RecalcularFidelidade_SaldoCaiAbaixoDoLimiar_RebaixaTier()
+    {
+        var responsavel = CriarResponsavel();
+        responsavel.RecalcularFidelidade(800); // Ouro
+
+        responsavel.RecalcularFidelidade(250); // pontos expiraram/estornaram — cai para Bronze
+
+        Assert.Equal(Vetly.Domain.Enums.TierFidelidade.Bronze, responsavel.TierFidelidade);
+    }
 }

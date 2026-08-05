@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Vetly.Application.DTOs.Animal;
+using Vetly.Application.DTOs.Obrigacao;
 using Vetly.Application.Interfaces;
 
 namespace Vetly.API.Controllers;
@@ -12,8 +13,13 @@ namespace Vetly.API.Controllers;
 public class AnimaisController : ControllerBase
 {
     private readonly IAnimalService _service;
+    private readonly IObrigacaoService _obrigacaoService;
 
-    public AnimaisController(IAnimalService service) => _service = service;
+    public AnimaisController(IAnimalService service, IObrigacaoService obrigacaoService)
+    {
+        _service = service;
+        _obrigacaoService = obrigacaoService;
+    }
 
     /// <summary>Retorna todos os animais ativos.</summary>
     [HttpGet]
@@ -108,4 +114,22 @@ public class AnimaisController : ControllerBase
         await _service.ReexibirRegistroAsync(id, prontuarioId);
         return Ok();
     }
+
+    /// <summary>Gera o calendário de obrigações do pet via Factory por espécie (RN-069).</summary>
+    [HttpPost("{id:guid}/obrigacoes")]
+    [ProducesResponseType(typeof(IEnumerable<ObrigacaoDoPetDto>), StatusCodes.Status201Created)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
+    public async Task<IActionResult> GerarObrigacoes(Guid id)
+    {
+        var obrigacoes = await _obrigacaoService.GerarCalendarioAsync(id);
+        return CreatedAtAction(nameof(ObterObrigacoes), new { id }, obrigacoes);
+    }
+
+    /// <summary>Lista as obrigações do calendário de cuidado do pet (RN-069/070).</summary>
+    [HttpGet("{id:guid}/obrigacoes")]
+    [ProducesResponseType(typeof(IEnumerable<ObrigacaoDoPetDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ObterObrigacoes(Guid id) =>
+        Ok(await _obrigacaoService.ObterPorAnimalAsync(id));
 }

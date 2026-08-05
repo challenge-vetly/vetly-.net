@@ -17,6 +17,7 @@ public class PagamentoService : IPagamentoService
     private readonly IPagamentoRepository _repo;
     private readonly IVeterinarioRepository _vetRepo;
     private readonly IConsultaRepository _consultaRepo;
+    private readonly IFidelidadeService _fidelidadeService;
     private readonly IEnumerable<ISplitFinanceiroStrategy> _splitStrategies;
     private readonly IEnumerable<IComissaoStrategy> _comissaoStrategies;
     private readonly TimeProvider _timeProvider;
@@ -25,6 +26,7 @@ public class PagamentoService : IPagamentoService
         IPagamentoRepository repo,
         IVeterinarioRepository vetRepo,
         IConsultaRepository consultaRepo,
+        IFidelidadeService fidelidadeService,
         IEnumerable<ISplitFinanceiroStrategy> splitStrategies,
         IEnumerable<IComissaoStrategy> comissaoStrategies,
         TimeProvider timeProvider)
@@ -32,6 +34,7 @@ public class PagamentoService : IPagamentoService
         _repo = repo;
         _vetRepo = vetRepo;
         _consultaRepo = consultaRepo;
+        _fidelidadeService = fidelidadeService;
         _splitStrategies = splitStrategies;
         _comissaoStrategies = comissaoStrategies;
         _timeProvider = timeProvider;
@@ -103,10 +106,14 @@ public class PagamentoService : IPagamentoService
         pagamento.Confirmar(); // simulado — sempre retorna sucesso (RN-037)
         AplicarComissao(pagamento, vet);
 
+        var agora = _timeProvider.GetUtcNow().UtcDateTime;
+        // RN-072: desconto de fidelidade calculado e exibido, sem abatimento real do valor.
+        var desconto = await _fidelidadeService.CalcularDescontoAsync(consulta.ResponsavelId, dto.Valor, agora);
+        pagamento.RegistrarDescontoFidelidade(desconto.ValorDesconto, desconto.IncidenciaVetly, desconto.IncidenciaVeterinario);
+
         await _repo.AdicionarAsync(pagamento);
         await _repo.SalvarAsync();
 
-        var agora = _timeProvider.GetUtcNow().UtcDateTime;
         consulta.ConfirmarPagamento(agora);
         _consultaRepo.Atualizar(consulta);
         await _consultaRepo.SalvarAsync();
@@ -115,7 +122,9 @@ public class PagamentoService : IPagamentoService
         {
             Id = pagamento.Id, Status = pagamento.StatusPagamento, Simulado = pagamento.Simulado,
             PercentualComissao = pagamento.PercentualComissao, ValorComissao = pagamento.ValorComissao,
-            ValorRepasse = pagamento.ValorRepasse, ConsultaStatus = consulta.Status
+            ValorRepasse = pagamento.ValorRepasse, ConsultaStatus = consulta.Status,
+            DescontoFidelidadeCalculado = pagamento.DescontoFidelidadeCalculado,
+            IncidenciaVetly = pagamento.IncidenciaVetly, IncidenciaVeterinario = pagamento.IncidenciaVeterinario
         };
     }
 

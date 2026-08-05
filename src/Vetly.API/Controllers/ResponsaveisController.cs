@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Vetly.Application.DTOs.Fidelidade;
 using Vetly.Application.DTOs.Responsavel;
 using Vetly.Application.Interfaces;
 using Vetly.Domain.Enums;
@@ -13,8 +14,13 @@ namespace Vetly.API.Controllers;
 public class ResponsaveisController : ControllerBase
 {
     private readonly IResponsavelService _service;
+    private readonly IFidelidadeService _fidelidadeService;
 
-    public ResponsaveisController(IResponsavelService service) => _service = service;
+    public ResponsaveisController(IResponsavelService service, IFidelidadeService fidelidadeService)
+    {
+        _service = service;
+        _fidelidadeService = fidelidadeService;
+    }
 
     /// <summary>Retorna todos os responsaveis ativos.</summary>
     [HttpGet]
@@ -91,4 +97,18 @@ public class ResponsaveisController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> RevogarConsentimento(Guid id, FinalidadeConsentimento finalidade) =>
         Ok(await _service.RevogarConsentimentoAsync(id, finalidade));
+
+    /// <summary>Retorna o resumo de fidelidade do responsavel: tier, saldo e progresso (RN-071).</summary>
+    [HttpGet("{id:guid}/fidelidade")]
+    [ProducesResponseType(typeof(FidelidadeDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ObterFidelidade(Guid id) =>
+        Ok(await _fidelidadeService.ObterFidelidadeAsync(id));
+
+    /// <summary>Retorna o extrato completo de lançamentos de pontos de fidelidade (RN-070/074/075).</summary>
+    [HttpGet("{id:guid}/fidelidade/extrato")]
+    [ProducesResponseType(typeof(IEnumerable<PontosFidelidadeDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ObterExtratoFidelidade(Guid id) =>
+        Ok(await _fidelidadeService.ObterExtratoAsync(id));
 }

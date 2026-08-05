@@ -9,6 +9,7 @@ using Vetly.Application.Interfaces;
 using Vetly.Application.Services;
 using Vetly.Application.Strategies.Cancelamento;
 using Vetly.Application.Strategies.Comissao;
+using Vetly.Application.Strategies.Fidelidade;
 using Vetly.Application.Strategies.Split;
 using Vetly.Infrastructure.Data;
 using Vetly.Infrastructure.Repositories;
@@ -86,6 +87,8 @@ builder.Services.AddScoped<ILogAuditoriaIARepository, LogAuditoriaIARepository>(
 builder.Services.AddScoped<IConcessaoAcessoProntuarioRepository, ConcessaoAcessoProntuarioRepository>();
 builder.Services.AddScoped<ILogAcessoProntuarioRepository, LogAcessoProntuarioRepository>();
 builder.Services.AddScoped<IAvaliacaoRepository, AvaliacaoRepository>();
+builder.Services.AddScoped<IObrigacaoDoPetRepository, ObrigacaoDoPetRepository>();
+builder.Services.AddScoped<IPontosFidelidadeRepository, PontosFidelidadeRepository>();
 
 // ── Serviços de Aplicação ────────────────────────────────────────────────────
 builder.Services.AddScoped<IVeterinarioService, VeterinarioService>();
@@ -101,12 +104,20 @@ builder.Services.AddScoped<ILembreteService, LembreteService>();
 builder.Services.AddScoped<IConsultaIaService, ConsultaIaService>();
 builder.Services.AddScoped<IAcessoProntuarioService, AcessoProntuarioService>();
 builder.Services.AddScoped<IAvaliacaoService, AvaliacaoService>();
+builder.Services.AddScoped<IObrigacaoService, ObrigacaoService>();
+builder.Services.AddScoped<IFidelidadeService, FidelidadeService>();
 
 // ── Factories (IEnumerable<IDocumentoFactory> — resolvidas pelo DI) ──────────
 builder.Services.AddScoped<IDocumentoFactory, ProntuarioFactory>();
 builder.Services.AddScoped<IDocumentoFactory, ReceitaVeterinariaFactory>();
 builder.Services.AddScoped<IDocumentoFactory, AtestadoFactory>();
 builder.Services.AddScoped<IDocumentoFactory, NotaFiscalFactory>();
+
+// ── Factories — Obrigacoes do pet por especie (RN-069) — generica por ultimo,
+// e sempre aplicavel como fallback ────────────────────────────────────────────
+builder.Services.AddScoped<IObrigacaoFactory, ObrigacaoCaninaFactory>();
+builder.Services.AddScoped<IObrigacaoFactory, ObrigacaoFelinaFactory>();
+builder.Services.AddScoped<IObrigacaoFactory, ObrigacaoGenericaFactory>();
 
 // ── Strategies — Cancelamento (por prioridade) ───────────────────────────────
 builder.Services.AddScoped<ICancelamentoStrategy, ReembolsoIntegralStrategy>();
@@ -121,6 +132,11 @@ builder.Services.AddScoped<ISplitFinanceiroStrategy, SplitEmpresaStrategy>();
 builder.Services.AddScoped<IComissaoStrategy, ComissaoBasicoStrategy>();
 builder.Services.AddScoped<IComissaoStrategy, ComissaoProfissionalStrategy>();
 builder.Services.AddScoped<IComissaoStrategy, ComissaoEnterpriseStrategy>();
+
+// ── Strategies — Desconto de fidelidade por tier (RN-071/072) ───────────────
+builder.Services.AddScoped<IDescontoFidelidadeStrategy, DescontoBronzeStrategy>();
+builder.Services.AddScoped<IDescontoFidelidadeStrategy, DescontoPrataStrategy>();
+builder.Services.AddScoped<IDescontoFidelidadeStrategy, DescontoOuroStrategy>();
 
 // ── OllamaService — HttpClient com timeout de 120s ──────────────────────────
 builder.Services.AddHttpClient<IOllamaService, OllamaService>(client =>

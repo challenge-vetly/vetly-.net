@@ -12,4 +12,9 @@ public class SimularPagamentoResponseDto
     public decimal ValorComissao { get; set; }
     public decimal ValorRepasse { get; set; }
     public StatusConsulta ConsultaStatus { get; set; }
+
+    /// <summary>Desconto de fidelidade calculado e exibido, sem abatimento real (RN-072).</summary>
+    public decimal DescontoFidelidadeCalculado { get; set; }
+    public decimal IncidenciaVetly { get; set; }
+    public decimal IncidenciaVeterinario { get; set; }
 }

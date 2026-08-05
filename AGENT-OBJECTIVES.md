@@ -33,7 +33,7 @@ Plano de referência completo (decisões de arquitetura, mapeamento fase→arqui
       LogAcessoProntuario (RN-083..088)
 - [x] Fase 9 — Avaliação: entidade Avaliacao, moderação, média ponderada
       (RN-076..082)
-- [ ] Fase 10 — Fidelidade: ObrigacaoDoPet (Factory por espécie), PontosFidelidade
+- [x] Fase 10 — Fidelidade: ObrigacaoDoPet (Factory por espécie), PontosFidelidade
       FIFO, tiers, IDescontoFidelidadeStrategy (RN-069..075)
 - [ ] Fase 11 — Dashboard consolidado do Administrador + FaixaEnterprise +
       autorização por posse via claim entidadeId (RN-007, RN-092, RN-001..006)
@@ -170,60 +170,89 @@ README de contratos (Fase 13).
   existir para uma consulta `Realizada`. Mantido mesmo assim porque (a) é a
   tradução literal da RN, (b) o custo é uma linha, e (c) não há outro ponto
   de integração natural no sistema atual. Documentado aqui para não parecer
-  "morto por acidente" numa leitura futura do código.
+  "morto por acidente" numa leitura futura do código. A mesma ressalva vale
+  para `IFidelidadeService.EstornarPontosPorCancelamentoAsync`, wireado no
+  mesmo ponto pela Fase 10 (RN-075) — mesma causa raiz.
+- **Valores de pontuação (50 para obrigação cumprida no prazo, 20 para
+  consulta avulsa) e o mapeamento `TipoServico → TipoObrigacao`
+  (Vacinacao→Vacina, Retorno→Retorno, Consulta/Teleorientacao→CheckUp,
+  Cirurgia/Exame→nenhum) são decisões de engenharia da Fase 10** — a spec
+  (RN-070) só define a *proporção* ("obrigação cumprida pontua mais que
+  consulta avulsa, peso menor"), não valores numéricos nem o mapeamento
+  serviço→obrigação. `Vermifugo` nunca é casado automaticamente por nenhum
+  `TipoServico` existente (não há um "serviço de vermifugação" na v1) —
+  permanece no calendário e pode vencer sem nunca ser marcado cumprido por
+  este fluxo; é uma limitação conhecida do MVP, não um bug.
+- **`PontosFidelidade.ExpiraEm` (Data + 12 meses) substitui uma fila FIFO
+  explícita** (RN-074): como cada lançamento carrega sua própria expiração,
+  os mais antigos vencem primeiro naturalmente — bastou filtrar por
+  `Valido(agora)` ao somar o saldo. Não há estrutura de fila/consumo porque
+  este MVP não tem resgate de pontos por recompensa, só acúmulo para tier e
+  desconto — nunca "gasta" pontos específicos.
+- **O calendário de `ObrigacaoDoPet` não é gerado automaticamente no
+  `AnimalService.CriarAsync`** — apesar da RN-069 dizer "gerado no cadastro
+  do pet". Decisão: expor `POST /api/animais/{id}/obrigacoes` como chamada
+  explícita do cliente logo após criar o animal, em vez de acoplar
+  `AnimalService` a `IObrigacaoService` (mais uma dependência num serviço já
+  grande, e uma camada — Application — chamando outro serviço da mesma
+  camada dentro de um fluxo que hoje não previa isso). Efeito observável para
+  o cliente é o mesmo se o frontend encadear as duas chamadas.
 
 ## ESTADO ATUAL
 
-**Fase corrente:** Fase 9 concluída (commit a registrar, tag
-`v2-fase-09-avaliacao`). Iniciando Fase 10.
-**Baseline de testes:** 173/173 verdes (167 unit + 6 integration) — cresceu a
-partir dos 150 da Fase 8 com `AvaliacaoTests` (9 casos, domínio puro),
-`AvaliacaoServiceTests` (8 casos, Moq), `VeterinarioReputacaoTests` (4 casos,
-domínio puro) e 2 novos casos em `VeterinarioServiceTests` (exposição pública
-da nota condicionada a ≥3 avaliações).
-**O que mudou na Fase 9:** nova entidade `Avaliacao` (`ConsultaId` único,
-`ResponsavelId`, `VeterinarioId`, `NotaGeral` 1-5 obrigatória, subnotas
-opcionais, `Comentario`, `Data`, `StatusModeracao`, `RespostaVeterinario`
-0..1, `Invalidada`), criada via método-fábrica `Avaliacao.Criar(...)` que
-valida o gatilho (RN-076: só consulta `Realizada`, `AVALIACAO-002`) e a
-janela de 7 dias (`AVALIACAO-001`) a partir de `Consulta.DataRealizada`
-(campo já existente desde a Fase 4). `Editar` valida a janela de 48h da
-publicação (`AVALIACAO-003`); `Responder` só aceita uma resposta por
-avaliação (`AVALIACAO-004`); `Moderar` troca `StatusModeracao` sem nunca
-tocar na nota (RN-080); `Invalidar` marca antifraude (RN-081). Novo enum
-`StatusModeracao`. `Veterinario` ganha `NotaMedia`/`TotalAvaliacoes` e o
-método `RecalcularReputacao(avaliacoes, agora)`, que pondera por recência
-(últimos 90 dias pesam 2×, RN-078) — recebe tuplas `(nota, data)` em vez de
-navegar para `Avaliacao` (sem navigation properties, convenção da base).
-Novo `AvaliacaoService` orquestra criação (checa unicidade por consulta,
-`AVALIACAO-006`), edição, resposta, moderação e o recálculo de reputação do
-vet a cada mutação do conjunto de avaliações válidas; `VeterinarioService`
-só expõe `NotaMedia` no DTO quando `TotalAvaliacoes >= 3` (RN-078).
-`ConsultaService.CancelarAsync` ganhou a chamada a
-`IAvaliacaoService.InvalidarPorCancelamentoAsync` (RN-081 — ver "Decisões de
-fundação" sobre por que é inalcançável no estado atual, mas documentado).
-Endpoints novos: `POST /api/consultas/{id}/avaliacao`, `GET/PUT
-/api/avaliacoes/{id}`, `POST /api/avaliacoes/{id}/resposta`, `POST
-/api/avaliacoes/{id}/moderar` (restrito a Admin), `GET
-/api/veterinarios/{id}/avaliacoes`. Migration `Fase09_AvaliacaoNotoriedade`:
-aditiva (`AddColumn` NOTA_MEDIA/TOTAL_AVALIACOES em TB_VETERINARIO +
-`CreateTable` TB_AVALIACAO com índice único em CONSULTA_ID); precisou de
-correção manual — o scaffold gerou `NOTA_GERAL`/subnotas como
-`Column<bool>` em vez de `Column<int>` (Oracle mapeia `NUMBER(1)` como tipo
-canônico de `bool` por convenção, e o scaffold seguiu o store type em vez do
-CLR type real da propriedade `int`).
-**Próximos passos:** Fase 10 — fidelidade: `ObrigacaoDoPet` (`Tipo:
-TipoObrigacao` — enum novo, decisão de fundação já tomada na Fase 0),
-`PontosFidelidade` (FIFO, `ExpiraEm` = Data+12m, `Estornado`). Tier
-recalculado a cada mutação de pontos (Prata≥300, Ouro≥800 em 12m)
-atualizando `Responsavel.TierFidelidade`/`SaldoPontos` (campos já existentes
-desde a Fase 1). `IObrigacaoFactory` (por espécie: canina/felina/genérica —
-mesmo padrão de seleção do `IDocumentoFactory`) gera calendário no cadastro
-do Animal. `IDescontoFidelidadeStrategy` por tier (Bronze 0%, Prata
-5%=3%+2%, Ouro 10%=6%+4%) grava nos campos de incidência do `Pagamento`
-(`DescontoFidelidadeCalculado`/`IncidenciaVetly`/`IncidenciaVeterinario`, já
-existentes e zerados desde a Fase 5) e respeita
-`Responsavel.BloqueadoDescontosAte` (Fase 6 — desconto zerado durante
-penalidade). Endpoints `GET/POST /api/animais/{id}/obrigacoes`, `GET
-/api/responsaveis/{id}/fidelidade[/extrato]`, `GET
-/api/consultas/{id}/desconto-previsto`.
+**Fase corrente:** Fase 10 concluída (commit a registrar, tag
+`v2-fase-10-fidelidade`). Iniciando Fase 11.
+**Baseline de testes:** 211/211 verdes (205 unit + 6 integration) — cresceu a
+partir dos 173 da Fase 9 com `ObrigacaoDoPetTests` (6 casos, domínio puro),
+`PontosFidelidadeTests` (6 casos, domínio puro), `ObrigacaoFactoryTests` (6
+casos), `ObrigacaoServiceTests` (5 casos, Moq), `FidelidadeServiceTests` (11
+casos, Moq) e 5 novos casos em `ResponsavelTests` (limiares de tier).
+**O que mudou na Fase 10:** novas entidades `ObrigacaoDoPet` (`AnimalId`,
+`Tipo: TipoObrigacao`, `DataLimite`, `Status: StatusObrigacao`,
+`ConsultaId?`, `DataCumprimento?`, com `MarcarCumprida`/`EstaNoPrazo`/
+`EstaAtrasada`) e `PontosFidelidade` (`ResponsavelId`, `ConsultaId`,
+`Origem: OrigemPontos`, `Pontos`, `Data`, `ExpiraEm = Data+12m`,
+`Estornado`) — FIFO resolvido pela própria `ExpiraEm` de cada lançamento,
+sem fila separada (ver "Decisões de fundação"). `Responsavel` ganha
+`RecalcularFidelidade(saldoValido)` (Prata≥300, Ouro≥800 em 12m — RN-071).
+`IObrigacaoFactory` (canina/felina/genérica — mesmo padrão de seleção do
+`IDocumentoFactory`, genérica sempre aplicável como fallback) gera o
+calendário via `POST /api/animais/{id}/obrigacoes` (não automático no
+cadastro do animal — ver "Decisões de fundação"). Novo `ObrigacaoService`
+(gerar calendário com trava `OBRIGACAO-002` contra duplicar, listar com
+"atrasada" derivada). Novo `IDescontoFidelidadeStrategy` por tier (Bronze
+0%, Prata 5%=3%+2%, Ouro 10%=6%+4% — RN-072). Novo `FidelidadeService`:
+`PontuarConsultaRealizadaAsync` (casa `TipoServico` com uma
+`ObrigacaoDoPet` pendente no prazo — se achar, cumpre e dá pontos cheios;
+senão, pontua como avulsa com peso menor — RN-070), sempre recalculando o
+tier; `EstornarPontosPorCancelamentoAsync` (RN-075); `CalcularDescontoAsync`
+(zera se `Responsavel.BloqueadoDescontosAte` ativo, mesmo com tier
+elegível — RN-064 tem precedência sobre RN-072).
+`ConsultaService.MarcarRealizadaAsync` chama `PontuarConsultaRealizadaAsync`
+após marcar realizada; `CancelarAsync` chama
+`EstornarPontosPorCancelamentoAsync` (mesma ressalva de alcançabilidade do
+RN-081 na Fase 9). `PagamentoService.ProcessarSimuladoAsync` chama
+`CalcularDescontoAsync` e grava o resultado via
+`Pagamento.RegistrarDescontoFidelidade` (campos
+`DescontoFidelidadeCalculado`/`IncidenciaVetly`/`IncidenciaVeterinario`, já
+existentes e zerados desde a Fase 5) — `SimularPagamentoResponseDto` passa a
+expor os três campos. Endpoints novos: `POST/GET
+/api/animais/{id}/obrigacoes`, `GET /api/responsaveis/{id}/fidelidade`,
+`GET /api/responsaveis/{id}/fidelidade/extrato`, `GET
+/api/consultas/{id}/desconto-previsto?valorServico=X`. Migration
+`Fase10_Fidelidade`: puramente aditiva (`CreateTable` para as duas tabelas
+novas, sem rename — scaffold correto desta vez, incluindo `ESTORNADO` como
+`bool` de verdade).
+**Próximos passos:** Fase 11 — financeiro consolidado do Administrador +
+faixas Enterprise: `Empresa` ganha `FaixaEnterprise` calculada pelo nº de
+vets ativos (R$599 até 5, R$999 até 10, R$1.699 até 20, +R$70/vet acima de
+20 — RN-092), recalculada ao vincular/desativar vet.
+`EmpresaService.ObterDashboardConsolidadoAsync` agrega
+faturamento/comissões/repasses/reembolsos — DTO sem nenhum campo de dados
+bancários pessoais/outra empresa por construção (RN-007, não por filtro).
+Autorização por posse via `ICurrentUserService.EntidadeId` (decisão de
+fundação da Fase 0, ainda não exercitada em nenhum endpoint até aqui): vet
+vinculado só acessa a própria agenda/pacientes; Admin só acessa `EmpresaId`
+que bate com sua claim — tentativa cruzada ⇒ `ForbiddenException`
+`ACESSO-002`. Endpoints `GET /api/empresas/{id}/dashboard`,
+`GET /api/empresas/{id}/assinatura`.

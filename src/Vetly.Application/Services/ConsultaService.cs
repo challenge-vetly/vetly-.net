@@ -30,6 +30,7 @@ public class ConsultaService : IConsultaService
     private readonly IVeterinarioRepository _vetRepo;
     private readonly IAcessoProntuarioService _acessoProntuarioService;
     private readonly IAvaliacaoService _avaliacaoService;
+    private readonly IFidelidadeService _fidelidadeService;
     private readonly ICurrentUserService _currentUser;
     private readonly TimeProvider _timeProvider;
     private readonly IEnumerable<ICancelamentoStrategy> _strategies;
@@ -44,6 +45,7 @@ public class ConsultaService : IConsultaService
         IVeterinarioRepository vetRepo,
         IAcessoProntuarioService acessoProntuarioService,
         IAvaliacaoService avaliacaoService,
+        IFidelidadeService fidelidadeService,
         ICurrentUserService currentUser,
         TimeProvider timeProvider,
         IEnumerable<ICancelamentoStrategy> strategies)
@@ -57,6 +59,7 @@ public class ConsultaService : IConsultaService
         _vetRepo = vetRepo;
         _acessoProntuarioService = acessoProntuarioService;
         _avaliacaoService = avaliacaoService;
+        _fidelidadeService = fidelidadeService;
         _currentUser = currentUser;
         _timeProvider = timeProvider;
         _strategies = strategies;
@@ -171,11 +174,13 @@ public class ConsultaService : IConsultaService
         _pagamentoRepo.Atualizar(pagamento);
         await _repo.SalvarAsync();
 
-        // RN-081: se a consulta já tinha avaliação publicada, o cancelamento a invalida.
-        // No estado atual da máquina de estados (Cancelar só parte de EmCheckout/Confirmada,
-        // nunca de Realizada) isso é inalcançável na prática — mantido para não deixar a
-        // regra sem cobertura caso um fluxo futuro permita cancelar após realizada.
+        // RN-081/075: se a consulta já tinha avaliação publicada ou já pontuou fidelidade,
+        // o cancelamento invalida/estorna. No estado atual da máquina de estados (Cancelar
+        // só parte de EmCheckout/Confirmada, nunca de Realizada) isso é inalcançável na
+        // prática — mantido para não deixar a regra sem cobertura caso um fluxo futuro
+        // permita cancelar após realizada.
         await _avaliacaoService.InvalidarPorCancelamentoAsync(consulta.Id, agora);
+        await _fidelidadeService.EstornarPontosPorCancelamentoAsync(consulta.Id, agora);
 
         return resultado;
     }
@@ -264,9 +269,14 @@ public class ConsultaService : IConsultaService
         if (!receita.AssinadoDigitalmente)
             throw new BusinessRuleException("RN-031", "A receita veterinaria deve estar assinada digitalmente.");
 
-        consulta.MarcarRealizada(_timeProvider.GetUtcNow().UtcDateTime);
+        var agora = _timeProvider.GetUtcNow().UtcDateTime;
+        consulta.MarcarRealizada(agora);
         _repo.Atualizar(consulta);
         await _repo.SalvarAsync();
+
+        // RN-070/075: pontua a consulta (cumpre obrigação pendente no prazo, se houver, ou avulsa).
+        await _fidelidadeService.PontuarConsultaRealizadaAsync(
+            consulta.Id, consulta.AnimalId, consulta.ResponsavelId, consulta.TipoServico, agora);
 
         return MapearParaDto(consulta);
     }

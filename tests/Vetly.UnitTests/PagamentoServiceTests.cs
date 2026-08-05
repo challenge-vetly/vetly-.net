@@ -1,4 +1,5 @@
 using Moq;
+using Vetly.Application.DTOs.Fidelidade;
 using Vetly.Application.DTOs.Pagamento;
 using Vetly.Application.Exceptions;
 using Vetly.Application.Interfaces;
@@ -22,11 +23,26 @@ public class PagamentoServiceTests
     private readonly Mock<IPagamentoRepository> _repoMock = new();
     private readonly Mock<IVeterinarioRepository> _vetRepoMock = new();
     private readonly Mock<IConsultaRepository> _consultaRepoMock = new();
+    private readonly Mock<IFidelidadeService> _fidelidadeServiceMock = new();
     private static readonly IComissaoStrategy[] TodasAsComissoes =
         [new ComissaoBasicoStrategy(), new ComissaoProfissionalStrategy(), new ComissaoEnterpriseStrategy()];
 
+    public PagamentoServiceTests()
+    {
+        // Por padrão, sem desconto de fidelidade (Bronze) — testes que precisam de tier
+        // elegível sobrescrevem este setup.
+        _fidelidadeServiceMock
+            .Setup(f => f.CalcularDescontoAsync(It.IsAny<Guid>(), It.IsAny<decimal>(), It.IsAny<DateTime>()))
+            .ReturnsAsync(new ResultadoDescontoFidelidadeDto
+            {
+                TierFidelidade = TierFidelidade.Bronze, PercentualDesconto = 0,
+                ValorDesconto = 0, IncidenciaVetly = 0, IncidenciaVeterinario = 0
+            });
+    }
+
     private PagamentoService CriarServico(params ISplitFinanceiroStrategy[] splitStrategies) =>
-        new(_repoMock.Object, _vetRepoMock.Object, _consultaRepoMock.Object, splitStrategies, TodasAsComissoes, TimeProvider.System);
+        new(_repoMock.Object, _vetRepoMock.Object, _consultaRepoMock.Object, _fidelidadeServiceMock.Object,
+            splitStrategies, TodasAsComissoes, TimeProvider.System);
 
     private static Veterinario CriarVet(PersonaVeterinario persona, PlanoAssinatura plano) =>
         new("Dr. Vet", new Crmv("12345-SP"), "SP", persona, plano);
