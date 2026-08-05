@@ -38,7 +38,7 @@ Plano de referência completo (decisões de arquitetura, mapeamento fase→arqui
 - [x] Fase 11 — Dashboard consolidado do Administrador + FaixaEnterprise +
       autorização por posse via claim entidadeId (RN-007, RN-092, RN-001..006)
 - [x] Fase 12 — Documento: assinatura por nome digitado (RN-031, RN-091)
-- [ ] Fase 13 — Documentação final: README de contratos + FLUXO-DE-TESTE.md +
+- [x] Fase 13 — Documentação final: README de contratos + FLUXO-DE-TESTE.md +
       tag v2.0.0
 
 ## FORA DE ESCOPO — NUNCA IMPLEMENTAR
@@ -250,36 +250,32 @@ README de contratos (Fase 13).
 
 ## ESTADO ATUAL
 
-**Fase corrente:** Fase 12 concluída (commit a registrar, tag
-`v2-fase-12-documento`). Iniciando Fase 13 (última fase).
-**Baseline de testes:** 237/237 verdes (231 unit + 6 integration) — cresceu a
-partir dos 230 da Fase 11 com `DocumentoAssinaturaTests` (5 casos, domínio
-puro) e 3 novos casos em `DocumentoServiceTests` (posse da assinatura).
-**O que mudou na Fase 12:** `Documento` ganha `TipoAssinatura` (enum novo,
-só `NomeDigitado` no MVP), `AssinaturaNomeDigitado` (string?),
-`DataAssinatura` (DateTime?) e `HabilitaDispensacaoControlados` (sempre
-`false` — RN-091). O método v1 `Assinar()` sem parâmetros foi substituído
-por `Assinar(nomeDigitado, agora)` (ver "Decisões de fundação" — única
-mudança de assinatura de método v1 pré-existente em toda a migração, porque
-é exatamente disso que trata a RN-031/091 nesta fase). `DocumentoService.
-AssinarAsync(id, nomeDigitado)` valida não-vazio (domínio, `DOCUMENTO-001`)
-e, quando `ICurrentUserService.EntidadeId` está presente, que o nome
-digitado coincide (case/espaço-insensível) com o nome do vet autenticado
-(`BusinessRuleException DOCUMENTO-002`) — sem a claim, aceita qualquer nome
-não-vazio (mesma degradação graciosa do dev-stub já usada na Fase 4).
-Endpoint `POST /api/documentos/{id}/assinar` passa a receber
-`{ nomeDigitado }` no corpo. Fluxo de correção (RN-032..035) intocado.
-Migration `Fase12_AssinaturaDocumento`: puramente aditiva (`AddColumn` × 4
-em `TB_DOCUMENTO`, sem rename).
-**Próximos passos:** Fase 13 — documentação final (última fase do plano):
-(1) reescrever `README.md` com contratos completos por domínio (endpoints,
-DTOs de entrada/saída, tabela de enums nome→valores JSON, tabela de códigos
-de erro por camada — `RN-NNN`/`ENTIDADE-NNN`/`ACESSO-NNN` — RFC 7807, nota
-explícita do que é simulado/fora de escopo); (2) criar `FLUXO-DE-TESTE.md`
-com roteiro `curl`/Scalar encadeado por `id` cobrindo a jornada ponta a
-ponta (cadastro → consentimento LGPD → agendamento → pagamento simulado →
-IA da consulta → documentos assinados → avaliação → fidelidade →
-cancelamento) + checklist RN→endpoint→OK/Falha; (3) revisão final deste
-arquivo (todas as fases `[x]`, contagem de testes final); (4) commit
-`docs(v2): contratos da API e fluxo de teste ponta a ponta` + tags
-`v2-fase-13-docs` e `v2.0.0`.
+**Fase corrente:** Fase 13 concluída — **migração v1 → v2 completa.**
+Commit a registrar, tags `v2-fase-13-docs` e `v2.0.0`.
+**Baseline de testes:** 237/237 verdes (231 unit + 6 integration) — número
+final, crescido monotonicamente desde a baseline de 51 testes da v1 ao
+longo de 13 fases, sem nenhuma regressão registrada.
+**O que mudou na Fase 13:** `README.md` reescrito do zero — contratos
+completos dos 13 controllers (rota, verbo, auth exigida, shape de
+entrada/saída, código de erro esperado por cenário), tabela de 22 enums
+(nome → valores aceitos no JSON), catálogo dos 35 códigos de erro
+efetivamente lançados no código (`grep` no `throw new` de
+`DomainException`/`BusinessRuleException`/`ForbiddenException`, não
+transcrito de memória — garante que a tabela reflete o código real, não o
+que a spec pedia originalmente), tabela RN→classe para as regras
+implementadas, diagrama ER em Mermaid com as 20 tabelas e FKs reais, seção
+"o que este MVP não faz" espelhando a lista FORA DE ESCOPO. Novo
+`FLUXO-DE-TESTE.md`: roteiro `curl` de 15 passos encadeados por `id`
+(autenticação com claim `entidadeId` → empresa → vet vinculado → responsável
+→ consentimento LGPD → animal + calendário de obrigações → consulta →
+pagamento simulado → briefing/colmeia → IA auditada → documento assinado →
+consulta realizada + fidelidade → avaliação → dashboard do Admin →
+cancelamento com reembolso), com o resultado esperado documentado a cada
+bloco e um checklist final RN→endpoint→resultado. Este arquivo
+(`AGENT-OBJECTIVES.md`) revisado por completo: todas as 14 entradas do
+checklist (Fase 0 a 13) marcadas `[x]`.
+**Migração encerrada.** Não há próxima fase — qualquer trabalho adicional
+sobre esta base (novas features, correções, ou itens da lista FORA DE
+ESCOPO promovidos a escopo por decisão explícita do usuário) deve começar
+uma nova sessão de planejamento, não continuar este documento como se fosse
+mais uma fase do plano original.
