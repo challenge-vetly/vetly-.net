@@ -71,4 +71,33 @@ public class AnimaisController : ControllerBase
         await _service.DesativarAsync(id);
         return NoContent();
     }
+
+    /// <summary>Atualiza o peso do animal (RN-096.2).</summary>
+    [HttpPut("{id:guid}/peso")]
+    [ProducesResponseType(typeof(AnimalDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> AtualizarPeso(Guid id, [FromBody] AtualizarPesoDto dto) =>
+        Ok(await _service.AtualizarPesoAsync(id, dto.PesoKg));
+
+    /// <summary>Oculta um prontuário da visão de veterinários que não o produziram (RN-088).</summary>
+    [HttpPost("{id:guid}/ocultar-registro")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
+    public async Task<IActionResult> OcultarRegistro(Guid id, [FromBody] OcultarRegistroDto dto)
+    {
+        await _service.OcultarRegistroAsync(id, dto.ProntuarioId);
+        return Ok();
+    }
+
+    /// <summary>Reexibe um prontuário previamente ocultado.</summary>
+    [HttpDelete("{id:guid}/ocultar-registro/{prontuarioId:guid}")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ReexibirRegistro(Guid id, Guid prontuarioId)
+    {
+        await _service.ReexibirRegistroAsync(id, prontuarioId);
+        return Ok();
+    }
 }

@@ -187,13 +187,7 @@ public class ConsultaService : IConsultaService
         return new BriefingConsultaDto
         {
             ConsultaId = consultaId,
-            Animal = new AnimalDto
-            {
-                Id = animal.Id, Nome = animal.Nome, Especie = animal.Especie,
-                Raca = animal.Raca, DataNascimento = animal.DataNascimento,
-                IdadeEmAnos = animal.IdadeEmAnos(), ResponsavelId = animal.ResponsavelId,
-                AlertasAtivos = animal.AlertasAtivos, Ativo = animal.Ativo
-            },
+            Animal = AnimalService.MapearParaDto(animal),
             HistoricoResumido = historico,
             AlertasAtivos = animal.AlertasAtivos,
             ExamesRecentes = exames,

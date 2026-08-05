@@ -80,6 +80,7 @@ builder.Services.AddScoped<IPagamentoRepository, PagamentoRepository>();
 builder.Services.AddScoped<IEmpresaRepository, EmpresaRepository>();
 builder.Services.AddScoped<ILembreteRepository, LembreteRepository>();
 builder.Services.AddScoped<IConsentimentoLgpdRepository, ConsentimentoLgpdRepository>();
+builder.Services.AddScoped<IRegistroOcultadoRepository, RegistroOcultadoRepository>();
 
 // ── Serviços de Aplicação ────────────────────────────────────────────────────
 builder.Services.AddScoped<IVeterinarioService, VeterinarioService>();

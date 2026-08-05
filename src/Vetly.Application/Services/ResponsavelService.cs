@@ -46,12 +46,7 @@ public class ResponsavelService : IResponsavelService
             ?? throw new NotFoundException("Responsavel", responsavelId);
 
         var animais = await _animalRepo.ObterPorResponsavelAsync(responsavelId);
-        return animais.Select(a => new AnimalDto
-        {
-            Id = a.Id, Nome = a.Nome, Especie = a.Especie, Raca = a.Raca,
-            DataNascimento = a.DataNascimento, IdadeEmAnos = a.IdadeEmAnos(),
-            ResponsavelId = a.ResponsavelId, AlertasAtivos = a.AlertasAtivos, Ativo = a.Ativo
-        });
+        return animais.Select(AnimalService.MapearParaDto);
     }
 
     public async Task<ResponsavelDto> CriarAsync(CriarResponsavelDto dto)

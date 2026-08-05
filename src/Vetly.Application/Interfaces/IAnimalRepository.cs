@@ -21,4 +21,7 @@ public interface IAnimalRepository : IRepositoryBase<Animal>
 
     /// <summary>Retorna todos os animais ativos cadastrados.</summary>
     Task<IEnumerable<Animal>> ObterAtivosAsync();
+
+    /// <summary>Retorna um único prontuário pelo Id, ou nulo se não existir.</summary>
+    Task<Prontuario?> ObterProntuarioPorIdAsync(Guid prontuarioId);
 }

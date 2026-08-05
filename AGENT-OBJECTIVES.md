@@ -20,7 +20,7 @@ Plano de referência completo (decisões de arquitetura, mapeamento fase→arqui
       SaldoCreditosVetly/ContadorNoShows/BloqueadoDescontosAte (RN-064)
 - [x] Fase 2 — Consentimento LGPD granular: ConsentimentoLgpd (5+1 finalidades),
       revogação com histórico (RN-041..046, RN-084, RN-094)
-- [ ] Fase 3 — Extensão de Animal: Sexo/PesoKg/Castrado/Condições/Alergias/
+- [x] Fase 3 — Extensão de Animal: Sexo/PesoKg/Castrado/Condições/Alergias/
       CarteiraVacinacao/MedicacoesEmUso + RegistroOcultado (RN-088, RN-096.2)
 - [ ] Fase 4 — Máquina de estados da Consulta: StatusConsulta, lock de checkout,
       no-show, pré-sintomas (RN-057..061)
@@ -89,6 +89,13 @@ README de contratos (Fase 13).
   `ConsentimentoLgpd` (ctor + `Revogar(agora)`), orquestrados pelo
   `ResponsavelService` — mesmo resultado funcional, mais consistente com o resto
   da base.
+- **`Prontuario` ganhou `AlertaSeguranca` (bool, default false)** — pequeno desvio
+  pontual da Fase 3 (que nominalmente só toca `Animal`): sem uma classificação no
+  próprio `Prontuario`, a invariante RN-088 ("alertas de segurança nunca podem ser
+  ocultados", `ANIMAL-002`) não teria como ser verificada de verdade — não existe
+  campo algum no v1 que marque um prontuário como alergia/interação. Adição mínima
+  (parâmetro opcional no ctor, `default false`, preservado em `CriarCorrecao`), não
+  implementa nada da lista FORA DE ESCOPO.
 - **Enums trafegam como string no JSON** (`"finalidade": "CompartilhamentoRede"`):
   `Program.cs` ganhou `AddJsonOptions` com `JsonStringEnumConverter` global,
   aplicado a partir da Fase 2. O v1 serializava enums como int; a spec v2 mostra
@@ -99,29 +106,36 @@ README de contratos (Fase 13).
 
 ## ESTADO ATUAL
 
-**Fase corrente:** Fase 2 concluída (commit a registrar, tag `v2-fase-02-lgpd`).
-Iniciando Fase 3.
-**Baseline de testes:** 63/63 verdes (57 unit + 6 integration) — cresceu a partir dos
-54 da Fase 1 com `ConsentimentoLgpdTests` (3 casos), `ResponsavelServiceTests` (5
-casos) e o novo caso `AgendarAsync_SemConsentimentoClinicoAtivo_LancaBusinessRuleExceptionLGPD001`.
-**O que mudou na Fase 2:** nova entidade `ConsentimentoLgpd` (standalone, ver
-"Decisões de fundação" acima) com enum `FinalidadeConsentimento` (6 valores).
-`Responsavel` perdeu os 3 booleanos de consentimento + `RegistrarConsentimento`
-(substituídos). `ResponsavelService` ganhou `ConcederConsentimentoAsync`/
-`RevogarConsentimentoAsync`/`ListarConsentimentosAsync`. `ConsultaService.AgendarAsync`
-agora exige consentimento `AtendimentoClinico` ativo antes de agendar (`LGPD-001`).
-Novos endpoints em `ResponsaveisController`: `GET/POST /api/responsaveis/{id}/consentimentos`,
-`DELETE /api/responsaveis/{id}/consentimentos/{finalidade}`. `Program.cs` ganhou
-`JsonStringEnumConverter` global (ver "Decisões de fundação"). Migration
-`Fase02_ConsentimentoLgpd`: cria `TB_CONSENTIMENTO_LGPD`, faz backfill dos 3
-booleanos antigos via `INSERT...SELECT` (um por finalidade) antes de dropar as
-colunas antigas de `TB_RESPONSAVEL`; `Down()` restaura os booleanos por
-melhor-esforço (perde o histórico de revogações, que só existe no modelo v2).
-**Próximos passos:** Fase 3 — extensão de `Animal`: `Sexo` (enum novo
-`SexoAnimal`), `PesoKg` (decimal?, método `AtualizarPeso`), `Castrado`,
+**Fase corrente:** Fase 3 concluída (commit a registrar, tag `v2-fase-03-animal`).
+Iniciando Fase 4.
+**Baseline de testes:** 73/73 verdes (67 unit + 6 integration) — cresceu a partir dos
+63 da Fase 2 com `AnimalTests` (5 casos, domínio puro) e `AnimalServiceTests` (5
+casos, Moq).
+**O que mudou na Fase 3:** `Animal` ganhou `Sexo` (enum novo `SexoAnimal`), `PesoKg`
+(decimal?, validado >0 no ctor e em `AtualizarPeso` — `ANIMAL-001`), `Castrado`,
 `CondicoesPreExistentes`/`Alergias`/`CarteiraVacinacao`/`MedicacoesEmUso`
-(`List<string>`, mesmo padrão de `AlertasAtivos`), `FotoUrl?`; nova entidade
-filha `RegistroOcultado` com invariante "alerta de segurança nunca pode ser
-ocultado" (`ANIMAL-002` via `DomainException`); endpoints
-`PUT /api/animais/{id}/peso`, `POST/DELETE /api/animais/{id}/ocultar-registro[/{prontuarioId}]`,
-filtro de prontuários ocultados por papel do chamador (`ICurrentUserService.Role`).
+(`List<string>`, mesmo padrão de persistência de `AlertasAtivos`), `FotoUrl?`.
+Nova entidade `RegistroOcultado` (standalone, mesmo padrão de `ConsentimentoLgpd`)
+criada via `Animal.OcultarRegistro(prontuarioId, prontuarioEhAlertaSeguranca, agora)`,
+que lança `DomainException("ANIMAL-002", ...)` se o prontuário for alerta de
+segurança. `Prontuario` ganhou `AlertaSeguranca` (ver "Decisões de fundação" acima).
+`AnimalService.ObterHistoricoAsync` filtra prontuários ocultados quando
+`ICurrentUserService.Role == "Veterinario"` (Responsável/Admin sempre veem tudo).
+Novos endpoints: `PUT /api/animais/{id}/peso`,
+`POST/DELETE /api/animais/{id}/ocultar-registro[/{prontuarioId}]`.
+`AnimalService.MapearParaDto` virou `public static` e passou a ser reaproveitado por
+`ResponsavelService.ObterAnimaisAsync` e `ConsultaService.ObterBriefingAsync`
+(elimina duplicação de mapeamento já sinalizada na exploração inicial). Migration
+`Fase03_ExtensaoAnimal`: puramente aditiva (`AddColumn` + `CreateTable
+TB_REGISTRO_OCULTADO`), sem backfill de dados necessário.
+**Próximos passos:** Fase 4 — máquina de estados da `Consulta`: enum
+`StatusConsulta` substituindo os booleanos `Cancelada`/`Finalizada`; métodos de
+transição (`IniciarCheckout`, `ConfirmarPagamento`, `MarcarRealizada(vetId)`,
+`Cancelar`, `RegistrarNoShowResponsavel`/`RegistrarNoShowVeterinario`) com
+`DomainException("CONSULTA-010", ...)` em transição inválida e
+`("CONSULTA-011", ...)` em lock expirado; `MarcarRealizada` valida
+`vetId == VeterinarioId` via `ICurrentUserService` (`ForbiddenException("ACESSO-002", ...)`
+se não bater); novos campos `PreSintomas`/`ContadorRemarcacoes`/
+`LockCheckoutExpiraEm`; endpoints
+`POST /api/consultas`, `POST /{id}/confirmar-pagamento`, `POST /{id}/realizada`,
+`POST /{id}/no-show`, `POST /{id}/remarcar`, `GET /{id}/briefing` estendido.

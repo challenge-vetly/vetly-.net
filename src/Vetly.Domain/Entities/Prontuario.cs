@@ -46,6 +46,13 @@ public class Prontuario
     /// <summary>Data e hora de criação do prontuário original.</summary>
     public DateTime DataCriacao { get; private set; }
 
+    /// <summary>
+    /// Classifica este prontuário como alerta de segurança (alergia/interação — RN-088).
+    /// Um prontuário assim classificado nunca pode ser ocultado do vet — ver
+    /// <see cref="Animal.OcultarRegistro"/>. Definido na criação; imutável depois.
+    /// </summary>
+    public bool AlertaSeguranca { get; private set; }
+
     /// <summary>Construtor privado reservado ao EF Core para materialização de entidades.</summary>
     private Prontuario()
     {
@@ -53,22 +60,24 @@ public class Prontuario
     }
 
     /// <summary>Cria um novo prontuário original (sem versionamento).</summary>
-    public Prontuario(Guid consultaId, Guid animalId, string dadosClinicos)
+    public Prontuario(Guid consultaId, Guid animalId, string dadosClinicos, bool alertaSeguranca = false)
     {
         Id = Guid.NewGuid();
         ConsultaId = consultaId;
         AnimalId = animalId;
         DadosClinicos = dadosClinicos;
         DataCriacao = DateTime.UtcNow;
+        AlertaSeguranca = alertaSeguranca;
     }
 
     /// <summary>
     /// Cria um novo prontuário como correção deste, mantendo rastreabilidade via VersaoOriginalId.
     /// A justificativa é opcional dentro de 24h e obrigatória após (ver <see cref="ExigeJustificativa"/>).
+    /// A classificação de alerta de segurança é preservada na versão corrigida.
     /// </summary>
     public Prontuario CriarCorrecao(string novosDadosClinicos, string? justificativa, string crmvSolicitante)
     {
-        return new Prontuario(ConsultaId, AnimalId, novosDadosClinicos)
+        return new Prontuario(ConsultaId, AnimalId, novosDadosClinicos, AlertaSeguranca)
         {
             VersaoOriginalId = Id,       // aponta para o prontuário que está sendo corrigido
             DataCorrecao = DateTime.UtcNow,

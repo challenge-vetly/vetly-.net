@@ -37,4 +37,8 @@ public class AnimalRepository : RepositoryBase<Animal>, IAnimalRepository
         await _dbSet
             .Where(a => a.Ativo)
             .ToListAsync();
+
+    /// <inheritdoc/>
+    public async Task<Prontuario?> ObterProntuarioPorIdAsync(Guid prontuarioId) =>
+        await _context.Prontuarios.FirstOrDefaultAsync(p => p.Id == prontuarioId);
 }

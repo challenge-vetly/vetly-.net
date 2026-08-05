@@ -13,4 +13,6 @@ public class ProntuarioDto
     public string? CrmvSolicitanteCorrecao { get; set; }
     public DateTime DataCriacao { get; set; }
     public bool ExigeJustificativa { get; set; }
+    public bool AlertaSeguranca { get; set; }
+    public bool Ocultado { get; set; }
 }
