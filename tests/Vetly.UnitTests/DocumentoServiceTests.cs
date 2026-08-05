@@ -30,11 +30,12 @@ public class DocumentoServiceTests
 
     private static Consulta CriarConsultaValidada()
     {
+        var agora = DateTime.UtcNow;
         var consulta = new Consulta(
-            DateTime.UtcNow.AddDays(1),
-            ModalidadeAtendimento.Presencial,
+            DateTime.UtcNow.AddDays(1), ModalidadeAtendimento.Presencial, TipoServico.Consulta,
             Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
-        consulta.ConfirmarPagamento();
+        consulta.IniciarCheckout(agora);
+        consulta.ConfirmarPagamento(agora);
         consulta.ValidarDiagnostico();
         return consulta;
     }
@@ -84,11 +85,12 @@ public class DocumentoServiceTests
     public async Task Gerar_LancaBusinessRuleException_QuandoDiagnosticoNaoValidado()
     {
         // Consulta sem diagnostico validado
+        var agora = DateTime.UtcNow;
         var consulta = new Consulta(
-            DateTime.UtcNow.AddDays(1),
-            ModalidadeAtendimento.Presencial,
+            DateTime.UtcNow.AddDays(1), ModalidadeAtendimento.Presencial, TipoServico.Consulta,
             Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
-        consulta.ConfirmarPagamento();
+        consulta.IniciarCheckout(agora);
+        consulta.ConfirmarPagamento(agora);
         // NÃO chama ValidarDiagnostico()
 
         _consultaRepoMock

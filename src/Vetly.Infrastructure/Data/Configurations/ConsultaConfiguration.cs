@@ -29,6 +29,11 @@ public class ConsultaConfiguration : IEntityTypeConfiguration<Consulta>
             .HasColumnName("MODALIDADE")
             .IsRequired();
 
+        builder.Property(c => c.TipoServico)
+            .HasConversion<int>()
+            .HasColumnName("TIPO_SERVICO")
+            .IsRequired();
+
         builder.Property(c => c.VeterinarioId)
             .HasColumnType("CHAR(36)")
             .HasColumnName("VETERINARIO_ID")
@@ -52,18 +57,24 @@ public class ConsultaConfiguration : IEntityTypeConfiguration<Consulta>
             .HasColumnType("NUMBER(1)")
             .HasColumnName("PROTOCOLO_VALIDADO");
 
-        builder.Property(c => c.StatusPagamento)
+        builder.Property(c => c.Status)
             .HasConversion<int>()
-            .HasColumnName("STATUS_PAGAMENTO")
+            .HasColumnName("STATUS")
             .IsRequired();
 
-        builder.Property(c => c.Cancelada)
-            .HasColumnType("NUMBER(1)")
-            .HasColumnName("CANCELADA");
+        builder.Property(c => c.PreSintomas)
+            .HasColumnType("VARCHAR2(4000)")
+            .HasColumnName("PRE_SINTOMAS");
 
-        builder.Property(c => c.Finalizada)
-            .HasColumnType("NUMBER(1)")
-            .HasColumnName("FINALIZADA");
+        builder.Property(c => c.LockCheckoutExpiraEm)
+            .HasColumnName("LOCK_CHECKOUT_EXPIRA_EM");
+
+        builder.Property(c => c.ContadorRemarcacoes)
+            .HasColumnType("NUMBER(5)")
+            .HasColumnName("CONTADOR_REMARCACOES");
+
+        builder.Property(c => c.DataRealizada)
+            .HasColumnName("DATA_REALIZADA");
 
         // Índice composto para as buscas mais comuns: por veterinário + data
         builder.HasIndex(c => c.VeterinarioId).HasDatabaseName("IX_CONSULTA_VETERINARIO");

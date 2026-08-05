@@ -1,4 +1,5 @@
 using Vetly.Domain.Entities;
+using Vetly.Domain.Enums;
 
 namespace Vetly.Application.Interfaces;
 
@@ -14,6 +15,6 @@ public interface IConsultaRepository : IRepositoryBase<Consulta>
     /// <summary>Retorna todas as consultas de um animal.</summary>
     Task<IEnumerable<Consulta>> ObterPorAnimalAsync(Guid animalId);
 
-    /// <summary>Retorna consultas com filtros compostos (data, veterinário, status de pagamento).</summary>
-    Task<IEnumerable<Consulta>> ObterComFiltrosAsync(DateTime? dataInicio, DateTime? dataFim, Guid? veterinarioId, bool? cancelada);
+    /// <summary>Retorna consultas com filtros compostos (data, veterinário, status).</summary>
+    Task<IEnumerable<Consulta>> ObterComFiltrosAsync(DateTime? dataInicio, DateTime? dataFim, Guid? veterinarioId, StatusConsulta? status);
 }

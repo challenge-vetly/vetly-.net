@@ -67,7 +67,7 @@ public class VeterinarioServiceTests
         var crmv = new Crmv("12345-SP");
         var vet = new Veterinario("Dr. Vet", crmv, "SP", PersonaVeterinario.Autonomo, PlanoAssinatura.Profissional);
         var consultaFutura = new Consulta(
-            DateTime.UtcNow.AddDays(3), ModalidadeAtendimento.Presencial,
+            DateTime.UtcNow.AddDays(3), ModalidadeAtendimento.Presencial, TipoServico.Consulta,
             vet.Id, Guid.NewGuid(), Guid.NewGuid());
 
         _repoMock.Setup(r => r.ObterPorIdAsync(vet.Id)).ReturnsAsync(vet);

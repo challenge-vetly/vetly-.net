@@ -8,12 +8,15 @@ public class ConsultaDto
     public Guid Id { get; set; }
     public DateTime DataHora { get; set; }
     public ModalidadeAtendimento Modalidade { get; set; }
+    public TipoServico TipoServico { get; set; }
     public Guid VeterinarioId { get; set; }
     public Guid AnimalId { get; set; }
     public Guid ResponsavelId { get; set; }
+    public string? PreSintomas { get; set; }
+    public StatusConsulta Status { get; set; }
+    public DateTime? LockCheckoutExpiraEm { get; set; }
+    public int ContadorRemarcacoes { get; set; }
+    public DateTime? DataRealizada { get; set; }
     public bool DiagnosticoValidado { get; set; }
     public bool ProtocoloValidado { get; set; }
-    public StatusPagamento StatusPagamento { get; set; }
-    public bool Cancelada { get; set; }
-    public bool Finalizada { get; set; }
 }

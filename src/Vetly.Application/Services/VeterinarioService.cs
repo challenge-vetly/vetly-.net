@@ -118,9 +118,10 @@ public class VeterinarioService : IVeterinarioService
 
     private static ConsultaDto MapearConsultaParaDto(Consulta c) => new()
     {
-        Id = c.Id, DataHora = c.DataHora, Modalidade = c.Modalidade,
+        Id = c.Id, DataHora = c.DataHora, Modalidade = c.Modalidade, TipoServico = c.TipoServico,
         VeterinarioId = c.VeterinarioId, AnimalId = c.AnimalId, ResponsavelId = c.ResponsavelId,
-        DiagnosticoValidado = c.DiagnosticoValidado, ProtocoloValidado = c.ProtocoloValidado,
-        StatusPagamento = c.StatusPagamento, Cancelada = c.Cancelada
+        PreSintomas = c.PreSintomas, Status = c.Status, LockCheckoutExpiraEm = c.LockCheckoutExpiraEm,
+        ContadorRemarcacoes = c.ContadorRemarcacoes, DataRealizada = c.DataRealizada,
+        DiagnosticoValidado = c.DiagnosticoValidado, ProtocoloValidado = c.ProtocoloValidado
     };
 }

@@ -72,7 +72,7 @@ public class DocumentoService : IDocumentoService
         {
             Id = consulta.Id, VeterinarioId = consulta.VeterinarioId, AnimalId = consulta.AnimalId,
             ResponsavelId = consulta.ResponsavelId, DataHora = consulta.DataHora, Modalidade = consulta.Modalidade,
-            StatusPagamento = consulta.StatusPagamento
+            TipoServico = consulta.TipoServico, Status = consulta.Status
         };
         var vetDto = new DTOs.Veterinario.VeterinarioDto { Id = vet.Id, Crmv = vet.Crmv.Valor, Nome = vet.Nome };
         var animalDto = new DTOs.Animal.AnimalDto { Id = animal.Id, Nome = animal.Nome, Especie = animal.Especie };

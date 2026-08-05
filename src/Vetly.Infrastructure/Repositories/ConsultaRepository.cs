@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Vetly.Application.Interfaces;
 using Vetly.Domain.Entities;
+using Vetly.Domain.Enums;
 using Vetly.Infrastructure.Data;
 
 namespace Vetly.Infrastructure.Repositories;
@@ -36,7 +37,7 @@ public class ConsultaRepository : RepositoryBase<Consulta>, IConsultaRepository
 
     /// <inheritdoc/>
     public async Task<IEnumerable<Consulta>> ObterComFiltrosAsync(
-        DateTime? dataInicio, DateTime? dataFim, Guid? veterinarioId, bool? cancelada)
+        DateTime? dataInicio, DateTime? dataFim, Guid? veterinarioId, StatusConsulta? status)
     {
         // Constrói a query dinamicamente — apenas os filtros informados são aplicados
         var query = _dbSet.AsQueryable();
@@ -50,8 +51,8 @@ public class ConsultaRepository : RepositoryBase<Consulta>, IConsultaRepository
         if (veterinarioId.HasValue)
             query = query.Where(c => c.VeterinarioId == veterinarioId.Value);
 
-        if (cancelada.HasValue)
-            query = query.Where(c => c.Cancelada == cancelada.Value);
+        if (status.HasValue)
+            query = query.Where(c => c.Status == status.Value);
 
         return await query.OrderByDescending(c => c.DataHora).ToListAsync();
     }

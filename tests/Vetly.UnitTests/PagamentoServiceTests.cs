@@ -47,7 +47,7 @@ public class PagamentoServiceTests
         var crmv = new Crmv("12345-SP");
         var vet = new Veterinario("Dr. Autonomo", crmv, "SP", PersonaVeterinario.Autonomo, PlanoAssinatura.Profissional);
         var consulta = new Consulta(
-            DateTime.UtcNow.AddDays(1), ModalidadeAtendimento.Presencial,
+            DateTime.UtcNow.AddDays(1), ModalidadeAtendimento.Presencial, TipoServico.Consulta,
             vet.Id, Guid.NewGuid(), Guid.NewGuid());
 
         _repoMock.Setup(r => r.ObterPorIdAsync(pagamento.Id)).ReturnsAsync(pagamento);
@@ -72,7 +72,7 @@ public class PagamentoServiceTests
         var crmv = new Crmv("12345-SP");
         var vet = new Veterinario("Dr. Vinculado", crmv, "SP", PersonaVeterinario.Vinculado, PlanoAssinatura.Profissional);
         var consulta = new Consulta(
-            DateTime.UtcNow.AddDays(1), ModalidadeAtendimento.Presencial,
+            DateTime.UtcNow.AddDays(1), ModalidadeAtendimento.Presencial, TipoServico.Consulta,
             vet.Id, Guid.NewGuid(), Guid.NewGuid());
 
         _repoMock.Setup(r => r.ObterPorIdAsync(pagamento.Id)).ReturnsAsync(pagamento);
