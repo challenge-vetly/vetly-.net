@@ -25,6 +25,9 @@ builder.Configuration
 // ── Controllers ───────────────────────────────────────────────────────────────
 builder.Services.AddControllers();
 
+// -- Health Checks -------------------------------------------------------------
+builder.Services.AddHealthChecks();
+
 // ── OpenAPI / Scalar ─────────────────────────────────────────────────────────
 builder.Services.AddOpenApi();
 
@@ -125,5 +128,6 @@ app.UseHttpsRedirection();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
+app.MapHealthChecks("/health");
 
 app.Run();
