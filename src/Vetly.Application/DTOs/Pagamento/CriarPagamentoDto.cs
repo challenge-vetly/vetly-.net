@@ -7,7 +7,7 @@ namespace Vetly.Application.DTOs.Pagamento;
 public class CriarPagamentoDto
 {
     [Required]
-    public Guid TutorId { get; set; }
+    public Guid ResponsavelId { get; set; }
 
     public Guid? ConsultaId { get; set; }
     public Guid? InternacaoId { get; set; }

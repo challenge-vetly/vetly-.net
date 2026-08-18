@@ -10,7 +10,7 @@ public class CriarLembreteDto
     public Guid AnimalId { get; set; }
 
     [Required]
-    public Guid TutorId { get; set; }
+    public Guid ResponsavelId { get; set; }
 
     [Required]
     public TipoLembrete Tipo { get; set; }

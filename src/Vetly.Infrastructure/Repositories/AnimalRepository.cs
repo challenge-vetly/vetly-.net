@@ -13,9 +13,9 @@ public class AnimalRepository : RepositoryBase<Animal>, IAnimalRepository
     public AnimalRepository(VetlyDbContext context) : base(context) { }
 
     /// <inheritdoc/>
-    public async Task<IEnumerable<Animal>> ObterPorTutorAsync(Guid tutorId) =>
+    public async Task<IEnumerable<Animal>> ObterPorResponsavelAsync(Guid responsavelId) =>
         await _dbSet
-            .Where(a => a.TutorId == tutorId && a.Ativo)
+            .Where(a => a.ResponsavelId == responsavelId && a.Ativo)
             .ToListAsync();
 
     /// <inheritdoc/>
@@ -36,5 +36,19 @@ public class AnimalRepository : RepositoryBase<Animal>, IAnimalRepository
     public async Task<IEnumerable<Animal>> ObterAtivosAsync() =>
         await _dbSet
             .Where(a => a.Ativo)
+            .ToListAsync();
+
+    /// <inheritdoc/>
+    public async Task<Prontuario?> ObterProntuarioPorIdAsync(Guid prontuarioId) =>
+        await _context.Prontuarios.FirstOrDefaultAsync(p => p.Id == prontuarioId);
+
+    /// <inheritdoc/>
+    public async Task<IEnumerable<Prontuario>> ObterHistoricoLongitudinalPorVeterinarioAsync(Guid animalId, Guid veterinarioId) =>
+        await _context.Prontuarios
+            .Where(p => p.AnimalId == animalId)
+            .Join(_context.Consultas, p => p.ConsultaId, c => c.Id, (p, c) => new { Prontuario = p, c.VeterinarioId })
+            .Where(x => x.VeterinarioId == veterinarioId)
+            .Select(x => x.Prontuario)
+            .OrderByDescending(p => p.DataCriacao)
             .ToListAsync();
 }

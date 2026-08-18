@@ -5,7 +5,7 @@ using Vetly.Application.Interfaces;
 
 namespace Vetly.API.Controllers;
 
-/// <summary>Controller de exames. Gerencia solicitacao, registro de resultado e liberacao ao tutor.</summary>
+/// <summary>Controller de exames. Gerencia solicitacao, registro de resultado e liberacao ao responsavel.</summary>
 [ApiController]
 [Route("api/[controller]")]
 [Authorize]
@@ -46,14 +46,14 @@ public class ExamesController : ControllerBase
     public async Task<IActionResult> RegistrarResultado(Guid id, [FromBody] RegistrarResultadoExameDto dto) =>
         Ok(await _service.RegistrarResultadoAsync(id, dto.Resultado));
 
-    /// <summary>Libera o resultado do exame ao tutor (requer resultado registrado).</summary>
+    /// <summary>Libera o resultado do exame ao responsavel (requer resultado registrado).</summary>
     [HttpPut("{id:guid}/liberar")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
-    public async Task<IActionResult> LiberarAoTutor(Guid id)
+    public async Task<IActionResult> LiberarAoResponsavel(Guid id)
     {
-        await _service.LiberarAoTutorAsync(id);
+        await _service.LiberarAoResponsavelAsync(id);
         return NoContent();
     }
 }

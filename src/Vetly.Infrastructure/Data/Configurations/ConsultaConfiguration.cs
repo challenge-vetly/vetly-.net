@@ -29,6 +29,11 @@ public class ConsultaConfiguration : IEntityTypeConfiguration<Consulta>
             .HasColumnName("MODALIDADE")
             .IsRequired();
 
+        builder.Property(c => c.TipoServico)
+            .HasConversion<int>()
+            .HasColumnName("TIPO_SERVICO")
+            .IsRequired();
+
         builder.Property(c => c.VeterinarioId)
             .HasColumnType("CHAR(36)")
             .HasColumnName("VETERINARIO_ID")
@@ -39,9 +44,9 @@ public class ConsultaConfiguration : IEntityTypeConfiguration<Consulta>
             .HasColumnName("ANIMAL_ID")
             .IsRequired();
 
-        builder.Property(c => c.TutorId)
+        builder.Property(c => c.ResponsavelId)
             .HasColumnType("CHAR(36)")
-            .HasColumnName("TUTOR_ID")
+            .HasColumnName("RESPONSAVEL_ID")
             .IsRequired();
 
         builder.Property(c => c.DiagnosticoValidado)
@@ -52,18 +57,37 @@ public class ConsultaConfiguration : IEntityTypeConfiguration<Consulta>
             .HasColumnType("NUMBER(1)")
             .HasColumnName("PROTOCOLO_VALIDADO");
 
-        builder.Property(c => c.StatusPagamento)
+        builder.Property(c => c.Status)
             .HasConversion<int>()
-            .HasColumnName("STATUS_PAGAMENTO")
+            .HasColumnName("STATUS")
             .IsRequired();
 
-        builder.Property(c => c.Cancelada)
-            .HasColumnType("NUMBER(1)")
-            .HasColumnName("CANCELADA");
+        builder.Property(c => c.PreSintomas)
+            .HasColumnType("VARCHAR2(4000)")
+            .HasColumnName("PRE_SINTOMAS");
 
-        builder.Property(c => c.Finalizada)
+        builder.Property(c => c.LockCheckoutExpiraEm)
+            .HasColumnName("LOCK_CHECKOUT_EXPIRA_EM");
+
+        builder.Property(c => c.ContadorRemarcacoes)
+            .HasColumnType("NUMBER(5)")
+            .HasColumnName("CONTADOR_REMARCACOES");
+
+        builder.Property(c => c.DataRealizada)
+            .HasColumnName("DATA_REALIZADA");
+
+        // Estado final da decisao clinica (RN-099) — v2 IA
+        builder.Property(c => c.DiagnosticoFinal)
+            .HasColumnType("CLOB")
+            .HasColumnName("DIAGNOSTICO_FINAL");
+
+        builder.Property(c => c.ProtocoloFinal)
+            .HasColumnType("CLOB")
+            .HasColumnName("PROTOCOLO_FINAL");
+
+        builder.Property(c => c.EstadoFinalDefinido)
             .HasColumnType("NUMBER(1)")
-            .HasColumnName("FINALIZADA");
+            .HasColumnName("ESTADO_FINAL_DEFINIDO");
 
         // Índice composto para as buscas mais comuns: por veterinário + data
         builder.HasIndex(c => c.VeterinarioId).HasDatabaseName("IX_CONSULTA_VETERINARIO");

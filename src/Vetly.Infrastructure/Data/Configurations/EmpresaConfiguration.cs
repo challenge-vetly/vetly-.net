@@ -38,6 +38,12 @@ public class EmpresaConfiguration : IEntityTypeConfiguration<Empresa>
             .HasColumnType("NUMBER(1)")
             .HasColumnName("ATIVA");
 
+        // NUMBER(8,2) comporta ate 999999.99 — folga generosa acima da faixa Enterprise (RN-092)
+        builder.Property(e => e.FaixaEnterprise)
+            .HasColumnType("NUMBER(8,2)")
+            .HasColumnName("FAIXA_ENTERPRISE")
+            .IsRequired();
+
         builder.HasIndex(e => e.AdministradorId).HasDatabaseName("IX_EMPRESA_ADMINISTRADOR");
     }
 }

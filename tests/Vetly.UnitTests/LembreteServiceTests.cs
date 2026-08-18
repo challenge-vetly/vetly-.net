@@ -28,7 +28,7 @@ public class LembreteServiceTests
 
         Assert.NotEqual(Guid.Empty, resultado.Id);
         Assert.Equal(TipoLembrete.Vacina, resultado.Tipo);
-        Assert.False(resultado.TutorRespondeu);
+        Assert.False(resultado.ResponsavelRespondeu);
     }
 
     [Fact]
@@ -59,7 +59,7 @@ public class LembreteServiceTests
 
         var resultado = await CriarServico().RegistrarRespostaAsync(lembrete.Id);
 
-        Assert.True(resultado.TutorRespondeu);
+        Assert.True(resultado.ResponsavelRespondeu);
 
         // Tentativa apos resposta deve lancar LEMBRETE-001
         _repoMock.Setup(r => r.ObterPorIdAsync(lembrete.Id)).ReturnsAsync(resultado);

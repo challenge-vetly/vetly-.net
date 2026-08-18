@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Vetly.Application.DTOs.Avaliacao;
+using Vetly.Application.DTOs.Prontuario;
 using Vetly.Application.DTOs.Veterinario;
 using Vetly.Application.Interfaces;
 
@@ -12,8 +14,19 @@ namespace Vetly.API.Controllers;
 public class VeterinariosController : ControllerBase
 {
     private readonly IVeterinarioService _service;
+    private readonly IAcessoProntuarioService _acessoProntuarioService;
+    private readonly IAvaliacaoService _avaliacaoService;
+    private readonly TimeProvider _timeProvider;
 
-    public VeterinariosController(IVeterinarioService service) => _service = service;
+    public VeterinariosController(
+        IVeterinarioService service, IAcessoProntuarioService acessoProntuarioService,
+        IAvaliacaoService avaliacaoService, TimeProvider timeProvider)
+    {
+        _service = service;
+        _acessoProntuarioService = acessoProntuarioService;
+        _avaliacaoService = avaliacaoService;
+        _timeProvider = timeProvider;
+    }
 
     /// <summary>Retorna todos os veterinarios ativos.</summary>
     [HttpGet]
@@ -75,4 +88,16 @@ public class VeterinariosController : ControllerBase
         var agendamentos = await _service.DesativarAsync(id);
         return Ok(agendamentos);
     }
+
+    /// <summary>Retorna as concessoes de acesso a prontuario ativas do veterinario (RN-083 — uso administrativo).</summary>
+    [HttpGet("{id:guid}/concessoes")]
+    [ProducesResponseType(typeof(IEnumerable<ConcessaoAcessoProntuarioDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> ObterConcessoes(Guid id) =>
+        Ok(await _acessoProntuarioService.ObterConcessoesAtivasAsync(id, _timeProvider.GetUtcNow().UtcDateTime));
+
+    /// <summary>Retorna as avaliações não invalidadas recebidas pelo veterinario (RN-076..081).</summary>
+    [HttpGet("{id:guid}/avaliacoes")]
+    [ProducesResponseType(typeof(IEnumerable<AvaliacaoDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> ObterAvaliacoes(Guid id) =>
+        Ok(await _avaliacaoService.ObterPorVeterinarioAsync(id));
 }

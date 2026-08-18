@@ -15,7 +15,7 @@ public class ContextoClinicoDto
     /// <summary>Peso do animal em quilogramas.</summary>
     public decimal PesoKg { get; set; }
 
-    /// <summary>Sintomas relatados pelo tutor ou observados pelo veterinário.</summary>
+    /// <summary>Sintomas relatados pelo responsavel ou observados pelo veterinário.</summary>
     public List<string> Sintomas { get; set; } = [];
 
     /// <summary>Histórico clínico relevante (ex: cirurgias, doenças crônicas).</summary>

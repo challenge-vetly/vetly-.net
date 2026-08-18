@@ -20,30 +20,39 @@ public class AuthController : ControllerBase
 
     public AuthController(IConfiguration config) => _config = config;
 
+    private static readonly string[] RolesValidas = ["Admin", "Veterinario", "Responsavel"];
+
     /// <summary>
     /// Gera um token JWT para uso nos demais endpoints.
-    /// Role disponíveis: Admin, Veterinario.
+    /// Role disponíveis: Admin, Veterinario, Responsavel.
     /// </summary>
     [HttpPost("token")]
     [ProducesResponseType(typeof(TokenResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public IActionResult GerarToken([FromBody] TokenRequestDto request)
     {
-        if (string.IsNullOrWhiteSpace(request.Role) ||
-            (request.Role != "Admin" && request.Role != "Veterinario"))
-            return BadRequest(new { erro = "Role invalida. Use 'Admin' ou 'Veterinario'." });
+        if (string.IsNullOrWhiteSpace(request.Role) || !RolesValidas.Contains(request.Role))
+            return BadRequest(new { erro = "Role invalida. Use 'Admin', 'Veterinario' ou 'Responsavel'." });
 
         var key = new SymmetricSecurityKey(
             Encoding.UTF8.GetBytes(_config["Jwt:Key"]!));
 
+        var claims = new List<Claim>
+        {
+            new(ClaimTypes.NameIdentifier, request.Usuario),
+            new(ClaimTypes.Role, request.Role)
+        };
+
+        // entidadeId vincula o token a um registro real (VeterinarioId para role
+        // Veterinario, EmpresaId para role Admin) — usado pelas checagens de posse
+        // (ex: vet só acessa a própria agenda, admin só acessa a própria empresa).
+        if (request.EntidadeId is { } entidadeId)
+            claims.Add(new Claim("entidadeId", entidadeId.ToString()));
+
         var token = new JwtSecurityToken(
             issuer: _config["Jwt:Issuer"],
             audience: _config["Jwt:Audience"],
-            claims: new[]
-            {
-                new Claim(ClaimTypes.NameIdentifier, request.Usuario),
-                new Claim(ClaimTypes.Role, request.Role)
-            },
+            claims: claims,
             expires: DateTime.UtcNow.AddHours(8),
             signingCredentials: new SigningCredentials(key, SecurityAlgorithms.HmacSha256));
 
@@ -62,6 +71,13 @@ public sealed class TokenRequestDto
 {
     public string Usuario { get; set; } = "usuario-teste";
     public string Role { get; set; } = "Admin";
+
+    /// <summary>
+    /// Opcional. Vincula o token a um registro real — VeterinarioId para role
+    /// Veterinario, EmpresaId para role Admin — habilitando checagens de posse
+    /// nos endpoints que exigem escopo (ex: agenda do próprio vet).
+    /// </summary>
+    public Guid? EntidadeId { get; set; }
 }
 
 public sealed class TokenResponseDto

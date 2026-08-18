@@ -60,6 +60,27 @@ public class Veterinario
     /// </summary>
     public Guid? EmpresaId { get; private set; }
 
+    private readonly List<StrikeReputacao> _strikesAtivos = [];
+
+    /// <summary>
+    /// Histórico de strikes de reputação (RN-065/066/067). Nunca apagado — a suspensão
+    /// é decidida contando quantos caem na janela móvel de 90 dias a cada novo registro.
+    /// </summary>
+    public IReadOnlyCollection<StrikeReputacao> StrikesAtivos => _strikesAtivos.AsReadOnly();
+
+    /// <summary>Enquanto no futuro, o perfil está suspenso do matching (RN-067).</summary>
+    public DateTime? SuspensoAte { get; private set; }
+
+    /// <summary>
+    /// Média das avaliações não invalidadas, ponderada por recência (RN-078). Nula até a
+    /// primeira avaliação. A exibição pública exige <see cref="TotalAvaliacoes"/> ≥ 3 —
+    /// regra de exibição, não de cálculo, então fica a cargo do mapeamento para DTO.
+    /// </summary>
+    public decimal? NotaMedia { get; private set; }
+
+    /// <summary>Quantidade de avaliações não invalidadas recebidas (RN-078).</summary>
+    public int TotalAvaliacoes { get; private set; }
+
     /// <summary>Construtor privado reservado ao EF Core para materialização de entidades.</summary>
     private Veterinario()
     {
@@ -124,4 +145,55 @@ public class Veterinario
 
     /// <summary>Atualiza o plano de assinatura do veterinário.</summary>
     public void AtualizarPlano(PlanoAssinatura plano) => Plano = plano;
+
+    /// <summary>
+    /// Registra um strike de reputação (RN-065/066). Ao atingir 3 strikes dentro da
+    /// janela móvel de 90 dias, suspende o perfil do matching por 7 dias (RN-067).
+    /// O histórico completo é preservado — strikes fora da janela não são apagados,
+    /// apenas deixam de contar para o limiar.
+    /// </summary>
+    public void RegistrarStrike(DateTime agora, string motivo)
+    {
+        _strikesAtivos.Add(new StrikeReputacao(agora, motivo));
+
+        if (StrikesNaJanela(agora) >= 3)
+            SuspensoAte = agora.AddDays(7);
+    }
+
+    /// <summary>Quantidade de strikes dentro da janela móvel de 90 dias, a partir de <paramref name="agora"/>.</summary>
+    public int StrikesNaJanela(DateTime agora) =>
+        _strikesAtivos.Count(s => (agora - s.Data).TotalDays <= 90);
+
+    /// <summary>Indica se o perfil está suspenso do matching em <paramref name="agora"/> (RN-067).</summary>
+    public bool EstaSuspenso(DateTime agora) => SuspensoAte is not null && agora <= SuspensoAte.Value;
+
+    /// <summary>
+    /// Recalcula <see cref="NotaMedia"/>/<see cref="TotalAvaliacoes"/> a partir das notas
+    /// gerais (não invalidadas) recebidas, ponderando por recência: avaliações dos últimos
+    /// 90 dias contam com peso 2, as demais com peso 1 (RN-078). Não navega para
+    /// <c>Avaliacao</c> — como o resto da base, quem chama já buscou os dados via
+    /// repositório e passa só o necessário.
+    /// </summary>
+    public void RecalcularReputacao(IEnumerable<(int nota, DateTime data)> avaliacoes, DateTime agora)
+    {
+        var lista = avaliacoes.ToList();
+        TotalAvaliacoes = lista.Count;
+
+        if (lista.Count == 0)
+        {
+            NotaMedia = null;
+            return;
+        }
+
+        decimal somaPonderada = 0;
+        decimal somaPesos = 0;
+        foreach (var (nota, data) in lista)
+        {
+            var peso = (agora - data).TotalDays <= 90 ? 2m : 1m;
+            somaPonderada += nota * peso;
+            somaPesos += peso;
+        }
+
+        NotaMedia = somaPonderada / somaPesos;
+    }
 }

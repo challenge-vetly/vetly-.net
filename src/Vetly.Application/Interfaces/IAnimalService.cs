@@ -14,4 +14,19 @@ public interface IAnimalService
     Task<AnimalDto> CriarAsync(CriarAnimalDto dto);
     Task AtualizarAsync(Guid id, CriarAnimalDto dto);
     Task DesativarAsync(Guid id);
+
+    /// <summary>Atualiza o peso do animal (RN-096.2).</summary>
+    Task<AnimalDto> AtualizarPesoAsync(Guid id, decimal pesoKg);
+
+    /// <summary>
+    /// Oculta um prontuário da visão de veterinários que não o produziram (RN-088).
+    /// Lança ANIMAL-002 se o prontuário for classificado como alerta de segurança.
+    /// </summary>
+    Task OcultarRegistroAsync(Guid animalId, Guid prontuarioId);
+
+    /// <summary>Reexibe um prontuário previamente ocultado.</summary>
+    Task ReexibirRegistroAsync(Guid animalId, Guid prontuarioId);
+
+    /// <summary>Retorna o log completo de acessos ao prontuário do animal — visível ao Responsável (RN-086).</summary>
+    Task<IEnumerable<LogAcessoProntuarioDto>> ObterLogAcessosAsync(Guid animalId);
 }

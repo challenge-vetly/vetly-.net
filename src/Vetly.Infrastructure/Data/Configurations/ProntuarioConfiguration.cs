@@ -55,6 +55,11 @@ public class ProntuarioConfiguration : IEntityTypeConfiguration<Prontuario>
             .HasColumnName("DATA_CRIACAO")
             .IsRequired();
 
+        builder.Property(p => p.AlertaSeguranca)
+            .HasColumnType("NUMBER(1)")
+            .HasColumnName("ALERTA_SEGURANCA")
+            .IsRequired();
+
         builder.HasIndex(p => p.AnimalId).HasDatabaseName("IX_PRONTUARIO_ANIMAL");
         builder.HasIndex(p => p.ConsultaId).HasDatabaseName("IX_PRONTUARIO_CONSULTA");
     }

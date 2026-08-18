@@ -19,9 +19,9 @@ public class PagamentoConfiguration : IEntityTypeConfiguration<Pagamento>
             .HasColumnType("CHAR(36)")
             .HasColumnName("ID");
 
-        builder.Property(p => p.TutorId)
+        builder.Property(p => p.ResponsavelId)
             .HasColumnType("CHAR(36)")
-            .HasColumnName("TUTOR_ID")
+            .HasColumnName("RESPONSAVEL_ID")
             .IsRequired();
 
         builder.Property(p => p.ConsultaId)
@@ -61,7 +61,36 @@ public class PagamentoConfiguration : IEntityTypeConfiguration<Pagamento>
             .HasColumnType("NUMBER(18,2)")
             .HasColumnName("VALOR_ESTORNADO");
 
-        builder.HasIndex(p => p.TutorId).HasDatabaseName("IX_PAGAMENTO_TUTOR");
+        // Comissao por plano e desconto de fidelidade (RN-089, RN-072) — v2
+        builder.Property(p => p.Simulado)
+            .HasColumnType("NUMBER(1)")
+            .HasColumnName("SIMULADO");
+
+        builder.Property(p => p.PercentualComissao)
+            .HasColumnType("NUMBER(5,2)")
+            .HasColumnName("PERCENTUAL_COMISSAO");
+
+        builder.Property(p => p.ValorComissao)
+            .HasColumnType("NUMBER(18,2)")
+            .HasColumnName("VALOR_COMISSAO");
+
+        builder.Property(p => p.ValorRepasse)
+            .HasColumnType("NUMBER(18,2)")
+            .HasColumnName("VALOR_REPASSE");
+
+        builder.Property(p => p.DescontoFidelidadeCalculado)
+            .HasColumnType("NUMBER(18,2)")
+            .HasColumnName("DESCONTO_FIDELIDADE_CALCULADO");
+
+        builder.Property(p => p.IncidenciaVetly)
+            .HasColumnType("NUMBER(18,2)")
+            .HasColumnName("INCIDENCIA_VETLY");
+
+        builder.Property(p => p.IncidenciaVeterinario)
+            .HasColumnType("NUMBER(18,2)")
+            .HasColumnName("INCIDENCIA_VETERINARIO");
+
+        builder.HasIndex(p => p.ResponsavelId).HasDatabaseName("IX_PAGAMENTO_RESPONSAVEL");
         builder.HasIndex(p => p.ConsultaId).HasDatabaseName("IX_PAGAMENTO_CONSULTA");
     }
 }

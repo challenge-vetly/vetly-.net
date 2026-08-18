@@ -51,6 +51,24 @@ public class DocumentoConfiguration : IEntityTypeConfiguration<Documento>
             .HasColumnType("NUMBER(1)")
             .HasColumnName("ASSINADO_DIGITALMENTE");
 
+        builder.Property(d => d.TipoAssinatura)
+            .HasConversion<int?>()
+            .HasColumnName("TIPO_ASSINATURA");
+
+        builder.Property(d => d.AssinaturaNomeDigitado)
+            .HasColumnType("VARCHAR2(200)")
+            .HasColumnName("ASSINATURA_NOME_DIGITADO");
+
+        builder.Property(d => d.DataAssinatura)
+            .HasColumnName("DATA_ASSINATURA");
+
+        // RN-091: sempre false enquanto a assinatura for nome digitado — nunca habilita
+        // dispensacao externa de controlados no MVP.
+        builder.Property(d => d.HabilitaDispensacaoControlados)
+            .HasColumnType("NUMBER(1)")
+            .HasColumnName("HABILITA_DISPENSACAO_CONTROLADOS")
+            .IsRequired();
+
         // Campos de auditoria de correção (RN-032)
         builder.Property(d => d.VersaoOriginalId)
             .HasColumnType("CHAR(36)")

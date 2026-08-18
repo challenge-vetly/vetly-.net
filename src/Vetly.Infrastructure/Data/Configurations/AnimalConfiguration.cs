@@ -38,9 +38,9 @@ public class AnimalConfiguration : IEntityTypeConfiguration<Animal>
             .HasColumnName("DATA_NASCIMENTO")
             .IsRequired();
 
-        builder.Property(a => a.TutorId)
+        builder.Property(a => a.ResponsavelId)
             .HasColumnType("CHAR(36)")
-            .HasColumnName("TUTOR_ID")
+            .HasColumnName("RESPONSAVEL_ID")
             .IsRequired();
 
         // NUMBER(1) para boolean — padrão Oracle
@@ -58,7 +58,53 @@ public class AnimalConfiguration : IEntityTypeConfiguration<Animal>
             .HasColumnType("VARCHAR2(2000)")
             .HasColumnName("ALERTAS_ATIVOS");
 
-        // Índice para buscar todos os animais de um tutor eficientemente
-        builder.HasIndex(a => a.TutorId).HasDatabaseName("IX_ANIMAL_TUTOR");
+        // Campos clínicos v2 (RN-069 base, RN-096.2, RN-088)
+        builder.Property(a => a.Sexo)
+            .HasConversion<int>()
+            .HasColumnName("SEXO")
+            .IsRequired();
+
+        builder.Property(a => a.PesoKg)
+            .HasColumnType("NUMBER(6,2)")
+            .HasColumnName("PESO_KG");
+
+        builder.Property(a => a.Castrado)
+            .HasColumnType("NUMBER(1)")
+            .HasColumnName("CASTRADO");
+
+        builder.Property(a => a.CondicoesPreExistentes)
+            .HasConversion(
+                v => v.Count == 0 ? ";" : string.Join(';', v),
+                v => v.Split(';', StringSplitOptions.RemoveEmptyEntries).ToList())
+            .HasColumnType("VARCHAR2(2000)")
+            .HasColumnName("CONDICOES_PREEXISTENTES");
+
+        builder.Property(a => a.Alergias)
+            .HasConversion(
+                v => v.Count == 0 ? ";" : string.Join(';', v),
+                v => v.Split(';', StringSplitOptions.RemoveEmptyEntries).ToList())
+            .HasColumnType("VARCHAR2(2000)")
+            .HasColumnName("ALERGIAS");
+
+        builder.Property(a => a.CarteiraVacinacao)
+            .HasConversion(
+                v => v.Count == 0 ? ";" : string.Join(';', v),
+                v => v.Split(';', StringSplitOptions.RemoveEmptyEntries).ToList())
+            .HasColumnType("VARCHAR2(2000)")
+            .HasColumnName("CARTEIRA_VACINACAO");
+
+        builder.Property(a => a.MedicacoesEmUso)
+            .HasConversion(
+                v => v.Count == 0 ? ";" : string.Join(';', v),
+                v => v.Split(';', StringSplitOptions.RemoveEmptyEntries).ToList())
+            .HasColumnType("VARCHAR2(2000)")
+            .HasColumnName("MEDICACOES_EM_USO");
+
+        builder.Property(a => a.FotoUrl)
+            .HasColumnType("VARCHAR2(500)")
+            .HasColumnName("FOTO_URL");
+
+        // Índice para buscar todos os animais de um responsavel eficientemente
+        builder.HasIndex(a => a.ResponsavelId).HasDatabaseName("IX_ANIMAL_RESPONSAVEL");
     }
 }

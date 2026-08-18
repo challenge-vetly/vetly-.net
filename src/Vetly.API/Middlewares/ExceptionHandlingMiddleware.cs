@@ -1,6 +1,7 @@
 using System.Net;
 using Microsoft.AspNetCore.Mvc;
 using Vetly.Application.Exceptions;
+using DomainException = Vetly.Domain.Exceptions.DomainException;
 
 namespace Vetly.API.Middlewares;
 
@@ -54,6 +55,18 @@ public class ExceptionHandlingMiddleware
             await EscreverRespostaAsync(context, HttpStatusCode.UnprocessableEntity,
                 ex.Message, correlationId, ex.Codigo);
         }
+        catch (DomainException ex)
+        {
+            _logger.LogWarning("CorrelationId={CorrelationId} | DomainRule [{Codigo}]: {Message}", correlationId, ex.Codigo, ex.Message);
+            await EscreverRespostaAsync(context, HttpStatusCode.UnprocessableEntity,
+                ex.Message, correlationId, ex.Codigo);
+        }
+        catch (ForbiddenException ex)
+        {
+            _logger.LogWarning("CorrelationId={CorrelationId} | Forbidden [{Codigo}]: {Message}", correlationId, ex.Codigo, ex.Message);
+            await EscreverRespostaAsync(context, HttpStatusCode.Forbidden,
+                ex.Message, correlationId, ex.Codigo);
+        }
         catch (InvalidOperationException ex)
         {
             _logger.LogWarning("CorrelationId={CorrelationId} | InvalidOperation: {Message}", correlationId, ex.Message);
@@ -78,6 +91,7 @@ public class ExceptionHandlingMiddleware
             {
                 HttpStatusCode.NotFound => "Recurso nao encontrado",
                 HttpStatusCode.UnprocessableEntity => "Regra de negocio violada",
+                HttpStatusCode.Forbidden => "Acesso nao autorizado ao recurso",
                 _ => "Erro interno do servidor"
             },
             Detail = detalhe,

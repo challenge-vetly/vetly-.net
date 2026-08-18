@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Vetly.Application.DTOs.Animal;
+using Vetly.Application.DTOs.Obrigacao;
 using Vetly.Application.Interfaces;
 
 namespace Vetly.API.Controllers;
@@ -12,8 +13,13 @@ namespace Vetly.API.Controllers;
 public class AnimaisController : ControllerBase
 {
     private readonly IAnimalService _service;
+    private readonly IObrigacaoService _obrigacaoService;
 
-    public AnimaisController(IAnimalService service) => _service = service;
+    public AnimaisController(IAnimalService service, IObrigacaoService obrigacaoService)
+    {
+        _service = service;
+        _obrigacaoService = obrigacaoService;
+    }
 
     /// <summary>Retorna todos os animais ativos.</summary>
     [HttpGet]
@@ -28,12 +34,20 @@ public class AnimaisController : ControllerBase
     public async Task<IActionResult> ObterPorId(Guid id) =>
         Ok(await _service.ObterPorIdAsync(id));
 
-    /// <summary>Retorna o historico longitudinal de prontuarios de um animal.</summary>
+    /// <summary>Retorna o historico longitudinal de prontuarios de um animal (RN-010/083 — colmeia).</summary>
     [HttpGet("{id:guid}/prontuarios")]
     [ProducesResponseType(typeof(IEnumerable<object>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> ObterProntuarios(Guid id) =>
         Ok(await _service.ObterHistoricoAsync(id));
+
+    /// <summary>Retorna o log de acessos ao prontuario do animal — visivel ao responsavel (RN-086).</summary>
+    [HttpGet("{id:guid}/log-acessos")]
+    [ProducesResponseType(typeof(IEnumerable<object>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ObterLogAcessos(Guid id) =>
+        Ok(await _service.ObterLogAcessosAsync(id));
 
     /// <summary>Retorna todos os exames de um animal.</summary>
     [HttpGet("{id:guid}/exames")]
@@ -42,7 +56,7 @@ public class AnimaisController : ControllerBase
     public async Task<IActionResult> ObterExames(Guid id) =>
         Ok(await _service.ObterExamesAsync(id));
 
-    /// <summary>Cadastra um novo animal vinculado a um tutor.</summary>
+    /// <summary>Cadastra um novo animal vinculado a um responsavel.</summary>
     [HttpPost]
     [ProducesResponseType(typeof(AnimalDto), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -71,4 +85,51 @@ public class AnimaisController : ControllerBase
         await _service.DesativarAsync(id);
         return NoContent();
     }
+
+    /// <summary>Atualiza o peso do animal (RN-096.2).</summary>
+    [HttpPut("{id:guid}/peso")]
+    [ProducesResponseType(typeof(AnimalDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> AtualizarPeso(Guid id, [FromBody] AtualizarPesoDto dto) =>
+        Ok(await _service.AtualizarPesoAsync(id, dto.PesoKg));
+
+    /// <summary>Oculta um prontuário da visão de veterinários que não o produziram (RN-088).</summary>
+    [HttpPost("{id:guid}/ocultar-registro")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
+    public async Task<IActionResult> OcultarRegistro(Guid id, [FromBody] OcultarRegistroDto dto)
+    {
+        await _service.OcultarRegistroAsync(id, dto.ProntuarioId);
+        return Ok();
+    }
+
+    /// <summary>Reexibe um prontuário previamente ocultado.</summary>
+    [HttpDelete("{id:guid}/ocultar-registro/{prontuarioId:guid}")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ReexibirRegistro(Guid id, Guid prontuarioId)
+    {
+        await _service.ReexibirRegistroAsync(id, prontuarioId);
+        return Ok();
+    }
+
+    /// <summary>Gera o calendário de obrigações do pet via Factory por espécie (RN-069).</summary>
+    [HttpPost("{id:guid}/obrigacoes")]
+    [ProducesResponseType(typeof(IEnumerable<ObrigacaoDoPetDto>), StatusCodes.Status201Created)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
+    public async Task<IActionResult> GerarObrigacoes(Guid id)
+    {
+        var obrigacoes = await _obrigacaoService.GerarCalendarioAsync(id);
+        return CreatedAtAction(nameof(ObterObrigacoes), new { id }, obrigacoes);
+    }
+
+    /// <summary>Lista as obrigações do calendário de cuidado do pet (RN-069/070).</summary>
+    [HttpGet("{id:guid}/obrigacoes")]
+    [ProducesResponseType(typeof(IEnumerable<ObrigacaoDoPetDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ObterObrigacoes(Guid id) =>
+        Ok(await _obrigacaoService.ObterPorAnimalAsync(id));
 }

@@ -10,7 +10,7 @@ public class VetlyDbContext : DbContext
 
     public DbSet<Veterinario> Veterinarios => Set<Veterinario>();
     public DbSet<Animal> Animais => Set<Animal>();
-    public DbSet<Tutor> Tutores => Set<Tutor>();
+    public DbSet<Responsavel> Responsaveis => Set<Responsavel>();
     public DbSet<Consulta> Consultas => Set<Consulta>();
     public DbSet<Prontuario> Prontuarios => Set<Prontuario>();
     public DbSet<Exame> Exames => Set<Exame>();
@@ -19,6 +19,14 @@ public class VetlyDbContext : DbContext
     public DbSet<Pagamento> Pagamentos => Set<Pagamento>();
     public DbSet<Empresa> Empresas => Set<Empresa>();
     public DbSet<LembreteAgendado> Lembretes => Set<LembreteAgendado>();
+    public DbSet<ConsentimentoLgpd> ConsentimentosLgpd => Set<ConsentimentoLgpd>();
+    public DbSet<RegistroOcultado> RegistrosOcultados => Set<RegistroOcultado>();
+    public DbSet<LogAuditoriaIA> LogsAuditoriaIA => Set<LogAuditoriaIA>();
+    public DbSet<ConcessaoAcessoProntuario> ConcessoesAcessoProntuario => Set<ConcessaoAcessoProntuario>();
+    public DbSet<LogAcessoProntuario> LogsAcessoProntuario => Set<LogAcessoProntuario>();
+    public DbSet<Avaliacao> Avaliacoes => Set<Avaliacao>();
+    public DbSet<ObrigacaoDoPet> ObrigacoesDoPet => Set<ObrigacaoDoPet>();
+    public DbSet<PontosFidelidade> PontosFidelidade => Set<PontosFidelidade>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

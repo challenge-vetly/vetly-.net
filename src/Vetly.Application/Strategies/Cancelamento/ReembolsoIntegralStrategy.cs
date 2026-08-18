@@ -4,8 +4,8 @@ using Vetly.Domain.Entities;
 namespace Vetly.Application.Strategies.Cancelamento;
 
 /// <summary>
-/// RN-019: Cancelamento com mais de 24h de antecedência → reembolso integral ao tutor.
-/// É a política mais favorável ao tutor, portanto tem prioridade 1 (verificada primeiro).
+/// RN-019: Cancelamento com mais de 24h de antecedência → reembolso integral ao responsavel.
+/// É a política mais favorável ao responsavel, portanto tem prioridade 1 (verificada primeiro).
 /// </summary>
 public class ReembolsoIntegralStrategy : ICancelamentoStrategy
 {

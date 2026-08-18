@@ -17,8 +17,15 @@ public class VeterinarioService : IVeterinarioService
     private static readonly Regex CrmvRegex = new(@"^\d{4,6}-[A-Z]{2}$", RegexOptions.Compiled);
 
     private readonly IVeterinarioRepository _repo;
+    private readonly ICurrentUserService _currentUser;
+    private readonly TimeProvider _timeProvider;
 
-    public VeterinarioService(IVeterinarioRepository repo) => _repo = repo;
+    public VeterinarioService(IVeterinarioRepository repo, ICurrentUserService currentUser, TimeProvider timeProvider)
+    {
+        _repo = repo;
+        _currentUser = currentUser;
+        _timeProvider = timeProvider;
+    }
 
     /// <inheritdoc/>
     public async Task<IEnumerable<VeterinarioDto>> ObterTodosAsync()
@@ -45,6 +52,10 @@ public class VeterinarioService : IVeterinarioService
     /// <inheritdoc/>
     public async Task<IEnumerable<ConsultaDto>> ObterAgendaAsync(Guid veterinarioId)
     {
+        // RN-001..006: veterinário vinculado só vê a própria agenda.
+        if (_currentUser.Role == "Veterinario" && _currentUser.EntidadeId is { } id && id != veterinarioId)
+            throw new ForbiddenException("ACESSO-002", "Veterinario so pode acessar a propria agenda.");
+
         var consultas = await _repo.ObterAgendaFuturaAsync(veterinarioId);
         return consultas.Select(MapearConsultaParaDto);
     }
@@ -108,19 +119,25 @@ public class VeterinarioService : IVeterinarioService
             throw new ValidationException("crmv", $"CRMV '{crmv}' esta em formato invalido. Use o padrao XXXXXX-UF.");
     }
 
-    private static VeterinarioDto MapearParaDto(Veterinario v) => new()
+    private VeterinarioDto MapearParaDto(Veterinario v) => new()
     {
         Id = v.Id, Nome = v.Nome, Crmv = v.Crmv.Valor, UfAtuacao = v.UfAtuacao,
         Especialidades = v.Especialidades, EspeciesAtendidas = v.EspeciesAtendidas,
         TitulacaoAcademica = v.TitulacaoAcademica, Persona = v.Persona,
-        Plano = v.Plano, Ativo = v.Ativo, EmpresaId = v.EmpresaId
+        Plano = v.Plano, Ativo = v.Ativo, EmpresaId = v.EmpresaId,
+        StrikesAtivos = v.StrikesNaJanela(_timeProvider.GetUtcNow().UtcDateTime),
+        SuspensoAte = v.SuspensoAte,
+        // RN-078: nota só é pública a partir de 3 avaliações — antes disso, nula.
+        NotaMedia = v.TotalAvaliacoes >= 3 ? v.NotaMedia : null,
+        TotalAvaliacoes = v.TotalAvaliacoes
     };
 
     private static ConsultaDto MapearConsultaParaDto(Consulta c) => new()
     {
-        Id = c.Id, DataHora = c.DataHora, Modalidade = c.Modalidade,
-        VeterinarioId = c.VeterinarioId, AnimalId = c.AnimalId, TutorId = c.TutorId,
-        DiagnosticoValidado = c.DiagnosticoValidado, ProtocoloValidado = c.ProtocoloValidado,
-        StatusPagamento = c.StatusPagamento, Cancelada = c.Cancelada
+        Id = c.Id, DataHora = c.DataHora, Modalidade = c.Modalidade, TipoServico = c.TipoServico,
+        VeterinarioId = c.VeterinarioId, AnimalId = c.AnimalId, ResponsavelId = c.ResponsavelId,
+        PreSintomas = c.PreSintomas, Status = c.Status, LockCheckoutExpiraEm = c.LockCheckoutExpiraEm,
+        ContadorRemarcacoes = c.ContadorRemarcacoes, DataRealizada = c.DataRealizada,
+        DiagnosticoValidado = c.DiagnosticoValidado, ProtocoloValidado = c.ProtocoloValidado
     };
 }

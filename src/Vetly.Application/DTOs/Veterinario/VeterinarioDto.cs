@@ -16,4 +16,15 @@ public class VeterinarioDto
     public PlanoAssinatura Plano { get; set; }
     public bool Ativo { get; set; }
     public Guid? EmpresaId { get; set; }
+    public int StrikesAtivos { get; set; }
+    public DateTime? SuspensoAte { get; set; }
+
+    /// <summary>
+    /// Média ponderada por recência (RN-078). Nula quando <see cref="TotalAvaliacoes"/>
+    /// é menor que 3 — a nota só é exibida publicamente a partir da terceira avaliação.
+    /// </summary>
+    public decimal? NotaMedia { get; set; }
+
+    /// <summary>Total de avaliações não invalidadas recebidas (RN-078).</summary>
+    public int TotalAvaliacoes { get; set; }
 }

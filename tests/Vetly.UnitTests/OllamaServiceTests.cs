@@ -84,6 +84,42 @@ public class OllamaServiceTests
         var resultado = await service.RealizarTriagemAsync(sintomas);
 
         Assert.Equal("Indeterminado", resultado.NivelUrgencia);
+        Assert.NotEmpty(resultado.Disclaimer); // RN-100: disclaimer sempre presente, mesmo em falha de parsing
+    }
+
+    [Fact]
+    public async Task RealizarTriagem_JsonValido_SempreIncluiDisclaimerFixo()
+    {
+        var jsonResposta = JsonSerializer.Serialize(new
+        {
+            nivelUrgencia = "Baixo",
+            recomendacao = "Observe o animal por 24h.",
+            possiveisCausas = new[] { "Alimentacao inadequada" }
+        });
+        var http = CriarHttpClientComResposta(BuildOllamaResponse(jsonResposta));
+        var service = new OllamaService(http, CriarConfig());
+
+        var resultado = await service.RealizarTriagemAsync(new SintomasDto { Especie = "Canino", Sintomas = ["apatia"] });
+
+        Assert.NotEmpty(resultado.Disclaimer);
+        Assert.Contains("diagnostico", resultado.Disclaimer, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task RealizarTriagem_NivelUrgenciaEmergencia_OrientaAtendimentoPresencialImediato()
+    {
+        var jsonResposta = JsonSerializer.Serialize(new
+        {
+            nivelUrgencia = "Emergencia",
+            recomendacao = "Sangramento intenso observado.",
+            possiveisCausas = new[] { "Trauma" }
+        });
+        var http = CriarHttpClientComResposta(BuildOllamaResponse(jsonResposta));
+        var service = new OllamaService(http, CriarConfig());
+
+        var resultado = await service.RealizarTriagemAsync(new SintomasDto { Especie = "Canino", Sintomas = ["sangramento"] });
+
+        Assert.Contains("presencial", resultado.Recomendacao, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

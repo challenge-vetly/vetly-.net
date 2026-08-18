@@ -11,8 +11,8 @@ public class LembreteRepository : RepositoryBase<LembreteAgendado>, ILembreteRep
     public LembreteRepository(VetlyDbContext context) : base(context) { }
 
     /// <inheritdoc/>
-    public async Task<IEnumerable<LembreteAgendado>> ObterPendentesPorTutorAsync(Guid tutorId) =>
+    public async Task<IEnumerable<LembreteAgendado>> ObterPendentesPorResponsavelAsync(Guid responsavelId) =>
         await _dbSet
-            .Where(l => l.TutorId == tutorId && !l.TutorRespondeu)
+            .Where(l => l.ResponsavelId == responsavelId && !l.ResponsavelRespondeu)
             .ToListAsync();
 }

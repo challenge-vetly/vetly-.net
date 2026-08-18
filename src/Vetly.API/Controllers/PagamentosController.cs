@@ -45,4 +45,19 @@ public class PagamentosController : ControllerBase
     [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
     public async Task<IActionResult> ProcessarSplit(Guid id) =>
         Ok(await _service.ProcessarSplitAsync(id));
+
+    /// <summary>
+    /// Simula o pagamento de uma consulta: sempre retorna sucesso, calcula a comissão pelo
+    /// plano do veterinário (RN-089) e confirma a consulta (RN-037/058).
+    /// </summary>
+    [HttpPost("simular")]
+    [ProducesResponseType(typeof(SimularPagamentoResponseDto), StatusCodes.Status201Created)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
+    public async Task<IActionResult> Simular([FromBody] SimularPagamentoDto dto)
+    {
+        var resultado = await _service.ProcessarSimuladoAsync(dto);
+        return CreatedAtAction(nameof(ObterPorId), new { id = resultado.Id }, resultado);
+    }
 }

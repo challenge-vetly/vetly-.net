@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using Vetly.Domain.Enums;
 
 namespace Vetly.Application.DTOs.Animal;
 
@@ -17,9 +18,24 @@ public class CriarAnimalDto
     [MaxLength(100)]
     public string Raca { get; set; } = string.Empty;
 
+    [Required(ErrorMessage = "O sexo é obrigatório.")]
+    public SexoAnimal Sexo { get; set; }
+
     [Required(ErrorMessage = "A data de nascimento é obrigatória.")]
     public DateTime DataNascimento { get; set; }
 
-    [Required(ErrorMessage = "O id do tutor é obrigatório.")]
-    public Guid TutorId { get; set; }
+    [Required(ErrorMessage = "O id do responsavel é obrigatório.")]
+    public Guid ResponsavelId { get; set; }
+
+    public bool Castrado { get; set; }
+
+    public decimal? PesoKg { get; set; }
+
+    [MaxLength(500)]
+    public string? FotoUrl { get; set; }
+
+    public List<string> CondicoesPreExistentes { get; set; } = [];
+    public List<string> Alergias { get; set; } = [];
+    public List<string> CarteiraVacinacao { get; set; } = [];
+    public List<string> MedicacoesEmUso { get; set; } = [];
 }

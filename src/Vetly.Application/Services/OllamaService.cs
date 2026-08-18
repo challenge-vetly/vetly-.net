@@ -71,12 +71,16 @@ public class OllamaService : IOllamaService
             : string.Empty;
 
         var prompt =
-            $"Voce e um assistente veterinario. Gere orientacoes pos-atendimento claras para o tutor, em linguagem simples e acessivel.\n\n" +
+            $"Voce e um assistente veterinario. Gere orientacoes pos-atendimento claras para o responsavel, em linguagem simples e acessivel.\n\n" +
             $"Especie: {consulta.Especie}. Diagnostico: {consulta.Diagnostico}.\n" +
             $"Medicamentos prescritos: {meds}. Conduta: {consulta.Conduta}.{dieta}";
 
         return await EnviarAsync(prompt);
     }
+
+    // RN-100: a triagem nunca é um diagnóstico — este aviso acompanha toda resposta, sucesso ou falha.
+    private const string DisclaimerTriagem =
+        "Esta triagem e apenas orientativa e nao substitui uma avaliacao veterinaria. Nao e um diagnostico.";
 
     /// <inheritdoc/>
     public async Task<TriagemResultadoDto> RealizarTriagemAsync(SintomasDto sintomas)
@@ -93,11 +97,22 @@ public class OllamaService : IOllamaService
 
         var resposta = await EnviarAsync(prompt);
 
-        return ParsearOuPadrao<TriagemResultadoDto>(resposta) ?? new TriagemResultadoDto
+        var resultado = ParsearOuPadrao<TriagemResultadoDto>(resposta) ?? new TriagemResultadoDto
         {
             NivelUrgencia = "Indeterminado",
             Recomendacao = resposta
         };
+
+        // RN-100: sinais de emergencia sempre orientam atendimento presencial imediato,
+        // independente do texto que o modelo tenha gerado.
+        if (resultado.NivelUrgencia.Contains("emergen", StringComparison.OrdinalIgnoreCase)
+            && !resultado.Recomendacao.Contains("presencial", StringComparison.OrdinalIgnoreCase))
+        {
+            resultado.Recomendacao = "Procure atendimento veterinario presencial imediatamente. " + resultado.Recomendacao;
+        }
+
+        resultado.Disclaimer = DisclaimerTriagem;
+        return resultado;
     }
 
     // Envia um prompt ao Ollama e retorna a resposta em texto

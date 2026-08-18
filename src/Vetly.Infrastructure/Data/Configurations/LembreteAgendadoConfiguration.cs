@@ -25,9 +25,9 @@ public class LembreteAgendadoConfiguration : IEntityTypeConfiguration<LembreteAg
             .HasColumnName("ANIMAL_ID")
             .IsRequired();
 
-        builder.Property(l => l.TutorId)
+        builder.Property(l => l.ResponsavelId)
             .HasColumnType("CHAR(36)")
-            .HasColumnName("TUTOR_ID")
+            .HasColumnName("RESPONSAVEL_ID")
             .IsRequired();
 
         builder.Property(l => l.Tipo)
@@ -43,15 +43,15 @@ public class LembreteAgendadoConfiguration : IEntityTypeConfiguration<LembreteAg
             .HasColumnName("TENTATIVAS_REALIZADAS");
 
         // Oracle não suporta BOOLEAN nativo até 23c — usamos NUMBER(1) com 0/1
-        builder.Property(l => l.TutorRespondeu)
+        builder.Property(l => l.ResponsavelRespondeu)
             .HasColumnType("NUMBER(1)")
-            .HasColumnName("TUTOR_RESPONDEU");
+            .HasColumnName("RESPONSAVEL_RESPONDEU");
 
         builder.Property(l => l.AlertaEnviadoClinica)
             .HasColumnType("NUMBER(1)")
             .HasColumnName("ALERTA_ENVIADO_CLINICA");
 
-        builder.HasIndex(l => l.TutorId).HasDatabaseName("IX_LEMBRETE_TUTOR");
+        builder.HasIndex(l => l.ResponsavelId).HasDatabaseName("IX_LEMBRETE_RESPONSAVEL");
         builder.HasIndex(l => l.AnimalId).HasDatabaseName("IX_LEMBRETE_ANIMAL");
     }
 }

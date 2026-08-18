@@ -4,7 +4,7 @@ using Vetly.Domain.Enums;
 namespace Vetly.Domain.Entities;
 
 /// <summary>
-/// Representa um pagamento realizado por um tutor na plataforma Vetly.
+/// Representa um pagamento realizado por um responsavel na plataforma Vetly.
 /// Suporta split financeiro entre veterinário autônomo e empresa (RN-Strategy).
 /// </summary>
 public class Pagamento
@@ -12,9 +12,9 @@ public class Pagamento
     /// <summary>Identificador único do pagamento (chave primária).</summary>
     public Guid Id { get; private set; }
 
-    /// <summary>Id do tutor que realizou o pagamento. Chave estrangeira para TB_TUTOR.</summary>
+    /// <summary>Id do responsavel que realizou o pagamento. Chave estrangeira para TB_RESPONSAVEL.</summary>
     [Required]
-    public Guid TutorId { get; private set; }
+    public Guid ResponsavelId { get; private set; }
 
     /// <summary>
     /// Id da consulta vinculada ao pagamento.
@@ -51,23 +51,48 @@ public class Pagamento
     [Range(0, 100)]
     public decimal PercentualSplit { get; private set; }
 
-    /// <summary>Valor estornado ao tutor em caso de cancelamento. Nulo se não houve estorno.</summary>
+    /// <summary>Valor estornado ao responsavel em caso de cancelamento. Nulo se não houve estorno.</summary>
     public decimal? ValorEstornado { get; private set; }
+
+    /// <summary>Sempre true no MVP — nenhum valor real transita, tudo é registrado (RN-037).</summary>
+    public bool Simulado { get; private set; }
+
+    /// <summary>Percentual de comissão retido pela plataforma, conforme o plano do veterinário (RN-089).</summary>
+    public decimal PercentualComissao { get; private set; }
+
+    /// <summary>Valor da comissão retida pela plataforma (Valor × PercentualComissao).</summary>
+    public decimal ValorComissao { get; private set; }
+
+    /// <summary>Valor a ser repassado (Valor − ValorComissao) — ao veterinário autônomo ou à empresa.</summary>
+    public decimal ValorRepasse { get; private set; }
+
+    /// <summary>
+    /// Valor do desconto de fidelidade calculado e exibido, sem abatimento real (RN-072).
+    /// Default 0 — preenchido pela Fase 10 (fidelidade).
+    /// </summary>
+    public decimal DescontoFidelidadeCalculado { get; private set; }
+
+    /// <summary>Parcela do desconto de fidelidade absorvida pela Vetly. Preenchido pela Fase 10.</summary>
+    public decimal IncidenciaVetly { get; private set; }
+
+    /// <summary>Parcela do desconto de fidelidade absorvida pelo veterinário. Preenchido pela Fase 10.</summary>
+    public decimal IncidenciaVeterinario { get; private set; }
 
     /// <summary>Construtor privado reservado ao EF Core para materialização de entidades.</summary>
     private Pagamento() { }
 
-    /// <summary>Cria um novo pagamento com status inicial Pendente.</summary>
-    public Pagamento(Guid tutorId, decimal valor, MeioPagamento meio, Guid? consultaId = null, Guid? internacaoId = null)
+    /// <summary>Cria um novo pagamento com status inicial Pendente. Sempre simulado no MVP (RN-037).</summary>
+    public Pagamento(Guid responsavelId, decimal valor, MeioPagamento meio, Guid? consultaId = null, Guid? internacaoId = null)
     {
         Id = Guid.NewGuid();
-        TutorId = tutorId;
+        ResponsavelId = responsavelId;
         Valor = valor;
         MeioPagamento = meio;
         ConsultaId = consultaId;
         InternacaoId = internacaoId;
         Momento = DateTime.UtcNow;
         StatusPagamento = StatusPagamento.Pendente; // toda transação começa pendente
+        Simulado = true;
     }
 
     /// <summary>Confirma o recebimento do pagamento.</summary>
@@ -86,6 +111,28 @@ public class Pagamento
 
     /// <summary>Define o percentual do split financeiro após processamento pela Strategy.</summary>
     public void DefinirSplit(decimal percentual) => PercentualSplit = percentual;
+
+    /// <summary>
+    /// Registra a comissão da plataforma conforme o plano do veterinário (RN-089).
+    /// ValorComissao e ValorRepasse são recalculados a partir de Valor.
+    /// </summary>
+    public void RegistrarComissao(decimal percentualComissao)
+    {
+        PercentualComissao = percentualComissao;
+        ValorComissao = Math.Round(Valor * percentualComissao / 100m, 2);
+        ValorRepasse = Valor - ValorComissao;
+    }
+
+    /// <summary>
+    /// Registra o desconto de fidelidade calculado e sua divisão de incidência (RN-072).
+    /// Só calculado/exibido — sem abatimento real do valor, já que o pagamento é simulado.
+    /// </summary>
+    public void RegistrarDescontoFidelidade(decimal descontoCalculado, decimal incidenciaVetly, decimal incidenciaVeterinario)
+    {
+        DescontoFidelidadeCalculado = descontoCalculado;
+        IncidenciaVetly = incidenciaVetly;
+        IncidenciaVeterinario = incidenciaVeterinario;
+    }
 
     /// <summary>
     /// Registra o estorno total ou parcial do pagamento.

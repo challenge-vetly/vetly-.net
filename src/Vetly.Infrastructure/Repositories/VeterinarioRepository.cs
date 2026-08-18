@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Vetly.Application.Interfaces;
 using Vetly.Domain.Entities;
+using Vetly.Domain.Enums;
 using Vetly.Infrastructure.Data;
 
 namespace Vetly.Infrastructure.Repositories;
@@ -28,7 +29,7 @@ public class VeterinarioRepository : RepositoryBase<Veterinario>, IVeterinarioRe
         await _context.Consultas
             .Where(c => c.VeterinarioId == veterinarioId
                      && c.DataHora > DateTime.UtcNow
-                     && !c.Cancelada)
+                     && c.Status != StatusConsulta.Cancelada)
             .OrderBy(c => c.DataHora)
             .ToListAsync();
 

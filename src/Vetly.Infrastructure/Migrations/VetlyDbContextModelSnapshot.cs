@@ -29,6 +29,11 @@ namespace Vetly.Infrastructure.Migrations
                         .HasColumnType("CHAR(36)")
                         .HasColumnName("ID");
 
+                    b.Property<string>("Alergias")
+                        .IsRequired()
+                        .HasColumnType("VARCHAR2(2000)")
+                        .HasColumnName("ALERGIAS");
+
                     b.Property<string>("AlertasAtivos")
                         .IsRequired()
                         .HasColumnType("VARCHAR2(2000)")
@@ -37,6 +42,20 @@ namespace Vetly.Infrastructure.Migrations
                     b.Property<bool>("Ativo")
                         .HasColumnType("NUMBER(1)")
                         .HasColumnName("ATIVO");
+
+                    b.Property<string>("CarteiraVacinacao")
+                        .IsRequired()
+                        .HasColumnType("VARCHAR2(2000)")
+                        .HasColumnName("CARTEIRA_VACINACAO");
+
+                    b.Property<bool>("Castrado")
+                        .HasColumnType("NUMBER(1)")
+                        .HasColumnName("CASTRADO");
+
+                    b.Property<string>("CondicoesPreExistentes")
+                        .IsRequired()
+                        .HasColumnType("VARCHAR2(2000)")
+                        .HasColumnName("CONDICOES_PREEXISTENTES");
 
                     b.Property<DateTime>("DataNascimento")
                         .HasColumnType("TIMESTAMP(7)")
@@ -48,11 +67,25 @@ namespace Vetly.Infrastructure.Migrations
                         .HasColumnType("VARCHAR2(100)")
                         .HasColumnName("ESPECIE");
 
+                    b.Property<string>("FotoUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("VARCHAR2(500)")
+                        .HasColumnName("FOTO_URL");
+
+                    b.Property<string>("MedicacoesEmUso")
+                        .IsRequired()
+                        .HasColumnType("VARCHAR2(2000)")
+                        .HasColumnName("MEDICACOES_EM_USO");
+
                     b.Property<string>("Nome")
                         .IsRequired()
                         .HasMaxLength(200)
                         .HasColumnType("VARCHAR2(200)")
                         .HasColumnName("NOME");
+
+                    b.Property<decimal?>("PesoKg")
+                        .HasColumnType("NUMBER(6,2)")
+                        .HasColumnName("PESO_KG");
 
                     b.Property<string>("Raca")
                         .IsRequired()
@@ -60,17 +93,183 @@ namespace Vetly.Infrastructure.Migrations
                         .HasColumnType("VARCHAR2(100)")
                         .HasColumnName("RACA");
 
-                    b.Property<string>("TutorId")
+                    b.Property<string>("ResponsavelId")
                         .IsRequired()
                         .HasColumnType("CHAR(36)")
-                        .HasColumnName("TUTOR_ID");
+                        .HasColumnName("RESPONSAVEL_ID");
+
+                    b.Property<int>("Sexo")
+                        .HasColumnType("NUMBER(10)")
+                        .HasColumnName("SEXO");
 
                     b.HasKey("Id");
 
-                    b.HasIndex("TutorId")
-                        .HasDatabaseName("IX_ANIMAL_TUTOR");
+                    b.HasIndex("ResponsavelId")
+                        .HasDatabaseName("IX_ANIMAL_RESPONSAVEL");
 
                     b.ToTable("TB_ANIMAL", (string)null);
+                });
+
+            modelBuilder.Entity("Vetly.Domain.Entities.Avaliacao", b =>
+                {
+                    b.Property<string>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("CHAR(36)")
+                        .HasColumnName("ID");
+
+                    b.Property<string>("Comentario")
+                        .HasMaxLength(2000)
+                        .HasColumnType("VARCHAR2(2000)")
+                        .HasColumnName("COMENTARIO");
+
+                    b.Property<string>("ConsultaId")
+                        .IsRequired()
+                        .HasColumnType("CHAR(36)")
+                        .HasColumnName("CONSULTA_ID");
+
+                    b.Property<DateTime>("Data")
+                        .HasColumnType("TIMESTAMP(7)")
+                        .HasColumnName("DATA");
+
+                    b.Property<DateTime?>("DataResposta")
+                        .HasColumnType("TIMESTAMP(7)")
+                        .HasColumnName("DATA_RESPOSTA");
+
+                    b.Property<bool>("Invalidada")
+                        .HasColumnType("NUMBER(1)")
+                        .HasColumnName("INVALIDADA");
+
+                    b.Property<int?>("NotaAtendimento")
+                        .HasColumnType("NUMBER(1)")
+                        .HasColumnName("NOTA_ATENDIMENTO");
+
+                    b.Property<int?>("NotaCustoBeneficio")
+                        .HasColumnType("NUMBER(1)")
+                        .HasColumnName("NOTA_CUSTO_BENEFICIO");
+
+                    b.Property<int?>("NotaEstrutura")
+                        .HasColumnType("NUMBER(1)")
+                        .HasColumnName("NOTA_ESTRUTURA");
+
+                    b.Property<int>("NotaGeral")
+                        .HasColumnType("NUMBER(1)")
+                        .HasColumnName("NOTA_GERAL");
+
+                    b.Property<int?>("NotaPontualidade")
+                        .HasColumnType("NUMBER(1)")
+                        .HasColumnName("NOTA_PONTUALIDADE");
+
+                    b.Property<string>("ResponsavelId")
+                        .IsRequired()
+                        .HasColumnType("CHAR(36)")
+                        .HasColumnName("RESPONSAVEL_ID");
+
+                    b.Property<string>("RespostaVeterinario")
+                        .HasMaxLength(2000)
+                        .HasColumnType("VARCHAR2(2000)")
+                        .HasColumnName("RESPOSTA_VETERINARIO");
+
+                    b.Property<int>("StatusModeracao")
+                        .HasColumnType("NUMBER(10)")
+                        .HasColumnName("STATUS_MODERACAO");
+
+                    b.Property<string>("VeterinarioId")
+                        .IsRequired()
+                        .HasColumnType("CHAR(36)")
+                        .HasColumnName("VETERINARIO_ID");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ConsultaId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_AVALIACAO_CONSULTA_UNICA");
+
+                    b.HasIndex("VeterinarioId")
+                        .HasDatabaseName("IX_AVALIACAO_VETERINARIO");
+
+                    b.ToTable("TB_AVALIACAO", (string)null);
+                });
+
+            modelBuilder.Entity("Vetly.Domain.Entities.ConcessaoAcessoProntuario", b =>
+                {
+                    b.Property<string>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("CHAR(36)")
+                        .HasColumnName("ID");
+
+                    b.Property<string>("AnimalId")
+                        .IsRequired()
+                        .HasColumnType("CHAR(36)")
+                        .HasColumnName("ANIMAL_ID");
+
+                    b.Property<int>("BaseAcesso")
+                        .HasColumnType("NUMBER(10)")
+                        .HasColumnName("BASE_ACESSO");
+
+                    b.Property<DateTime>("ConcedidoEm")
+                        .HasColumnType("TIMESTAMP(7)")
+                        .HasColumnName("CONCEDIDO_EM");
+
+                    b.Property<string>("ConsultaId")
+                        .IsRequired()
+                        .HasColumnType("CHAR(36)")
+                        .HasColumnName("CONSULTA_ID");
+
+                    b.Property<DateTime>("ExpiraEm")
+                        .HasColumnType("TIMESTAMP(7)")
+                        .HasColumnName("EXPIRA_EM");
+
+                    b.Property<bool>("Revogada")
+                        .HasColumnType("NUMBER(1)")
+                        .HasColumnName("REVOGADA");
+
+                    b.Property<string>("VeterinarioId")
+                        .IsRequired()
+                        .HasColumnType("CHAR(36)")
+                        .HasColumnName("VETERINARIO_ID");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("VeterinarioId", "AnimalId")
+                        .HasDatabaseName("IX_CONCESSAO_VETERINARIO_ANIMAL");
+
+                    b.ToTable("TB_CONCESSAO_ACESSO_PRONTUARIO", (string)null);
+                });
+
+            modelBuilder.Entity("Vetly.Domain.Entities.ConsentimentoLgpd", b =>
+                {
+                    b.Property<string>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("CHAR(36)")
+                        .HasColumnName("ID");
+
+                    b.Property<bool>("Concedido")
+                        .HasColumnType("NUMBER(1)")
+                        .HasColumnName("CONCEDIDO");
+
+                    b.Property<DateTime>("DataConcessao")
+                        .HasColumnType("TIMESTAMP(7)")
+                        .HasColumnName("DATA_CONCESSAO");
+
+                    b.Property<DateTime?>("DataRevogacao")
+                        .HasColumnType("TIMESTAMP(7)")
+                        .HasColumnName("DATA_REVOGACAO");
+
+                    b.Property<int>("Finalidade")
+                        .HasColumnType("NUMBER(10)")
+                        .HasColumnName("FINALIDADE");
+
+                    b.Property<string>("ResponsavelId")
+                        .IsRequired()
+                        .HasColumnType("CHAR(36)")
+                        .HasColumnName("RESPONSAVEL_ID");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ResponsavelId", "Finalidade")
+                        .HasDatabaseName("IX_CONSENTIMENTO_RESPONSAVEL_FINALIDADE");
+
+                    b.ToTable("TB_CONSENTIMENTO_LGPD", (string)null);
                 });
 
             modelBuilder.Entity("Vetly.Domain.Entities.Consulta", b =>
@@ -85,38 +284,63 @@ namespace Vetly.Infrastructure.Migrations
                         .HasColumnType("CHAR(36)")
                         .HasColumnName("ANIMAL_ID");
 
-                    b.Property<bool>("Cancelada")
-                        .HasColumnType("NUMBER(1)")
-                        .HasColumnName("CANCELADA");
+                    b.Property<short>("ContadorRemarcacoes")
+                        .HasColumnType("NUMBER(5)")
+                        .HasColumnName("CONTADOR_REMARCACOES");
 
                     b.Property<DateTime>("DataHora")
                         .HasColumnType("TIMESTAMP(7)")
                         .HasColumnName("DATA_HORA");
 
+                    b.Property<DateTime?>("DataRealizada")
+                        .HasColumnType("TIMESTAMP(7)")
+                        .HasColumnName("DATA_REALIZADA");
+
+                    b.Property<string>("DiagnosticoFinal")
+                        .HasColumnType("CLOB")
+                        .HasColumnName("DIAGNOSTICO_FINAL");
+
                     b.Property<bool>("DiagnosticoValidado")
                         .HasColumnType("NUMBER(1)")
                         .HasColumnName("DIAGNOSTICO_VALIDADO");
 
-                    b.Property<bool>("Finalizada")
+                    b.Property<bool>("EstadoFinalDefinido")
                         .HasColumnType("NUMBER(1)")
-                        .HasColumnName("FINALIZADA");
+                        .HasColumnName("ESTADO_FINAL_DEFINIDO");
+
+                    b.Property<DateTime?>("LockCheckoutExpiraEm")
+                        .HasColumnType("TIMESTAMP(7)")
+                        .HasColumnName("LOCK_CHECKOUT_EXPIRA_EM");
 
                     b.Property<int>("Modalidade")
                         .HasColumnType("NUMBER(10)")
                         .HasColumnName("MODALIDADE");
 
+                    b.Property<string>("PreSintomas")
+                        .HasMaxLength(4000)
+                        .HasColumnType("VARCHAR2(4000)")
+                        .HasColumnName("PRE_SINTOMAS");
+
+                    b.Property<string>("ProtocoloFinal")
+                        .HasColumnType("CLOB")
+                        .HasColumnName("PROTOCOLO_FINAL");
+
                     b.Property<bool>("ProtocoloValidado")
                         .HasColumnType("NUMBER(1)")
                         .HasColumnName("PROTOCOLO_VALIDADO");
 
-                    b.Property<int>("StatusPagamento")
-                        .HasColumnType("NUMBER(10)")
-                        .HasColumnName("STATUS_PAGAMENTO");
-
-                    b.Property<string>("TutorId")
+                    b.Property<string>("ResponsavelId")
                         .IsRequired()
                         .HasColumnType("CHAR(36)")
-                        .HasColumnName("TUTOR_ID");
+                        .HasColumnName("RESPONSAVEL_ID");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("NUMBER(10)")
+                        .HasColumnName("STATUS");
+
+                    b.Property<int>("TipoServico")
+                        .HasColumnType("NUMBER(10)")
+                        .HasColumnName("TIPO_SERVICO");
 
                     b.Property<string>("VeterinarioId")
                         .IsRequired()
@@ -148,6 +372,11 @@ namespace Vetly.Infrastructure.Migrations
                         .HasColumnType("NUMBER(1)")
                         .HasColumnName("ASSINADO_DIGITALMENTE");
 
+                    b.Property<string>("AssinaturaNomeDigitado")
+                        .HasMaxLength(200)
+                        .HasColumnType("VARCHAR2(200)")
+                        .HasColumnName("ASSINATURA_NOME_DIGITADO");
+
                     b.Property<string>("ConsultaId")
                         .HasColumnType("CHAR(36)")
                         .HasColumnName("CONSULTA_ID");
@@ -163,6 +392,10 @@ namespace Vetly.Infrastructure.Migrations
                         .HasColumnType("VARCHAR2(15)")
                         .HasColumnName("CRMV_SOLICITANTE_CORRECAO");
 
+                    b.Property<DateTime?>("DataAssinatura")
+                        .HasColumnType("TIMESTAMP(7)")
+                        .HasColumnName("DATA_ASSINATURA");
+
                     b.Property<DateTime?>("DataCorrecao")
                         .HasColumnType("TIMESTAMP(7)")
                         .HasColumnName("DATA_CORRECAO");
@@ -171,9 +404,17 @@ namespace Vetly.Infrastructure.Migrations
                         .HasColumnType("TIMESTAMP(7)")
                         .HasColumnName("DATA_GERACAO");
 
+                    b.Property<bool>("HabilitaDispensacaoControlados")
+                        .HasColumnType("NUMBER(1)")
+                        .HasColumnName("HABILITA_DISPENSACAO_CONTROLADOS");
+
                     b.Property<string>("InternacaoId")
                         .HasColumnType("CHAR(36)")
                         .HasColumnName("INTERNACAO_ID");
+
+                    b.Property<int?>("TipoAssinatura")
+                        .HasColumnType("NUMBER(10)")
+                        .HasColumnName("TIPO_ASSINATURA");
 
                     b.Property<int>("TipoDocumento")
                         .HasColumnType("NUMBER(10)")
@@ -213,6 +454,10 @@ namespace Vetly.Infrastructure.Migrations
                     b.Property<bool>("Ativa")
                         .HasColumnType("NUMBER(1)")
                         .HasColumnName("ATIVA");
+
+                    b.Property<decimal>("FaixaEnterprise")
+                        .HasColumnType("NUMBER(8,2)")
+                        .HasColumnName("FAIXA_ENTERPRISE");
 
                     b.Property<string>("Nome")
                         .IsRequired()
@@ -254,9 +499,9 @@ namespace Vetly.Infrastructure.Migrations
                         .HasColumnType("TIMESTAMP(7)")
                         .HasColumnName("DATA_SOLICITACAO");
 
-                    b.Property<bool>("LiberadoAoTutor")
+                    b.Property<bool>("LiberadoAoResponsavel")
                         .HasColumnType("NUMBER(1)")
-                        .HasColumnName("LIBERADO_AO_TUTOR");
+                        .HasColumnName("LIBERADO_AO_RESPONSAVEL");
 
                     b.Property<string>("Resultado")
                         .HasColumnType("CLOB")
@@ -350,6 +595,15 @@ namespace Vetly.Infrastructure.Migrations
                         .HasColumnType("TIMESTAMP(7)")
                         .HasColumnName("DATA_EVENTO");
 
+                    b.Property<string>("ResponsavelId")
+                        .IsRequired()
+                        .HasColumnType("CHAR(36)")
+                        .HasColumnName("RESPONSAVEL_ID");
+
+                    b.Property<bool>("ResponsavelRespondeu")
+                        .HasColumnType("NUMBER(1)")
+                        .HasColumnName("RESPONSAVEL_RESPONDEU");
+
                     b.Property<int>("TentativasRealizadas")
                         .HasColumnType("NUMBER(10)")
                         .HasColumnName("TENTATIVAS_REALIZADAS");
@@ -358,24 +612,152 @@ namespace Vetly.Infrastructure.Migrations
                         .HasColumnType("NUMBER(10)")
                         .HasColumnName("TIPO");
 
-                    b.Property<string>("TutorId")
-                        .IsRequired()
-                        .HasColumnType("CHAR(36)")
-                        .HasColumnName("TUTOR_ID");
-
-                    b.Property<bool>("TutorRespondeu")
-                        .HasColumnType("NUMBER(1)")
-                        .HasColumnName("TUTOR_RESPONDEU");
-
                     b.HasKey("Id");
 
                     b.HasIndex("AnimalId")
                         .HasDatabaseName("IX_LEMBRETE_ANIMAL");
 
-                    b.HasIndex("TutorId")
-                        .HasDatabaseName("IX_LEMBRETE_TUTOR");
+                    b.HasIndex("ResponsavelId")
+                        .HasDatabaseName("IX_LEMBRETE_RESPONSAVEL");
 
                     b.ToTable("TB_LEMBRETE", (string)null);
+                });
+
+            modelBuilder.Entity("Vetly.Domain.Entities.LogAcessoProntuario", b =>
+                {
+                    b.Property<string>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("CHAR(36)")
+                        .HasColumnName("ID");
+
+                    b.Property<string>("AnimalId")
+                        .IsRequired()
+                        .HasColumnType("CHAR(36)")
+                        .HasColumnName("ANIMAL_ID");
+
+                    b.Property<int>("BaseAcesso")
+                        .HasColumnType("NUMBER(10)")
+                        .HasColumnName("BASE_ACESSO");
+
+                    b.Property<string>("Contexto")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("VARCHAR2(500)")
+                        .HasColumnName("CONTEXTO");
+
+                    b.Property<DateTime>("DataHora")
+                        .HasColumnType("TIMESTAMP(7)")
+                        .HasColumnName("DATA_HORA");
+
+                    b.Property<string>("VeterinarioId")
+                        .IsRequired()
+                        .HasColumnType("CHAR(36)")
+                        .HasColumnName("VETERINARIO_ID");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AnimalId")
+                        .HasDatabaseName("IX_LOG_ACESSO_PRONTUARIO_ANIMAL");
+
+                    b.ToTable("TB_LOG_ACESSO_PRONTUARIO", (string)null);
+                });
+
+            modelBuilder.Entity("Vetly.Domain.Entities.LogAuditoriaIA", b =>
+                {
+                    b.Property<string>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("CHAR(36)")
+                        .HasColumnName("ID");
+
+                    b.Property<string>("ConsultaId")
+                        .IsRequired()
+                        .HasColumnType("CHAR(36)")
+                        .HasColumnName("CONSULTA_ID");
+
+                    b.Property<string>("ConteudoFinal")
+                        .HasColumnType("CLOB")
+                        .HasColumnName("CONTEUDO_FINAL");
+
+                    b.Property<string>("ConteudoSugerido")
+                        .IsRequired()
+                        .HasColumnType("CLOB")
+                        .HasColumnName("CONTEUDO_SUGERIDO");
+
+                    b.Property<string>("Crmv")
+                        .IsRequired()
+                        .HasMaxLength(15)
+                        .HasColumnType("VARCHAR2(15)")
+                        .HasColumnName("CRMV");
+
+                    b.Property<int?>("Decisao")
+                        .HasColumnType("NUMBER(10)")
+                        .HasColumnName("DECISAO");
+
+                    b.Property<DateTime>("Timestamp")
+                        .HasColumnType("TIMESTAMP(7)")
+                        .HasColumnName("TIMESTAMP");
+
+                    b.Property<int>("TipoSugestao")
+                        .HasColumnType("NUMBER(10)")
+                        .HasColumnName("TIPO_SUGESTAO");
+
+                    b.Property<string>("VersaoModelo")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("VARCHAR2(100)")
+                        .HasColumnName("VERSAO_MODELO");
+
+                    b.Property<string>("VeterinarioId")
+                        .IsRequired()
+                        .HasColumnType("CHAR(36)")
+                        .HasColumnName("VETERINARIO_ID");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ConsultaId")
+                        .HasDatabaseName("IX_LOG_AUDITORIA_IA_CONSULTA");
+
+                    b.ToTable("TB_LOG_AUDITORIA_IA", (string)null);
+                });
+
+            modelBuilder.Entity("Vetly.Domain.Entities.ObrigacaoDoPet", b =>
+                {
+                    b.Property<string>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("CHAR(36)")
+                        .HasColumnName("ID");
+
+                    b.Property<string>("AnimalId")
+                        .IsRequired()
+                        .HasColumnType("CHAR(36)")
+                        .HasColumnName("ANIMAL_ID");
+
+                    b.Property<string>("ConsultaId")
+                        .HasColumnType("CHAR(36)")
+                        .HasColumnName("CONSULTA_ID");
+
+                    b.Property<DateTime?>("DataCumprimento")
+                        .HasColumnType("TIMESTAMP(7)")
+                        .HasColumnName("DATA_CUMPRIMENTO");
+
+                    b.Property<DateTime>("DataLimite")
+                        .HasColumnType("TIMESTAMP(7)")
+                        .HasColumnName("DATA_LIMITE");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("NUMBER(10)")
+                        .HasColumnName("STATUS");
+
+                    b.Property<int>("Tipo")
+                        .HasColumnType("NUMBER(10)")
+                        .HasColumnName("TIPO");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AnimalId")
+                        .HasDatabaseName("IX_OBRIGACAO_PET_ANIMAL");
+
+                    b.ToTable("TB_OBRIGACAO_PET", (string)null);
                 });
 
             modelBuilder.Entity("Vetly.Domain.Entities.Pagamento", b =>
@@ -389,6 +771,18 @@ namespace Vetly.Infrastructure.Migrations
                         .HasColumnType("CHAR(36)")
                         .HasColumnName("CONSULTA_ID");
 
+                    b.Property<decimal>("DescontoFidelidadeCalculado")
+                        .HasColumnType("NUMBER(18,2)")
+                        .HasColumnName("DESCONTO_FIDELIDADE_CALCULADO");
+
+                    b.Property<decimal>("IncidenciaVeterinario")
+                        .HasColumnType("NUMBER(18,2)")
+                        .HasColumnName("INCIDENCIA_VETERINARIO");
+
+                    b.Property<decimal>("IncidenciaVetly")
+                        .HasColumnType("NUMBER(18,2)")
+                        .HasColumnName("INCIDENCIA_VETLY");
+
                     b.Property<string>("InternacaoId")
                         .HasColumnType("CHAR(36)")
                         .HasColumnName("INTERNACAO_ID");
@@ -401,36 +795,100 @@ namespace Vetly.Infrastructure.Migrations
                         .HasColumnType("TIMESTAMP(7)")
                         .HasColumnName("MOMENTO");
 
+                    b.Property<decimal>("PercentualComissao")
+                        .HasColumnType("NUMBER(5,2)")
+                        .HasColumnName("PERCENTUAL_COMISSAO");
+
                     b.Property<decimal>("PercentualSplit")
                         .HasColumnType("NUMBER(5,2)")
                         .HasColumnName("PERCENTUAL_SPLIT");
+
+                    b.Property<string>("ResponsavelId")
+                        .IsRequired()
+                        .HasColumnType("CHAR(36)")
+                        .HasColumnName("RESPONSAVEL_ID");
+
+                    b.Property<bool>("Simulado")
+                        .HasColumnType("NUMBER(1)")
+                        .HasColumnName("SIMULADO");
 
                     b.Property<int>("StatusPagamento")
                         .HasColumnType("NUMBER(10)")
                         .HasColumnName("STATUS_PAGAMENTO");
 
-                    b.Property<string>("TutorId")
-                        .IsRequired()
-                        .HasColumnType("CHAR(36)")
-                        .HasColumnName("TUTOR_ID");
-
                     b.Property<decimal>("Valor")
                         .HasColumnType("NUMBER(18,2)")
                         .HasColumnName("VALOR");
 
+                    b.Property<decimal>("ValorComissao")
+                        .HasColumnType("NUMBER(18,2)")
+                        .HasColumnName("VALOR_COMISSAO");
+
                     b.Property<decimal?>("ValorEstornado")
                         .HasColumnType("NUMBER(18,2)")
                         .HasColumnName("VALOR_ESTORNADO");
+
+                    b.Property<decimal>("ValorRepasse")
+                        .HasColumnType("NUMBER(18,2)")
+                        .HasColumnName("VALOR_REPASSE");
 
                     b.HasKey("Id");
 
                     b.HasIndex("ConsultaId")
                         .HasDatabaseName("IX_PAGAMENTO_CONSULTA");
 
-                    b.HasIndex("TutorId")
-                        .HasDatabaseName("IX_PAGAMENTO_TUTOR");
+                    b.HasIndex("ResponsavelId")
+                        .HasDatabaseName("IX_PAGAMENTO_RESPONSAVEL");
 
                     b.ToTable("TB_PAGAMENTO", (string)null);
+                });
+
+            modelBuilder.Entity("Vetly.Domain.Entities.PontosFidelidade", b =>
+                {
+                    b.Property<string>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("CHAR(36)")
+                        .HasColumnName("ID");
+
+                    b.Property<string>("ConsultaId")
+                        .IsRequired()
+                        .HasColumnType("CHAR(36)")
+                        .HasColumnName("CONSULTA_ID");
+
+                    b.Property<DateTime>("Data")
+                        .HasColumnType("TIMESTAMP(7)")
+                        .HasColumnName("DATA");
+
+                    b.Property<bool>("Estornado")
+                        .HasColumnType("NUMBER(1)")
+                        .HasColumnName("ESTORNADO");
+
+                    b.Property<DateTime>("ExpiraEm")
+                        .HasColumnType("TIMESTAMP(7)")
+                        .HasColumnName("EXPIRA_EM");
+
+                    b.Property<int>("Origem")
+                        .HasColumnType("NUMBER(10)")
+                        .HasColumnName("ORIGEM");
+
+                    b.Property<int>("Pontos")
+                        .HasColumnType("NUMBER(10)")
+                        .HasColumnName("PONTOS");
+
+                    b.Property<string>("ResponsavelId")
+                        .IsRequired()
+                        .HasColumnType("CHAR(36)")
+                        .HasColumnName("RESPONSAVEL_ID");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ConsultaId")
+                        .HasDatabaseName("IX_PONTOS_FIDELIDADE_CONSULTA");
+
+                    b.HasIndex("ResponsavelId")
+                        .HasDatabaseName("IX_PONTOS_FIDELIDADE_RESPONSAVEL");
+
+                    b.ToTable("TB_PONTOS_FIDELIDADE", (string)null);
                 });
 
             modelBuilder.Entity("Vetly.Domain.Entities.Prontuario", b =>
@@ -439,6 +897,10 @@ namespace Vetly.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("CHAR(36)")
                         .HasColumnName("ID");
+
+                    b.Property<bool>("AlertaSeguranca")
+                        .HasColumnType("NUMBER(1)")
+                        .HasColumnName("ALERTA_SEGURANCA");
 
                     b.Property<string>("AnimalId")
                         .IsRequired()
@@ -488,7 +950,37 @@ namespace Vetly.Infrastructure.Migrations
                     b.ToTable("TB_PRONTUARIO", (string)null);
                 });
 
-            modelBuilder.Entity("Vetly.Domain.Entities.Tutor", b =>
+            modelBuilder.Entity("Vetly.Domain.Entities.RegistroOcultado", b =>
+                {
+                    b.Property<string>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("CHAR(36)")
+                        .HasColumnName("ID");
+
+                    b.Property<string>("AnimalId")
+                        .IsRequired()
+                        .HasColumnType("CHAR(36)")
+                        .HasColumnName("ANIMAL_ID");
+
+                    b.Property<DateTime>("DataOcultacao")
+                        .HasColumnType("TIMESTAMP(7)")
+                        .HasColumnName("DATA_OCULTACAO");
+
+                    b.Property<string>("ProntuarioId")
+                        .IsRequired()
+                        .HasColumnType("CHAR(36)")
+                        .HasColumnName("PRONTUARIO_ID");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AnimalId", "ProntuarioId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_REGISTRO_OCULTADO_ANIMAL_PRONTUARIO");
+
+                    b.ToTable("TB_REGISTRO_OCULTADO", (string)null);
+                });
+
+            modelBuilder.Entity("Vetly.Domain.Entities.Responsavel", b =>
                 {
                     b.Property<string>("Id")
                         .ValueGeneratedOnAdd()
@@ -499,21 +991,17 @@ namespace Vetly.Infrastructure.Migrations
                         .HasColumnType("NUMBER(1)")
                         .HasColumnName("ATIVO");
 
-                    b.Property<bool>("ConsentimentoAtendimento")
-                        .HasColumnType("NUMBER(1)")
-                        .HasColumnName("CONSENTIMENTO_ATENDIMENTO");
-
-                    b.Property<bool>("ConsentimentoCompartilhamento")
-                        .HasColumnType("NUMBER(1)")
-                        .HasColumnName("CONSENTIMENTO_COMPARTILHAMENTO");
-
-                    b.Property<bool>("ConsentimentoLembretes")
-                        .HasColumnType("NUMBER(1)")
-                        .HasColumnName("CONSENTIMENTO_LEMBRETES");
-
-                    b.Property<DateTime?>("DataConsentimento")
+                    b.Property<DateTime?>("BloqueadoDescontosAte")
                         .HasColumnType("TIMESTAMP(7)")
-                        .HasColumnName("DATA_CONSENTIMENTO");
+                        .HasColumnName("BLOQUEADO_DESCONTOS_ATE");
+
+                    b.Property<byte>("ContadorNoShows")
+                        .HasColumnType("NUMBER(3)")
+                        .HasColumnName("CONTADOR_NO_SHOWS");
+
+                    b.Property<DateTime?>("DataUltimoNoShow")
+                        .HasColumnType("TIMESTAMP(7)")
+                        .HasColumnName("DATA_ULTIMO_NO_SHOW");
 
                     b.Property<string>("Email")
                         .IsRequired()
@@ -527,19 +1015,31 @@ namespace Vetly.Infrastructure.Migrations
                         .HasColumnType("VARCHAR2(200)")
                         .HasColumnName("NOME");
 
+                    b.Property<decimal>("SaldoCreditosVetly")
+                        .HasColumnType("NUMBER(10,2)")
+                        .HasColumnName("SALDO_CREDITOS_VETLY");
+
+                    b.Property<int>("SaldoPontos")
+                        .HasColumnType("NUMBER(10)")
+                        .HasColumnName("SALDO_PONTOS");
+
                     b.Property<string>("Telefone")
                         .IsRequired()
                         .HasMaxLength(20)
                         .HasColumnType("VARCHAR2(20)")
                         .HasColumnName("TELEFONE");
 
+                    b.Property<int>("TierFidelidade")
+                        .HasColumnType("NUMBER(10)")
+                        .HasColumnName("TIER_FIDELIDADE");
+
                     b.HasKey("Id");
 
                     b.HasIndex("Email")
                         .IsUnique()
-                        .HasDatabaseName("IX_TUTOR_EMAIL");
+                        .HasDatabaseName("IX_RESPONSAVEL_EMAIL");
 
-                    b.ToTable("TB_TUTOR", (string)null);
+                    b.ToTable("TB_RESPONSAVEL", (string)null);
                 });
 
             modelBuilder.Entity("Vetly.Domain.Entities.Veterinario", b =>
@@ -573,6 +1073,10 @@ namespace Vetly.Infrastructure.Migrations
                         .HasColumnType("VARCHAR2(200)")
                         .HasColumnName("NOME");
 
+                    b.Property<decimal?>("NotaMedia")
+                        .HasColumnType("NUMBER(3,2)")
+                        .HasColumnName("NOTA_MEDIA");
+
                     b.Property<int>("Persona")
                         .HasColumnType("NUMBER(10)")
                         .HasColumnName("PERSONA");
@@ -581,10 +1085,18 @@ namespace Vetly.Infrastructure.Migrations
                         .HasColumnType("NUMBER(10)")
                         .HasColumnName("PLANO");
 
+                    b.Property<DateTime?>("SuspensoAte")
+                        .HasColumnType("TIMESTAMP(7)")
+                        .HasColumnName("SUSPENSO_ATE");
+
                     b.Property<string>("TitulacaoAcademica")
                         .HasMaxLength(300)
                         .HasColumnType("VARCHAR2(300)")
                         .HasColumnName("TITULACAO_ACADEMICA");
+
+                    b.Property<int>("TotalAvaliacoes")
+                        .HasColumnType("NUMBER(10)")
+                        .HasColumnName("TOTAL_AVALIACOES");
 
                     b.Property<string>("UfAtuacao")
                         .IsRequired()
@@ -602,6 +1114,37 @@ namespace Vetly.Infrastructure.Migrations
 
             modelBuilder.Entity("Vetly.Domain.Entities.Veterinario", b =>
                 {
+                    b.OwnsMany("Vetly.Domain.Entities.StrikeReputacao", "StrikesAtivos", b1 =>
+                        {
+                            b1.Property<int>("Id")
+                                .ValueGeneratedOnAdd()
+                                .HasColumnType("NUMBER(10)");
+
+                            OraclePropertyBuilderExtensions.UseIdentityColumn(b1.Property<int>("Id"));
+
+                            b1.Property<DateTime>("Data")
+                                .HasColumnType("TIMESTAMP(7)")
+                                .HasColumnName("DATA");
+
+                            b1.Property<string>("Motivo")
+                                .IsRequired()
+                                .HasColumnType("VARCHAR2(500)")
+                                .HasColumnName("MOTIVO");
+
+                            b1.Property<string>("VETERINARIO_ID")
+                                .IsRequired()
+                                .HasColumnType("CHAR(36)");
+
+                            b1.HasKey("Id");
+
+                            b1.HasIndex("VETERINARIO_ID");
+
+                            b1.ToTable("TB_VETERINARIO_STRIKE", (string)null);
+
+                            b1.WithOwner()
+                                .HasForeignKey("VETERINARIO_ID");
+                        });
+
                     b.OwnsOne("Vetly.Domain.ValueObjects.Crmv", "Crmv", b1 =>
                         {
                             b1.Property<string>("VeterinarioId")
@@ -622,6 +1165,8 @@ namespace Vetly.Infrastructure.Migrations
 
                     b.Navigation("Crmv")
                         .IsRequired();
+
+                    b.Navigation("StrikesAtivos");
                 });
 #pragma warning restore 612, 618
         }

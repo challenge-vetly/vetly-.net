@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using Vetly.Domain.Enums;
+using Vetly.Domain.Exceptions;
 
 namespace Vetly.Domain.Entities;
 
@@ -50,6 +51,23 @@ public class Documento
     /// </summary>
     public bool AssinadoDigitalmente { get; private set; }
 
+    /// <summary>Forma de assinatura usada (RN-031). Nulo até o documento ser assinado.</summary>
+    public TipoAssinatura? TipoAssinatura { get; private set; }
+
+    /// <summary>Nome digitado pelo veterinário no momento da assinatura (RN-031 — MVP).</summary>
+    [MaxLength(200)]
+    public string? AssinaturaNomeDigitado { get; private set; }
+
+    /// <summary>Momento da assinatura.</summary>
+    public DateTime? DataAssinatura { get; private set; }
+
+    /// <summary>
+    /// Sempre false enquanto <see cref="TipoAssinatura"/> for <see cref="Enums.TipoAssinatura.NomeDigitado"/>:
+    /// receita assinada só por nome digitado nunca habilita dispensação externa de
+    /// controlados (RN-091). Só um certificado ICP-Brasil (fora de escopo do MVP) habilitaria.
+    /// </summary>
+    public bool HabilitaDispensacaoControlados { get; private set; }
+
     /// <summary>Id do documento original quando este é uma versão corrigida (RN-032).</summary>
     public Guid? VersaoOriginalId { get; private set; }
 
@@ -81,8 +99,22 @@ public class Documento
         DataGeracao = DateTime.UtcNow;
     }
 
-    /// <summary>Registra a assinatura digital do documento (RN-031).</summary>
-    public void Assinar() => AssinadoDigitalmente = true;
+    /// <summary>
+    /// Registra a assinatura do documento por nome digitado (RN-031 — MVP). Nunca habilita
+    /// dispensação externa de controlados (RN-091): essa flag só existiria com um
+    /// certificado ICP-Brasil de verdade, fora do escopo do MVP.
+    /// </summary>
+    public void Assinar(string nomeDigitado, DateTime agora)
+    {
+        if (string.IsNullOrWhiteSpace(nomeDigitado))
+            throw new DomainException("DOCUMENTO-001", "O nome digitado para assinatura nao pode ser vazio.");
+
+        AssinaturaNomeDigitado = nomeDigitado;
+        TipoAssinatura = Enums.TipoAssinatura.NomeDigitado;
+        DataAssinatura = agora;
+        HabilitaDispensacaoControlados = false;
+        AssinadoDigitalmente = true;
+    }
 
     /// <summary>Incrementa a versão do documento ao criar uma correção.</summary>
     public void IncrementarVersao() => Versao++;

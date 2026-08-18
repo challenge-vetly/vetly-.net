@@ -11,9 +11,9 @@ public class PagamentoRepository : RepositoryBase<Pagamento>, IPagamentoReposito
     public PagamentoRepository(VetlyDbContext context) : base(context) { }
 
     /// <inheritdoc/>
-    public async Task<IEnumerable<Pagamento>> ObterPorTutorAsync(Guid tutorId) =>
+    public async Task<IEnumerable<Pagamento>> ObterPorResponsavelAsync(Guid responsavelId) =>
         await _dbSet
-            .Where(p => p.TutorId == tutorId)
+            .Where(p => p.ResponsavelId == responsavelId)
             .OrderByDescending(p => p.Momento)
             .ToListAsync();
 
@@ -21,4 +21,12 @@ public class PagamentoRepository : RepositoryBase<Pagamento>, IPagamentoReposito
     public async Task<Pagamento?> ObterPorConsultaAsync(Guid consultaId) =>
         await _dbSet
             .FirstOrDefaultAsync(p => p.ConsultaId == consultaId);
+
+    /// <inheritdoc/>
+    public async Task<IEnumerable<Pagamento>> ObterPorVeterinariosAsync(IEnumerable<Guid> veterinarioIds) =>
+        await _dbSet
+            .Join(_context.Consultas, p => p.ConsultaId, c => c.Id, (p, c) => new { Pagamento = p, c.VeterinarioId })
+            .Where(x => veterinarioIds.Contains(x.VeterinarioId))
+            .Select(x => x.Pagamento)
+            .ToListAsync();
 }

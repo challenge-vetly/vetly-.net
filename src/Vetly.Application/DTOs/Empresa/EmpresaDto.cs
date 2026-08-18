@@ -8,4 +8,8 @@ public class EmpresaDto
     public string Tipo { get; set; } = string.Empty;
     public Guid AdministradorId { get; set; }
     public bool Ativa { get; set; }
+
+    /// <summary>Valor da assinatura Enterprise por faixa de nº de vets (RN-092) — pode estar
+    /// levemente desatualizado até a próxima vinculação ou consulta do dashboard/assinatura.</summary>
+    public decimal FaixaEnterprise { get; set; }
 }

@@ -80,6 +80,38 @@ public class VeterinarioConfiguration : IEntityTypeConfiguration<Veterinario>
                 .IsRequired();
         });
 
+        builder.Property(v => v.SuspensoAte)
+            .HasColumnName("SUSPENSO_ATE");
+
+        // NUMBER(3,2) comporta 0.00 a 5.00 — faixa de NotaMedia (RN-078)
+        builder.Property(v => v.NotaMedia)
+            .HasColumnType("NUMBER(3,2)")
+            .HasColumnName("NOTA_MEDIA");
+
+        builder.Property(v => v.TotalAvaliacoes)
+            .HasColumnType("NUMBER(10)")
+            .HasColumnName("TOTAL_AVALIACOES")
+            .IsRequired();
+
+        // Historico de strikes de reputacao (RN-065/066/067) — owned collection em tabela
+        // propria; nunca apagado, so deixa de contar para o limiar fora da janela de 90 dias.
+        builder.OwnsMany(v => v.StrikesAtivos, strike =>
+        {
+            strike.ToTable("TB_VETERINARIO_STRIKE");
+            strike.WithOwner().HasForeignKey("VETERINARIO_ID");
+            strike.Property<int>("Id").ValueGeneratedOnAdd();
+            strike.HasKey("Id");
+
+            strike.Property(s => s.Data)
+                .HasColumnName("DATA")
+                .IsRequired();
+
+            strike.Property(s => s.Motivo)
+                .HasColumnType("VARCHAR2(500)")
+                .HasColumnName("MOTIVO")
+                .IsRequired();
+        });
+
         // Índice na UF para buscas por região (GET /api/veterinarios/regiao/{uf})
         builder.HasIndex(v => v.UfAtuacao).HasDatabaseName("IX_VETERINARIO_UF");
     }

@@ -16,8 +16,9 @@ namespace Vetly.UnitTests;
 public class VeterinarioServiceTests
 {
     private readonly Mock<IVeterinarioRepository> _repoMock = new();
+    private readonly Mock<ICurrentUserService> _currentUserMock = new();
 
-    private VeterinarioService CriarServico() => new(_repoMock.Object);
+    private VeterinarioService CriarServico() => new(_repoMock.Object, _currentUserMock.Object, TimeProvider.System);
 
     private static CriarVeterinarioDto CriarDto(string crmv = "12345-SP") => new()
     {
@@ -67,7 +68,7 @@ public class VeterinarioServiceTests
         var crmv = new Crmv("12345-SP");
         var vet = new Veterinario("Dr. Vet", crmv, "SP", PersonaVeterinario.Autonomo, PlanoAssinatura.Profissional);
         var consultaFutura = new Consulta(
-            DateTime.UtcNow.AddDays(3), ModalidadeAtendimento.Presencial,
+            DateTime.UtcNow.AddDays(3), ModalidadeAtendimento.Presencial, TipoServico.Consulta,
             vet.Id, Guid.NewGuid(), Guid.NewGuid());
 
         _repoMock.Setup(r => r.ObterPorIdAsync(vet.Id)).ReturnsAsync(vet);
@@ -80,5 +81,69 @@ public class VeterinarioServiceTests
 
         Assert.Single(agendamentos);
         Assert.False(vet.Ativo);
+    }
+
+    [Fact]
+    public async Task ObterPorIdAsync_MenosDeTresAvaliacoes_NotaMediaNaoExibidaPublicamente()
+    {
+        var vet = new Veterinario("Dr. Vet", new Crmv("12345-SP"), "SP", PersonaVeterinario.Autonomo, PlanoAssinatura.Profissional);
+        vet.RecalcularReputacao([(5, DateTime.UtcNow), (5, DateTime.UtcNow)], DateTime.UtcNow); // só 2
+        _repoMock.Setup(r => r.ObterPorIdAsync(vet.Id)).ReturnsAsync(vet);
+
+        var resultado = await CriarServico().ObterPorIdAsync(vet.Id);
+
+        Assert.Null(resultado.NotaMedia); // RN-078: exige >= 3 avaliações para exibir
+        Assert.Equal(2, resultado.TotalAvaliacoes);
+    }
+
+    [Fact]
+    public async Task ObterPorIdAsync_TresOuMaisAvaliacoes_ExibeNotaMediaPublicamente()
+    {
+        var vet = new Veterinario("Dr. Vet", new Crmv("12345-SP"), "SP", PersonaVeterinario.Autonomo, PlanoAssinatura.Profissional);
+        vet.RecalcularReputacao([(5, DateTime.UtcNow), (5, DateTime.UtcNow), (5, DateTime.UtcNow)], DateTime.UtcNow);
+        _repoMock.Setup(r => r.ObterPorIdAsync(vet.Id)).ReturnsAsync(vet);
+
+        var resultado = await CriarServico().ObterPorIdAsync(vet.Id);
+
+        Assert.Equal(5m, resultado.NotaMedia);
+        Assert.Equal(3, resultado.TotalAvaliacoes);
+    }
+
+    [Fact]
+    public async Task ObterAgendaAsync_VeterinarioTentaAcessarAgendaDeOutroVet_LancaForbiddenExceptionACESSO002()
+    {
+        var vetId = Guid.NewGuid();
+        _currentUserMock.Setup(c => c.Role).Returns("Veterinario");
+        _currentUserMock.Setup(c => c.EntidadeId).Returns(Guid.NewGuid()); // vet diferente do solicitado
+
+        var ex = await Assert.ThrowsAsync<ForbiddenException>(() => CriarServico().ObterAgendaAsync(vetId));
+
+        Assert.Equal("ACESSO-002", ex.Codigo);
+    }
+
+    [Fact]
+    public async Task ObterAgendaAsync_VeterinarioAcessaAPropriaAgenda_RetornaNormalmente()
+    {
+        var vetId = Guid.NewGuid();
+        _currentUserMock.Setup(c => c.Role).Returns("Veterinario");
+        _currentUserMock.Setup(c => c.EntidadeId).Returns(vetId);
+        _repoMock.Setup(r => r.ObterAgendaFuturaAsync(vetId)).ReturnsAsync([]);
+
+        var resultado = await CriarServico().ObterAgendaAsync(vetId);
+
+        Assert.Empty(resultado);
+    }
+
+    [Fact]
+    public async Task ObterAgendaAsync_ChamadorAdmin_NaoAplicaRestricaoDePosse()
+    {
+        var vetId = Guid.NewGuid();
+        _currentUserMock.Setup(c => c.Role).Returns("Admin");
+        _currentUserMock.Setup(c => c.EntidadeId).Returns(Guid.NewGuid());
+        _repoMock.Setup(r => r.ObterAgendaFuturaAsync(vetId)).ReturnsAsync([]);
+
+        var resultado = await CriarServico().ObterAgendaAsync(vetId);
+
+        Assert.Empty(resultado);
     }
 }
