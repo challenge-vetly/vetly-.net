@@ -15,6 +15,9 @@ using Vetly.Infrastructure.Data;
 using Vetly.Infrastructure.Repositories;
 using Vetly.API.Middlewares;
 using Vetly.API.Services;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Vetly.API.HealthChecks;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -39,8 +42,18 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
 
 // -- Health Checks -------------------------------------------------------------
-builder.Services.AddHealthChecks();
+builder.Services.AddHealthChecks()
+    .AddDbContextCheck<VetlyDbContext>(
+        name: "oracle-db",
+        failureStatus: HealthStatus.Unhealthy,
+        tags: new[] { "ready", "db", "oracle" })
 
+    .AddCheck<OllamaHealthCheck>(
+        name: "ollama",
+        failureStatus: HealthStatus.Degraded,
+        tags: new[] { "ready", "external" });
+    
+    
 // ── OpenAPI / Scalar ─────────────────────────────────────────────────────────
 builder.Services.AddOpenApi();
 
@@ -170,6 +183,26 @@ app.UseHttpsRedirection();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
-app.MapHealthChecks("/health");
+
+// Liveness - a API esta de pe? Nunhum Check e executado
+app.MapHealthChecks("/health/live", new HealthCheckOptions
+{
+    Predicate = _ => false, // Predicate decide quais verificacoes deveram ser executadas nessa rota
+    // como esta false, nenhuma dependencia externa como banco e ollama sera testada
+    ResponseWriter = HealthCheckResponseWriter.WriteResponse
+});
+
+// Readiness — dependências prontas? Só os checks com a tag "ready".
+app.MapHealthChecks("/health/ready", new HealthCheckOptions
+{
+    Predicate = check => check.Tags.Contains("ready"),
+    ResponseWriter = HealthCheckResponseWriter.WriteResponse
+});
+
+// Completo — todos os checks registrados.
+app.MapHealthChecks("/health", new HealthCheckOptions
+{
+    ResponseWriter = HealthCheckResponseWriter.WriteResponse
+});
 
 app.Run();
