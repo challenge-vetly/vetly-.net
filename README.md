@@ -108,6 +108,23 @@ Roles disponíveis: `Admin` e `Veterinario`. Endpoints de criação e desativaç
 
 ## Endpoints
 
+### Health Checks
+Públicos (sem autenticação). Respondem JSON com o status de cada dependência.
+
+| Método | Rota | Descrição |
+|---|---|---|
+| GET | `/health/live` | Liveness — só verifica se o processo está no ar; não toca em dependências. Use para decidir **reiniciar** o container |
+| GET | `/health/ready` | Readiness — verifica Oracle e Ollama. Use para decidir se o container recebe **tráfego** |
+| GET | `/health` | Diagnóstico completo — todos os checks registrados |
+
+Checks registrados: `api` (tag `live`), `oracle-db` (tags `ready,db,oracle`) e `ollama` (tags `ready,external`).
+
+Códigos de status: `Healthy` e `Degraded` retornam **200**; `Unhealthy` retorna **503**. Falha no Oracle é `Unhealthy` (a API não atende sem banco); falha no Ollama é `Degraded` (só os recursos de IA param, o resto segue funcionando). O detalhamento do erro só aparece fora do ambiente de Produção.
+
+```bash
+curl http://localhost:5099/health/ready
+```
+
 ### Auth
 | Método | Rota | Descrição |
 |---|---|---|

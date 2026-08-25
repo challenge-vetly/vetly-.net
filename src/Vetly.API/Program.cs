@@ -11,6 +11,9 @@ using Vetly.Application.Strategies.Split;
 using Vetly.Infrastructure.Data;
 using Vetly.Infrastructure.Repositories;
 using Vetly.API.Middlewares;
+using Vetly.API.HealthChecks;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -24,9 +27,6 @@ builder.Configuration
 
 // ── Controllers ───────────────────────────────────────────────────────────────
 builder.Services.AddControllers();
-
-// -- Health Checks -------------------------------------------------------------
-builder.Services.AddHealthChecks();
 
 // ── OpenAPI / Scalar ─────────────────────────────────────────────────────────
 builder.Services.AddOpenApi();
@@ -108,6 +108,46 @@ builder.Services.AddHttpClient<IOllamaService, OllamaService>(client =>
         builder.Configuration.GetValue<int>("Ollama:TimeoutSeconds", 120));
 });
 
+// ── Health Checks ────────────────────────────────────────────────────────────
+// Registrado depois das dependencias (DbContext e HttpClient do Ollama) para que
+// cada check reaproveite exatamente a mesma configuracao usada pela aplicacao.
+//
+// Tags definem quais checks rodam em cada endpoint:
+//   "live"  → a API esta de pe (nao toca dependencia externa nenhuma)
+//   "ready" → a API consegue atender de verdade (banco e servicos externos)
+builder.Services.AddHealthChecks()
+
+    // Saude da propria API: se o processo responde a esta lambda, o host esta vivo.
+    .AddCheck(
+        name: "api",
+        check: () => HealthCheckResult.Healthy("API no ar."),
+        tags: ["live"])
+
+    // Conectividade com o Oracle. AddDbContextCheck executa CanConnectAsync no
+    // VetlyDbContext, ou seja, abre conexao de verdade — nao apenas valida a string.
+    // Sem banco a API nao entrega nada: Unhealthy (=> HTTP 503 em /health/ready).
+    .AddDbContextCheck<VetlyDbContext>(
+        name: "oracle-db",
+        failureStatus: HealthStatus.Unhealthy,
+        tags: ["ready", "db", "oracle"],
+        customTestQuery: async (dbContext, cancellationToken) =>
+        {
+            // O teste padrao (CanConnectAsync) engole a excecao e devolve apenas
+            // false — o relatorio sai sem motivo nenhum da falha. Abrindo a conexao
+            // explicitamente, o erro do Oracle (ex.: ORA-01017) sobe e e capturado
+            // pelo HealthCheckService, aparecendo no JSON de resposta.
+            await dbContext.Database.OpenConnectionAsync(cancellationToken);
+            await dbContext.Database.CloseConnectionAsync();
+            return true;
+        })
+
+    // Disponibilidade do servico externo (Ollama / LLM local).
+    // Degraded e nao Unhealthy: sem IA a API segue operando (ver OllamaHealthCheck).
+    .AddCheck<OllamaHealthCheck>(
+        name: "ollama",
+        failureStatus: HealthStatus.Degraded,
+        tags: ["ready", "external"]);
+
 // ── Build ─────────────────────────────────────────────────────────────────────
 var app = builder.Build();
 
@@ -128,6 +168,32 @@ app.UseHttpsRedirection();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
-app.MapHealthChecks("/health");
+
+// ── Endpoints de Health Check ────────────────────────────────────────────────
+// Detalhes de excecao so aparecem fora de Producao (ver HealthCheckResponseWriter).
+var escritorDeResposta = HealthCheckResponseWriter.Create(
+    incluirDetalhesDeErro: !app.Environment.IsProduction());
+
+// Liveness — o processo esta vivo? Roda so o check "api", sem tocar banco nem Ollama.
+// Usado por orquestradores para decidir REINICIAR o container.
+app.MapHealthChecks("/health/live", new HealthCheckOptions
+{
+    Predicate = check => check.Tags.Contains("live"),
+    ResponseWriter = escritorDeResposta
+});
+
+// Readiness — as dependencias estao prontas? Roda os checks marcados com "ready".
+// Usado para decidir se o container recebe TRAFEGO (503 tira de rotacao).
+app.MapHealthChecks("/health/ready", new HealthCheckOptions
+{
+    Predicate = check => check.Tags.Contains("ready"),
+    ResponseWriter = escritorDeResposta
+});
+
+// Diagnostico completo — todos os checks registrados, sem filtro.
+app.MapHealthChecks("/health", new HealthCheckOptions
+{
+    ResponseWriter = escritorDeResposta
+});
 
 app.Run();
