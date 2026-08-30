@@ -9,6 +9,10 @@ public class CriarConsultaDto
     [Required(ErrorMessage = "A data e hora são obrigatórias.")]
     public DateTime DataHora { get; set; }
 
+    /// <summary>
+    /// Modalidade do atendimento. No MVP apenas <c>Presencial</c> é aceita;
+    /// <c>Remoto</c> está fora do escopo desta fase e é rejeitado com RN-039.
+    /// </summary>
     [Required]
     public ModalidadeAtendimento Modalidade { get; set; }
 

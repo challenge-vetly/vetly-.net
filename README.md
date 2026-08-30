@@ -12,7 +12,7 @@ O Vetly é uma API REST para gestão de clínicas veterinárias, cobrindo todo o
 | Autenticação | JWT Bearer |
 | Documentação | Scalar (tema DeepSpace) em `/scalar/v1` |
 | IA | Ollama local (modelo `llama3.1`) |
-| Testes | xUnit + Moq (52 testes verdes) |
+| Testes | xUnit + Moq (54 testes verdes) |
 
 ## Padrões aplicados
 
@@ -251,6 +251,7 @@ curl http://localhost:5099/health/ready
 |---|---|---|
 | RN-006 | Consulta só pode ser agendada se o pagamento estiver com status Confirmado | `ConsultaService.AgendarAsync` |
 | RN-022/RN-025 | Desativação de veterinário encerra o acesso e retorna agendamentos futuros ao chamador | `VeterinarioService.DesativarAsync` |
+| RN-039 | Atendimento remoto está fora do escopo desta fase — agendamento aceita apenas `Presencial` | `ConsultaService.AgendarAsync` + `AtualizarAsync` |
 | RN-041 | Cancelamento com mais de 24h de antecedência = reembolso integral | `ReembolsoIntegralStrategy` |
 | RN-041/RN-042 | Cancelamento entre 2h e 24h = reembolso parcial (retenção de 30% — ainda fixa, ver C-06) | `ReembolsoParcialStrategy` |
 | RN-041 | Cancelamento com menos de 2h = sem reembolso | `SemReembolsoStrategy` |

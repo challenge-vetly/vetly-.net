@@ -16,7 +16,7 @@ public class Consulta
     [Required]
     public DateTime DataHora { get; private set; }
 
-    /// <summary>Modalidade da consulta: presencial ou remota (teleconsulta).</summary>
+    /// <summary>Modalidade da consulta. No MVP apenas presencial (RN-039).</summary>
     [Required]
     public ModalidadeAtendimento Modalidade { get; private set; }
 
