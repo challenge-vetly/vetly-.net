@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.Configuration;
 using Vetly.Application.DTOs.IA;
+using Vetly.Application.Exceptions;
 using Vetly.Application.Interfaces;
 
 namespace Vetly.Application.Services;
@@ -47,6 +48,12 @@ public class OllamaService : IOllamaService
     /// <inheritdoc/>
     public async Task<ProtocoloTratamentoDto> SugerirProtocoloAsync(string diagnostico, string especie, decimal pesoKg)
     {
+        // RN-081: dose sem peso e onde mora o erro clinico. Sem peso cadastrado a IA nao e
+        // sequer consultada — exigir o dado antes vale mais que devolver uma sugestao sem dose.
+        if (pesoKg <= 0)
+            throw new BusinessRuleException("RN-081",
+                "O peso do animal e obrigatorio para sugerir posologia. Cadastre o peso do animal antes de solicitar o protocolo.");
+
         var prompt =
             $"Voce e um assistente veterinario. Sugira um protocolo de tratamento em formato JSON com os campos: " +
             $"diagnostico, medicamentos (array de strings), dosagens (array de strings), frequencia, duracaoDias e observacoes. " +

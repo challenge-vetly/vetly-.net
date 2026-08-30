@@ -1,4 +1,6 @@
 using System.ComponentModel.DataAnnotations;
+using Vetly.Domain.Enums;
+using Vetly.Domain.ValueObjects;
 
 namespace Vetly.Domain.Entities;
 
@@ -35,6 +37,40 @@ public class Animal
     public Guid TutorId { get; private set; }
 
     /// <summary>
+    /// Peso do animal em quilogramas. Nulo apenas em cadastros anteriores à migration —
+    /// a API exige o peso na criação, porque sem ele a IA não pode sugerir dose (RN-081).
+    /// </summary>
+    public decimal? PesoKg { get; private set; }
+
+    /// <summary>Sexo do animal. Nulo em cadastros anteriores à migration.</summary>
+    public SexoAnimal? Sexo { get; private set; }
+
+    /// <summary>Indica se o animal é castrado. Nulo quando a informação não foi coletada.</summary>
+    public bool? Castrado { get; private set; }
+
+    /// <summary>Id da mídia com a foto do animal, no storage de objetos. Nulo se não há foto.</summary>
+    public Guid? FotoMidiaId { get; private set; }
+
+    /// <summary>
+    /// Alergias conhecidas do animal (ex: "Dipirona"). Alimentam os alertas de segurança,
+    /// que nunca podem ser ocultados do histórico (RN-068).
+    /// Persistida como string delimitada por ponto-e-vírgula no Oracle.
+    /// </summary>
+    public List<string> Alergias { get; private set; }
+
+    /// <summary>
+    /// Condições pré-existentes do animal (ex: "Displasia leve").
+    /// Persistida como string delimitada por ponto-e-vírgula no Oracle.
+    /// </summary>
+    public List<string> CondicoesPreexistentes { get; private set; }
+
+    /// <summary>
+    /// Carteira de vacinação do animal. Persistida como JSON em coluna CLOB
+    /// e usada para derivar o calendário de obrigações do pet (RN-046).
+    /// </summary>
+    public List<RegistroVacinacao> CarteiraVacinacao { get; private set; }
+
+    /// <summary>
     /// Lista de alertas clínicos ativos (ex: "Alergia a penicilina", "Epiléptico").
     /// Persistida como string delimitada por ponto-e-vírgula no Oracle.
     /// </summary>
@@ -50,6 +86,9 @@ public class Animal
         Especie = null!;
         Raca = null!;
         AlertasAtivos = [];
+        Alergias = [];
+        CondicoesPreexistentes = [];
+        CarteiraVacinacao = [];
     }
 
     /// <summary>Cria um novo animal associado a um tutor.</summary>
@@ -62,6 +101,9 @@ public class Animal
         DataNascimento = dataNascimento;
         TutorId = tutorId;
         AlertasAtivos = [];
+        Alergias = [];
+        CondicoesPreexistentes = [];
+        CarteiraVacinacao = [];
         Ativo = true;
     }
 
@@ -72,6 +114,50 @@ public class Animal
         Especie = especie;
         Raca = raca;
         DataNascimento = dataNascimento;
+    }
+
+    /// <summary>
+    /// Registra o peso do animal em quilogramas. Peso é pré-requisito para qualquer
+    /// sugestão de dose pela IA (RN-081), por isso valores não positivos são recusados.
+    /// </summary>
+    public void RegistrarPeso(decimal pesoKg)
+    {
+        if (pesoKg <= 0)
+            throw new ArgumentOutOfRangeException(nameof(pesoKg), "O peso deve ser maior que zero.");
+
+        PesoKg = pesoKg;
+    }
+
+    /// <summary>
+    /// Define o perfil clínico do animal (sexo, castração, foto, alergias e condições
+    /// pré-existentes). Parâmetros nulos preservam o valor atual.
+    /// </summary>
+    public void DefinirPerfilClinico(
+        SexoAnimal? sexo = null,
+        bool? castrado = null,
+        Guid? fotoMidiaId = null,
+        IEnumerable<string>? alergias = null,
+        IEnumerable<string>? condicoesPreexistentes = null)
+    {
+        if (sexo is not null) Sexo = sexo;
+        if (castrado is not null) Castrado = castrado;
+        if (fotoMidiaId is not null) FotoMidiaId = fotoMidiaId;
+        if (alergias is not null) Alergias = [.. alergias];
+        if (condicoesPreexistentes is not null) CondicoesPreexistentes = [.. condicoesPreexistentes];
+    }
+
+    /// <summary>Registra uma aplicação de vacina na carteira de vacinação do animal.</summary>
+    public void RegistrarVacinacao(RegistroVacinacao registro)
+    {
+        ArgumentNullException.ThrowIfNull(registro);
+        CarteiraVacinacao.Add(registro);
+    }
+
+    /// <summary>Substitui a carteira de vacinação inteira pelos registros informados.</summary>
+    public void DefinirCarteiraVacinacao(IEnumerable<RegistroVacinacao> registros)
+    {
+        ArgumentNullException.ThrowIfNull(registros);
+        CarteiraVacinacao = [.. registros];
     }
 
     /// <summary>Adiciona um alerta clínico se ainda não estiver registrado.</summary>
