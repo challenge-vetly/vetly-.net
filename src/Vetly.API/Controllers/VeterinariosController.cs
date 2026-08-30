@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Vetly.Application.DTOs.Agenda;
 using Vetly.Application.DTOs.Veterinario;
 using Vetly.Application.Interfaces;
 
@@ -12,8 +13,13 @@ namespace Vetly.API.Controllers;
 public class VeterinariosController : ControllerBase
 {
     private readonly IVeterinarioService _service;
+    private readonly IAgendaService _agenda;
 
-    public VeterinariosController(IVeterinarioService service) => _service = service;
+    public VeterinariosController(IVeterinarioService service, IAgendaService agenda)
+    {
+        _service = service;
+        _agenda = agenda;
+    }
 
     /// <summary>Retorna todos os veterinarios ativos.</summary>
     [HttpGet]
@@ -107,4 +113,61 @@ public class VeterinariosController : ControllerBase
         var agendamentos = await _service.DesativarAsync(id);
         return Ok(agendamentos);
     }
+
+    // ── Agenda e servicos (RN-032/RN-034/RN-035) ─────────────────────────────
+
+    /// <summary>Configuracao de agenda vigente do veterinario (RN-034).</summary>
+    [HttpGet("{id:guid}/agenda-config")]
+    [ProducesResponseType(typeof(AgendaConfigDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ObterAgendaConfig(Guid id) =>
+        Ok(await _agenda.ObterConfigAsync(id));
+
+    /// <summary>
+    /// Configura dias, horario, duracao e intervalo, e materializa os horarios dos
+    /// proximos 60 dias (RN-034). Rematerializar nao duplica horario nem desfaz
+    /// agendamento existente.
+    /// </summary>
+    [HttpPut("{id:guid}/agenda-config")]
+    [ProducesResponseType(typeof(AgendaConfigDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ConfigurarAgenda(Guid id, [FromBody] ConfigurarAgendaDto dto) =>
+        Ok(await _agenda.ConfigurarAsync(id, dto));
+
+    /// <summary>
+    /// Horarios livres do veterinario no periodo, agrupados por dia — e o que o
+    /// Responsavel ve ao escolher o horario (RN-034/RN-035).
+    /// Sem periodo informado, devolve os proximos 14 dias.
+    /// </summary>
+    [HttpGet("{id:guid}/disponibilidade")]
+    [ProducesResponseType(typeof(DisponibilidadeDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> ObterDisponibilidade(
+        Guid id, [FromQuery] DateTime? de, [FromQuery] DateTime? ate) =>
+        Ok(await _agenda.ObterDisponibilidadeAsync(id, de, ate));
+
+    /// <summary>Servicos ativos do prestador, com valor e duracao (RN-032).</summary>
+    [HttpGet("{id:guid}/servicos")]
+    [ProducesResponseType(typeof(IEnumerable<ServicoDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> ObterServicos(Guid id) =>
+        Ok(await _agenda.ObterServicosAsync(id));
+
+    /// <summary>
+    /// Define a vitrine de servicos do prestador (RN-032/RN-074). Servico que sai da
+    /// lista e desativado, nao apagado — consulta antiga aponta para ele.
+    /// </summary>
+    [HttpPut("{id:guid}/servicos")]
+    [ProducesResponseType(typeof(IEnumerable<ServicoDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> DefinirServicos(Guid id, [FromBody] DefinirServicosDto dto) =>
+        Ok(await _agenda.DefinirServicosAsync(id, dto));
 }

@@ -12,7 +12,7 @@ O Vetly é uma API REST para gestão de clínicas veterinárias, cobrindo todo o
 | Autenticação | JWT Bearer |
 | Documentação | Scalar (tema DeepSpace) em `/scalar/v1` |
 | IA | Ollama local (modelo `llama3.1`) |
-| Testes | xUnit + Moq (229 testes verdes) |
+| Testes | xUnit + Moq (251 testes verdes) |
 
 ## Padrões aplicados
 
@@ -162,6 +162,11 @@ curl http://localhost:5099/health/ready
 | GET | `/api/veterinarios` | Lista todos ativos |
 | GET | `/api/veterinarios/{id}` | Detalhe |
 | GET | `/api/veterinarios/regiao/{uf}` | Por UF (ex: SP, RJ) |
+| GET | `/api/veterinarios/{id}/agenda-config` | Configuração de agenda vigente (RN-034) |
+| PUT | `/api/veterinarios/{id}/agenda-config` | Configura dias/horário/duração e materializa 60 dias de horários (RN-034) |
+| GET | `/api/veterinarios/{id}/disponibilidade` | Horários livres por dia (RN-034/RN-035) |
+| GET | `/api/veterinarios/{id}/servicos` | Serviços com valor e duração (RN-032) |
+| PUT | `/api/veterinarios/{id}/servicos` | Define a vitrine de serviços (RN-032/RN-074) |
 | GET | `/api/veterinarios/{id}/agenda` | Agenda futura de consultas |
 | POST | `/api/veterinarios` | Cadastrar — requer role Admin (RN-107); aceita endereço (RN-026); devolve a **senha temporária** de primeiro acesso, uma única vez (P-05) |
 | PUT | `/api/veterinarios/{id}` | Atualizar |
@@ -298,6 +303,8 @@ Sem parâmetros valem página 1 e 20 itens. O tamanho é limitado a 100 por pág
 | RN-105/RN-106 | Escopo por linha: o Responsável só alcança os próprios dados, o veterinário só os animais que atende, e o escopo vem do token — não de parâmetro do cliente | `IUsuarioAtual` + guardas em `AnimalService`, `ConsultaService`, `PagamentoService`, `TutorService` |
 | RN-042 | Percentual de retenção do cancelamento parcial é configurado pela clínica no onboarding (padrão 30%) e lido no cancelamento | `Empresa.DefinirPoliticaRetencao` |
 | RN-072 | Faixa Enterprise recalculada automaticamente ao cruzar o limite de vets vinculados | `Empresa.RecalcularFaixaEnterprise` |
+| RN-034 | Agenda configurável (dias, horário, duração, intervalo) materializada em horários por 60 dias | `AgendaConfig` + `AgendaService` |
+| RN-035 | Slot com lock de checkout de 10 min: `Livre → EmCheckout → Confirmado`, e o lock caduca na leitura | `Slot` |
 | RN-039 | Atendimento remoto está fora do escopo desta fase — agendamento aceita apenas `Presencial` | `ConsultaService.AgendarAsync` + `AtualizarAsync` |
 | RN-035/RN-038 | Estado da consulta em enum `StatusConsulta` (EmCheckout → Confirmada → Realizada / Cancelada / NoShow / Expirada), substituindo os três booleanos | `Consulta.Status` |
 | RN-041 | Cancelamento com mais de 24h de antecedência = reembolso integral | `ReembolsoIntegralStrategy` |
