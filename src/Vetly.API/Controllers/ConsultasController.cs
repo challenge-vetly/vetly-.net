@@ -8,8 +8,8 @@ namespace Vetly.API.Controllers;
 
 /// <summary>
 /// Controller de consultas.
-/// Agendamento requer pagamento confirmado (RN-015).
-/// Cancelamento aplica Strategy por antecedencia (RN-019/020/021).
+/// Agendamento requer pagamento confirmado (RN-006).
+/// Cancelamento aplica Strategy por antecedencia (RN-014/RN-041/RN-042).
 /// </summary>
 [ApiController]
 [Route("api/[controller]")]
@@ -49,7 +49,7 @@ public class ConsultasController : ControllerBase
     public async Task<IActionResult> ObterPorAnimal(Guid animalId) =>
         Ok(await _service.ObterPorAnimalAsync(animalId));
 
-    /// <summary>Agenda uma consulta (RN-015: pagamento deve estar confirmado).</summary>
+    /// <summary>Agenda uma consulta (RN-006: pagamento deve estar confirmado).</summary>
     [HttpPost]
     [ProducesResponseType(typeof(ConsultaDto), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -60,7 +60,7 @@ public class ConsultasController : ControllerBase
         return CreatedAtAction(nameof(ObterPorId), new { id = criada.Id }, criada);
     }
 
-    /// <summary>Cancela uma consulta aplicando a Strategy de reembolso (RN-019/020/021).</summary>
+    /// <summary>Cancela uma consulta aplicando a Strategy de reembolso (RN-014/RN-041/RN-042).</summary>
     [HttpDelete("{id:guid}")]
     [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -71,7 +71,7 @@ public class ConsultasController : ControllerBase
         return Ok(resultado);
     }
 
-    /// <summary>Finaliza a consulta — exige receita veterinaria assinada digitalmente (RN-031).</summary>
+    /// <summary>Finaliza a consulta — exige receita veterinaria assinada digitalmente (RN-087).</summary>
     [HttpPost("{id:guid}/finalizar")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -89,7 +89,7 @@ public class ConsultasController : ControllerBase
     public async Task<IActionResult> ObterBriefing(Guid id) =>
         Ok(await _service.ObterBriefingAsync(id));
 
-    /// <summary>Registra a validacao manual do diagnostico pelo veterinario (RN-024).</summary>
+    /// <summary>Registra a validacao manual do diagnostico pelo veterinario (RN-082).</summary>
     [HttpPut("{id:guid}/validar-diagnostico")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]

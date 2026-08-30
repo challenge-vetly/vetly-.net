@@ -6,7 +6,7 @@ namespace Vetly.Application.Exceptions;
 /// </summary>
 public class BusinessRuleException : Exception
 {
-    /// <summary>Código da regra de negócio violada (ex: "RN-015").</summary>
+    /// <summary>Código da regra de negócio violada (ex: "RN-006").</summary>
     public string Codigo { get; }
 
     public BusinessRuleException(string codigo, string mensagem)

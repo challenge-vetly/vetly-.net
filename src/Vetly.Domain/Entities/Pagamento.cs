@@ -75,7 +75,7 @@ public class Pagamento
 
     /// <summary>
     /// Vincula este pagamento a uma consulta apos o agendamento.
-    /// Necessario para que CancelarAsync encontre o pagamento via ObterPorConsultaAsync (RN-019/020/021).
+    /// Necessario para que CancelarAsync encontre o pagamento via ObterPorConsultaAsync (RN-014/RN-041/RN-042).
     /// </summary>
     public void VincularConsulta(Guid consultaId)
     {

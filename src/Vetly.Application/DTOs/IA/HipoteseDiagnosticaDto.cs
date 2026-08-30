@@ -2,7 +2,7 @@ namespace Vetly.Application.DTOs.IA;
 
 /// <summary>
 /// Hipótese diagnóstica retornada pelo Ollama.
-/// RN-024: são apenas sugestões — o veterinário deve validar manualmente antes de gerar documentos.
+/// RN-082: são apenas sugestões — o veterinário deve validar manualmente antes de gerar documentos.
 /// </summary>
 public class HipoteseDiagnosticaDto
 {

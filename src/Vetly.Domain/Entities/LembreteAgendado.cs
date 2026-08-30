@@ -4,7 +4,7 @@ using Vetly.Domain.Enums;
 namespace Vetly.Domain.Entities;
 
 /// <summary>
-/// Representa um lembrete agendado para um tutor (RN-029/030).
+/// Representa um lembrete agendado para um tutor (RN-094/RN-095).
 /// Controla tentativas de contato e alerta a clinica apos 3 tentativas sem resposta.
 /// </summary>
 public class LembreteAgendado
@@ -46,7 +46,7 @@ public class LembreteAgendado
 
     /// <summary>
     /// Registra uma tentativa de contato.
-    /// Aciona alerta para a clinica apos 3 tentativas sem resposta do tutor (RN-030).
+    /// Aciona alerta para a clinica apos 3 tentativas sem resposta do tutor (RN-095).
     /// </summary>
     public void RegistrarTentativa()
     {
@@ -55,6 +55,6 @@ public class LembreteAgendado
             AlertaEnviadoClinica = true;
     }
 
-    /// <summary>Registra a resposta do tutor, encerrando a regua de lembretes (RN-029).</summary>
+    /// <summary>Registra a resposta do tutor, encerrando a regua de lembretes (RN-094).</summary>
     public void RegistrarResposta() => TutorRespondeu = true;
 }

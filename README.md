@@ -1,6 +1,6 @@
 # Vetly API — Detalhamento do Projeto
 
-O Vetly é uma API REST para gestão de clínicas veterinárias, cobrindo todo o ciclo do atendimento — agendamento de consultas com pagamento integrado, prontuários, internações com apuração financeira, exames, emissão de documentos clínicos (prontuário, receita, atestado, nota fiscal) e split financeiro entre profissionais e empresas. Integra um assistente de IA local (Ollama) para sugerir hipóteses diagnósticas, protocolos de tratamento, triagem de sintomas e orientações pós-atendimento, sempre validados manualmente pelo veterinário (RN-024).
+O Vetly é uma API REST para gestão de clínicas veterinárias, cobrindo todo o ciclo do atendimento — agendamento de consultas com pagamento integrado, prontuários, internações com apuração financeira, exames, emissão de documentos clínicos (prontuário, receita, atestado, nota fiscal) e split financeiro entre profissionais e empresas. Integra um assistente de IA local (Ollama) para sugerir hipóteses diagnósticas, protocolos de tratamento, triagem de sintomas e orientações pós-atendimento, sempre validados manualmente pelo veterinário (RN-082).
 
 ## Stack
 
@@ -19,7 +19,7 @@ O Vetly é uma API REST para gestão de clínicas veterinárias, cobrindo todo o
 | Padrão | Onde |
 |---|---|
 | Factory Pattern | `DocumentoService` seleciona `IDocumentoFactory` pelo `TipoDocumento` (Prontuario, Receita, Atestado, NotaFiscal) |
-| Strategy Pattern | `ConsultaService` seleciona `ICancelamentoStrategy` por antecedência (RN-019/020/021) |
+| Strategy Pattern | `ConsultaService` seleciona `ICancelamentoStrategy` por antecedência (RN-014/RN-041/RN-042) |
 | Strategy Pattern | `PagamentoService` seleciona `ISplitFinanceiroStrategy` pela `PersonaVeterinario` (autônomo vs. vinculado) |
 | Repository Pattern | Interfaces em `Vetly.Application`; implementações EF Core em `Vetly.Infrastructure` |
 | DIP | Todos os serviços dependem de interfaces — zero acoplamento concreto |
@@ -137,9 +137,9 @@ curl http://localhost:5099/health/ready
 | GET | `/api/veterinarios/{id}` | Detalhe |
 | GET | `/api/veterinarios/regiao/{uf}` | Por UF (ex: SP, RJ) |
 | GET | `/api/veterinarios/{id}/agenda` | Agenda futura de consultas |
-| POST | `/api/veterinarios` | Cadastrar — requer role Admin (RN-011) |
+| POST | `/api/veterinarios` | Cadastrar — requer role Admin (RN-107) |
 | PUT | `/api/veterinarios/{id}` | Atualizar |
-| DELETE | `/api/veterinarios/{id}` | Desativar — requer role Admin, retorna agendamentos futuros (RN-008) |
+| DELETE | `/api/veterinarios/{id}` | Desativar — requer role Admin, retorna agendamentos futuros (RN-022/RN-025) |
 
 ### Animais
 | Método | Rota | Descrição |
@@ -170,10 +170,10 @@ curl http://localhost:5099/health/ready
 | GET | `/api/consultas/veterinario/{id}` | Por veterinário |
 | GET | `/api/consultas/animal/{id}` | Por animal |
 | GET | `/api/consultas/{id}/briefing` | Pré-consulta: animal, histórico (últimas 5) e exames recentes (últimos 3) |
-| POST | `/api/consultas` | Agendar — requer pagamento confirmado (RN-015) |
-| PUT | `/api/consultas/{id}/validar-diagnostico` | Registra validação manual do diagnóstico (RN-024) |
-| POST | `/api/consultas/{id}/finalizar` | Finalizar — exige receita assinada (RN-031) |
-| DELETE | `/api/consultas/{id}` | Cancelar + Strategy de reembolso (RN-019/020/021) |
+| POST | `/api/consultas` | Agendar — requer pagamento confirmado (RN-006) |
+| PUT | `/api/consultas/{id}/validar-diagnostico` | Registra validação manual do diagnóstico (RN-082) |
+| POST | `/api/consultas/{id}/finalizar` | Finalizar — exige receita assinada (RN-087) |
+| DELETE | `/api/consultas/{id}` | Cancelar + Strategy de reembolso (RN-014/RN-041/RN-042) |
 
 ### Internações
 | Método | Rota | Descrição |
@@ -181,7 +181,7 @@ curl http://localhost:5099/health/ready
 | GET | `/api/internacoes` | Lista todas |
 | GET | `/api/internacoes/{id}` | Detalhe |
 | POST | `/api/internacoes` | Abrir internação |
-| PUT | `/api/internacoes/{id}/procedimentos` | Registrar procedimentos do dia e acumular valor apurado (RN-016) |
+| PUT | `/api/internacoes/{id}/procedimentos` | Registrar procedimentos do dia e acumular valor apurado (RN-100) |
 | POST | `/api/internacoes/{id}/alta` | Dar alta — retorna saldo restante (caução − total apurado) |
 
 ### Exames
@@ -198,9 +198,9 @@ curl http://localhost:5099/health/ready
 |---|---|---|
 | GET | `/api/documentos/consulta/{id}` | Documentos de uma consulta |
 | GET | `/api/documentos/{id}` | Detalhe |
-| POST | `/api/documentos/consulta/{id}?tipo={TipoDocumento}` | Gerar via Factory — exige diagnóstico validado (RN-024) |
-| POST | `/api/documentos/{id}/assinar` | Assinar digitalmente (RN-031) |
-| POST | `/api/documentos/{id}/correcao` | Criar versão corrigida — após 24h exige justificativa (RN-032/034) |
+| POST | `/api/documentos/consulta/{id}?tipo={TipoDocumento}` | Gerar via Factory — exige diagnóstico validado (RN-082) |
+| POST | `/api/documentos/{id}/assinar` | Assinar digitalmente (RN-087) |
+| POST | `/api/documentos/{id}/correcao` | Criar versão corrigida — após 24h exige justificativa (RN-088/RN-089) |
 
 ### Pagamentos
 | Método | Rota | Descrição |
@@ -225,8 +225,8 @@ curl http://localhost:5099/health/ready
 | Método | Rota | Descrição |
 |---|---|---|
 | POST | `/api/lembretes` | Agendar lembrete (vacina, retorno, medicação…) |
-| POST | `/api/lembretes/{id}/tentativa` | Registrar tentativa de contato — após 3 sem resposta, alerta à clínica (RN-029) |
-| POST | `/api/lembretes/{id}/resposta` | Registrar resposta do tutor — encerra régua (RN-030) |
+| POST | `/api/lembretes/{id}/tentativa` | Registrar tentativa de contato — após 3 sem resposta, alerta à clínica (RN-095) |
+| POST | `/api/lembretes/{id}/resposta` | Registrar resposta do tutor — encerra régua (RN-094) |
 
 ### IA (Ollama)
 | Método | Rota | Descrição |
@@ -236,27 +236,31 @@ curl http://localhost:5099/health/ready
 | POST | `/api/ia/triagem` | Triar sintomas por urgência |
 | POST | `/api/ia/orientacoes` | Orientações pós-atendimento para o tutor |
 
-> **Todas as respostas da IA são sugestões — o veterinário deve validar manualmente antes de gerar qualquer documento clínico (RN-024).**
+> **Todas as respostas da IA são sugestões — o veterinário deve validar manualmente antes de gerar qualquer documento clínico (RN-082).**
 
 ---
 
 ## Regras de Negócio
 
+> A numeração segue o documento técnico oficial (`vetly-tech.md`, RN-001 a RN-107). As versões anteriores deste
+> README usavam uma numeração própria que colidia com códigos diferentes do documento técnico — o de-para foi
+> aplicado ao código, às exceções e a esta tabela.
+
 | Código | Descrição | Implementação |
 |---|---|---|
-| RN-008 | Desativação de veterinário retorna agendamentos futuros ao chamador | `VeterinarioService.DesativarAsync` |
-| RN-011 | CRMV validado por regex `^\d{4,6}-[A-Z]{2}$` e verificação de duplicidade | `VeterinarioService.CriarAsync` |
-| RN-015 | Consulta só pode ser agendada se o pagamento estiver com status Confirmado | `ConsultaService.AgendarAsync` |
-| RN-016 | Procedimentos acumulam `ValorTotalApurado`; alta retorna `saldo = total − caução` | `InternacaoService.RegistrarProcedimentosAsync` + `DarAltaAsync` |
-| RN-019 | Cancelamento com mais de 24h de antecedência = reembolso integral | `ReembolsoIntegralStrategy` |
-| RN-020 | Cancelamento entre 2h e 24h = reembolso parcial (70% devolvido) | `ReembolsoParcialStrategy` |
-| RN-021 | Cancelamento com menos de 2h = sem reembolso | `SemReembolsoStrategy` |
-| RN-024 | Documentos só podem ser gerados após `consulta.DiagnosticoValidado = true` E pagamento confirmado | `DocumentoService.GerarAsync` |
-| RN-029 | Após 3 tentativas sem resposta, `AlertaEnviadoClinica = true` | `LembreteService.ProcessarTentativaAsync` |
-| RN-030 | Resposta do tutor encerra a régua de contato | `LembreteService.RegistrarRespostaAsync` |
-| RN-031 | Finalizar consulta exige documento `ReceitaVeterinaria` assinado digitalmente | `ConsultaService.FinalizarAsync` |
-| RN-032/033 | Correção cria nova versão do documento (original preservado com `VersaoOriginalId`) | `DocumentoService.CorrigirAsync` |
-| RN-034 | Correção após 24h exige justificativa não vazia | `DocumentoService.CorrigirAsync` |
+| RN-006 | Consulta só pode ser agendada se o pagamento estiver com status Confirmado | `ConsultaService.AgendarAsync` |
+| RN-022/RN-025 | Desativação de veterinário encerra o acesso e retorna agendamentos futuros ao chamador | `VeterinarioService.DesativarAsync` |
+| RN-041 | Cancelamento com mais de 24h de antecedência = reembolso integral | `ReembolsoIntegralStrategy` |
+| RN-041/RN-042 | Cancelamento entre 2h e 24h = reembolso parcial (retenção de 30% — ainda fixa, ver C-06) | `ReembolsoParcialStrategy` |
+| RN-041 | Cancelamento com menos de 2h = sem reembolso | `SemReembolsoStrategy` |
+| RN-082 | Documentos só podem ser gerados após `consulta.DiagnosticoValidado = true` E pagamento confirmado | `DocumentoService.GerarAsync` |
+| RN-087 | Finalizar consulta exige documento `ReceitaVeterinaria` assinado digitalmente | `ConsultaService.FinalizarAsync` |
+| RN-088 | Correção cria nova versão do documento (original preservado com `VersaoOriginalId`) | `DocumentoService.CorrigirAsync` |
+| RN-089 | Correção após 24h exige justificativa não vazia | `DocumentoService.CorrigirAsync` |
+| RN-094 | Resposta do tutor encerra a régua de contato | `LembreteService.RegistrarRespostaAsync` |
+| RN-095 | Após 3 tentativas sem resposta, `AlertaEnviadoClinica = true` | `LembreteService.ProcessarTentativaAsync` |
+| RN-100 | Procedimentos acumulam `ValorTotalApurado`; alta retorna `saldo = total − caução` | `InternacaoService.RegistrarProcedimentosAsync` + `DarAltaAsync` |
+| RN-107 | CRMV validado por regex `^\d{4,6}-[A-Z]{2}$` e verificação de duplicidade (validação junto ao conselho é pendente — C-05) | `VeterinarioService.CriarAsync` |
 | CONSULTA-001 | Consulta já cancelada não pode ser cancelada novamente | `ConsultaService.CancelarAsync` |
 | CONSULTA-002 | Pagamento da consulta não encontrado ao cancelar | `ConsultaService.CancelarAsync` |
 | CONSULTA-003 | Não é possível validar diagnóstico de consulta cancelada | `ConsultaService.ValidarDiagnosticoAsync` |

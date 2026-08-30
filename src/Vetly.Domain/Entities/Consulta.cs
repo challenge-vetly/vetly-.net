@@ -5,7 +5,7 @@ namespace Vetly.Domain.Entities;
 
 /// <summary>
 /// Representa uma consulta veterinária agendada ou realizada na plataforma Vetly.
-/// O agendamento só é confirmado após pagamento processado (RN-015).
+/// O agendamento só é confirmado após pagamento processado (RN-006).
 /// </summary>
 public class Consulta
 {
@@ -34,7 +34,7 @@ public class Consulta
 
     /// <summary>
     /// Indica se o veterinário validou o diagnóstico sugerido pela IA.
-    /// RN-024: documentos só podem ser gerados após validação manual.
+    /// RN-082: documentos só podem ser gerados após validação manual.
     /// </summary>
     public bool DiagnosticoValidado { get; private set; }
 
@@ -48,7 +48,7 @@ public class Consulta
     /// <summary>Indica se a consulta foi cancelada.</summary>
     public bool Cancelada { get; private set; }
 
-    /// <summary>Indica se a consulta foi finalizada (receita assinada obrigatória — RN-031).</summary>
+    /// <summary>Indica se a consulta foi finalizada (receita assinada obrigatória — RN-087).</summary>
     public bool Finalizada { get; private set; }
 
     /// <summary>Construtor privado reservado ao EF Core para materialização de entidades.</summary>
@@ -56,7 +56,7 @@ public class Consulta
 
     /// <summary>
     /// Cria uma nova consulta com status de pagamento pendente.
-    /// O agendamento só deve ser confirmado após chamar <see cref="ConfirmarPagamento"/> (RN-015).
+    /// O agendamento só deve ser confirmado após chamar <see cref="ConfirmarPagamento"/> (RN-006).
     /// </summary>
     public Consulta(DateTime dataHora, ModalidadeAtendimento modalidade, Guid veterinarioId, Guid animalId, Guid tutorId)
     {
@@ -66,22 +66,22 @@ public class Consulta
         VeterinarioId = veterinarioId;
         AnimalId = animalId;
         TutorId = tutorId;
-        StatusPagamento = StatusPagamento.Pendente; // pagamento confirmado é pré-requisito (RN-015)
+        StatusPagamento = StatusPagamento.Pendente; // pagamento confirmado é pré-requisito (RN-006)
     }
 
-    /// <summary>Marca o pagamento como confirmado, liberando o agendamento (RN-015).</summary>
+    /// <summary>Marca o pagamento como confirmado, liberando o agendamento (RN-006).</summary>
     public void ConfirmarPagamento() => StatusPagamento = StatusPagamento.Confirmado;
 
-    /// <summary>Registra a validação manual do diagnóstico pelo veterinário (RN-024).</summary>
+    /// <summary>Registra a validação manual do diagnóstico pelo veterinário (RN-082).</summary>
     public void ValidarDiagnostico() => DiagnosticoValidado = true;
 
     /// <summary>Registra a validação manual do protocolo de tratamento pelo veterinário.</summary>
     public void ValidarProtocolo() => ProtocoloValidado = true;
 
-    /// <summary>Cancela a consulta. O reembolso é calculado pelo Strategy de cancelamento (RN-019/020/021).</summary>
+    /// <summary>Cancela a consulta. O reembolso é calculado pelo Strategy de cancelamento (RN-014/RN-041/RN-042).</summary>
     public void Cancelar() => Cancelada = true;
 
-    /// <summary>Finaliza a consulta após confirmação de receita assinada digitalmente (RN-031).</summary>
+    /// <summary>Finaliza a consulta após confirmação de receita assinada digitalmente (RN-087).</summary>
     public void Finalizar() => Finalizada = true;
 
     /// <summary>Reagenda a consulta para uma nova data e hora.</summary>

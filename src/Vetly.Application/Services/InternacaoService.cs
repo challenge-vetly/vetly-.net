@@ -53,7 +53,7 @@ public class InternacaoService : IInternacaoService
 
         var json = JsonSerializer.Serialize(dto.Procedimentos);
         internacao.RegistrarProcedimentoDiario(json);
-        internacao.ApurarValor(dto.Procedimentos.Sum(p => p.Valor)); // RN-016
+        internacao.ApurarValor(dto.Procedimentos.Sum(p => p.Valor)); // RN-100
 
         _repo.Atualizar(internacao);
         await _repo.SalvarAsync();

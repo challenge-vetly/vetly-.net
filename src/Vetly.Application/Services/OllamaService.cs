@@ -9,7 +9,7 @@ namespace Vetly.Application.Services;
 
 /// <summary>
 /// Servico de integracao com o Ollama (LLM local).
-/// Todos os retornos sao sugestoes de IA — o veterinario deve validar antes de qualquer acao clinica (RN-024).
+/// Todos os retornos sao sugestoes de IA — o veterinario deve validar antes de qualquer acao clinica (RN-082).
 /// </summary>
 public class OllamaService : IOllamaService
 {

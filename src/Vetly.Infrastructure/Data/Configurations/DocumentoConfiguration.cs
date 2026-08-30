@@ -46,12 +46,12 @@ public class DocumentoConfiguration : IEntityTypeConfiguration<Documento>
             .HasColumnName("CRMV_SIGNATARIO")
             .IsRequired();
 
-        // NUMBER(1) para o flag de assinatura digital (RN-031)
+        // NUMBER(1) para o flag de assinatura digital (RN-087)
         builder.Property(d => d.AssinadoDigitalmente)
             .HasColumnType("NUMBER(1)")
             .HasColumnName("ASSINADO_DIGITALMENTE");
 
-        // Campos de auditoria de correção (RN-032)
+        // Campos de auditoria de correção (RN-088)
         builder.Property(d => d.VersaoOriginalId)
             .HasColumnType("CHAR(36)")
             .HasColumnName("VERSAO_ORIGINAL_ID");

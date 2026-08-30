@@ -13,6 +13,6 @@ public interface IVeterinarioService
     Task<VeterinarioDto> CriarAsync(CriarVeterinarioDto dto);
     Task AtualizarAsync(Guid id, CriarVeterinarioDto dto);
 
-    /// <summary>Soft delete — retorna agendamentos futuros afetados (RN-008).</summary>
+    /// <summary>Soft delete — retorna agendamentos futuros afetados (RN-022/RN-025).</summary>
     Task<IEnumerable<ConsultaDto>> DesativarAsync(Guid id);
 }

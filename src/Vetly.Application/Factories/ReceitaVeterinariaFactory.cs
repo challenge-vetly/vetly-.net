@@ -8,7 +8,7 @@ namespace Vetly.Application.Factories;
 
 /// <summary>
 /// Factory responsável pela criação de documentos do tipo <see cref="TipoDocumento.ReceitaVeterinaria"/>.
-/// Receitas só podem ser geradas por veterinário com diagnóstico validado (RN-024).
+/// Receitas só podem ser geradas por veterinário com diagnóstico validado (RN-082) e assinadas (RN-087).
 /// </summary>
 public class ReceitaVeterinariaFactory : IDocumentoFactory
 {

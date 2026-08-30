@@ -7,7 +7,7 @@ namespace Vetly.UnitTests;
 
 /// <summary>
 /// Testes unitarios das 3 strategies de cancelamento.
-/// Valida as fronteiras de tempo (>24h, 2-24h, menos de 2h) exatamente como definido nas RN-019/020/021.
+/// Valida as fronteiras de tempo (>24h, 2-24h, menos de 2h) exatamente como definido nas RN-014/RN-041/RN-042.
 /// </summary>
 public class CancelamentoStrategyTests
 {
