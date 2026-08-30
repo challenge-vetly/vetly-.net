@@ -15,6 +15,9 @@
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
     <PackageReference Include="Oracle.EntityFrameworkCore" Version="10.23.26200" />
+    <!-- Emissao do JWT: o adaptador de token vive na Infrastructure, junto dos demais
+         adaptadores de dependencia tecnica. A mesma versao ja usada na API. -->
+    <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.14.0" />
   </ItemGroup>
 
   <PropertyGroup>

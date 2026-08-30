@@ -12,7 +12,7 @@ O Vetly é uma API REST para gestão de clínicas veterinárias, cobrindo todo o
 | Autenticação | JWT Bearer |
 | Documentação | Scalar (tema DeepSpace) em `/scalar/v1` |
 | IA | Ollama local (modelo `llama3.1`) |
-| Testes | xUnit + Moq (152 testes verdes) |
+| Testes | xUnit + Moq (188 testes verdes) |
 
 ## Padrões aplicados
 
@@ -130,7 +130,12 @@ curl http://localhost:5099/health/ready
 ### Auth
 | Método | Rota | Descrição |
 |---|---|---|
-| POST | `/api/auth/token` | Gera token JWT (público — sem autenticação) |
+| POST | `/api/auth/registro/tutor` | Cadastro do Responsável pelo app — devolve a sessão com `consentimentoPendente` (RN-060) |
+| POST | `/api/auth/login` | Autentica por e-mail e senha |
+| POST | `/api/auth/refresh` | Renova o acesso rotacionando o refresh token |
+| POST | `/api/auth/logout` | Encerra a sessão (idempotente) |
+| GET | `/api/auth/me` | Perfil do usuário autenticado e pendências |
+| POST | `/api/auth/token` | **Obsoleto** — emite JWT sem senha; responde 404 fora de `Development` |
 
 ### Veterinarios
 | Método | Rota | Descrição |
