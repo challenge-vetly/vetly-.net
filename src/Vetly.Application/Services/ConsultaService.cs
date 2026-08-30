@@ -1,5 +1,6 @@
 using Vetly.Application.DTOs.Animal;
 using Vetly.Application.DTOs.Cancelamento;
+using Vetly.Application.DTOs.Comum;
 using Vetly.Application.DTOs.Consulta;
 using Vetly.Application.DTOs.Exame;
 using Vetly.Application.Exceptions;
@@ -41,11 +42,11 @@ public class ConsultaService : IConsultaService
         _strategies = strategies;
     }
 
-    public async Task<IEnumerable<ConsultaDto>> ObterTodosAsync(
-        DateTime? dataInicio, DateTime? dataFim, Guid? veterinarioId, bool? cancelada)
+    public async Task<ResultadoPaginado<ConsultaDto>> ObterTodosAsync(
+        FiltroConsultaDto filtro, Paginacao paginacao)
     {
-        var consultas = await _repo.ObterComFiltrosAsync(dataInicio, dataFim, veterinarioId, cancelada);
-        return consultas.Select(MapearParaDto);
+        var pagina = await _repo.ObterComFiltrosAsync(filtro, paginacao);
+        return pagina.Mapear(MapearParaDto);
     }
 
     public async Task<ConsultaDto> ObterPorIdAsync(Guid id)

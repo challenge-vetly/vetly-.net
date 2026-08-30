@@ -1,4 +1,6 @@
 using Microsoft.EntityFrameworkCore;
+using Vetly.Application.DTOs.Comum;
+using Vetly.Application.DTOs.Consulta;
 using Vetly.Application.Interfaces;
 using Vetly.Domain.Entities;
 using Vetly.Infrastructure.Data;
@@ -35,24 +37,43 @@ public class ConsultaRepository : RepositoryBase<Consulta>, IConsultaRepository
             .ToListAsync();
 
     /// <inheritdoc/>
-    public async Task<IEnumerable<Consulta>> ObterComFiltrosAsync(
-        DateTime? dataInicio, DateTime? dataFim, Guid? veterinarioId, bool? cancelada)
+    public async Task<ResultadoPaginado<Consulta>> ObterComFiltrosAsync(
+        FiltroConsultaDto filtro, Paginacao paginacao)
     {
         // Constrói a query dinamicamente — apenas os filtros informados são aplicados
         var query = _dbSet.AsQueryable();
 
-        if (dataInicio.HasValue)
-            query = query.Where(c => c.DataHora >= dataInicio.Value);
+        if (filtro.DataInicio.HasValue)
+            query = query.Where(c => c.DataHora >= filtro.DataInicio.Value);
 
-        if (dataFim.HasValue)
-            query = query.Where(c => c.DataHora <= dataFim.Value);
+        if (filtro.DataFim.HasValue)
+            query = query.Where(c => c.DataHora <= filtro.DataFim.Value);
 
-        if (veterinarioId.HasValue)
-            query = query.Where(c => c.VeterinarioId == veterinarioId.Value);
+        if (filtro.VeterinarioId.HasValue)
+            query = query.Where(c => c.VeterinarioId == filtro.VeterinarioId.Value);
 
-        if (cancelada.HasValue)
-            query = query.Where(c => c.Cancelada == cancelada.Value);
+        if (filtro.TutorId.HasValue)
+            query = query.Where(c => c.TutorId == filtro.TutorId.Value);
 
-        return await query.OrderByDescending(c => c.DataHora).ToListAsync();
+        if (filtro.AnimalId.HasValue)
+            query = query.Where(c => c.AnimalId == filtro.AnimalId.Value);
+
+        if (filtro.Status.HasValue)
+            query = query.Where(c => c.Status == filtro.Status.Value);
+
+        // Filtro legado, mantido enquanto dura a dupla escrita do StatusConsulta
+        if (filtro.Cancelada.HasValue)
+            query = query.Where(c => c.Cancelada == filtro.Cancelada.Value);
+
+        // A contagem roda sobre o filtro inteiro, antes do recorte da pagina
+        var total = await query.CountAsync();
+
+        var itens = await query
+            .OrderByDescending(c => c.DataHora)
+            .Skip(paginacao.Deslocamento)
+            .Take(paginacao.Tamanho)
+            .ToListAsync();
+
+        return new ResultadoPaginado<Consulta>(itens, total, paginacao);
     }
 }

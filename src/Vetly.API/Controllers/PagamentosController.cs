@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Vetly.Application.DTOs.Comum;
 using Vetly.Application.DTOs.Pagamento;
 using Vetly.Application.Interfaces;
 
@@ -15,11 +16,14 @@ public class PagamentosController : ControllerBase
 
     public PagamentosController(IPagamentoService service) => _service = service;
 
-    /// <summary>Retorna todos os pagamentos.</summary>
+    /// <summary>
+    /// Lista pagamentos, paginada (§2.3). Envelope { itens, total, pagina, tamanho }.
+    /// </summary>
     [HttpGet]
-    [ProducesResponseType(typeof(IEnumerable<PagamentoDto>), StatusCodes.Status200OK)]
-    public async Task<IActionResult> ObterTodos() =>
-        Ok(await _service.ObterTodosAsync());
+    [ProducesResponseType(typeof(ResultadoPaginado<PagamentoDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> ObterTodos([FromQuery] Paginacao paginacao) =>
+        Ok(await _service.ObterTodosAsync(paginacao));
 
     /// <summary>Retorna um pagamento pelo ID.</summary>
     [HttpGet("{id:guid}")]
