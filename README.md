@@ -12,7 +12,7 @@ O Vetly é uma API REST para gestão de clínicas veterinárias, cobrindo todo o
 | Autenticação | JWT Bearer |
 | Documentação | Scalar (tema DeepSpace) em `/scalar/v1` |
 | IA | Ollama local (modelo `llama3.1`) |
-| Testes | xUnit + Moq (89 testes verdes) |
+| Testes | xUnit + Moq (104 testes verdes) |
 
 ## Padrões aplicados
 
@@ -256,6 +256,8 @@ curl http://localhost:5099/health/ready
 | RN-022/RN-025 | Desativação de veterinário encerra o acesso e retorna agendamentos futuros ao chamador | `VeterinarioService.DesativarAsync` |
 | RN-026 | Endereço do prestador persistido no próprio registro, com latitude/longitude derivadas dele — nunca informadas pelo cliente | `Endereco` (owned type em TB_VETERINARIO) |
 | RN-033/RN-057 | Nota só é pública a partir de 3 avaliações; `PUBLICADO_EM` ancora o selo "Novo na Vetly" por 30 dias | `Veterinario.TemNotaPublica` + `PublicarNoMatching` |
+| RN-042 | Percentual de retenção do cancelamento parcial é configurado pela clínica (padrão 30%) | `Empresa.DefinirPoliticaRetencao` |
+| RN-072 | Faixa Enterprise recalculada automaticamente ao cruzar o limite de vets vinculados | `Empresa.RecalcularFaixaEnterprise` |
 | RN-039 | Atendimento remoto está fora do escopo desta fase — agendamento aceita apenas `Presencial` | `ConsultaService.AgendarAsync` + `AtualizarAsync` |
 | RN-041 | Cancelamento com mais de 24h de antecedência = reembolso integral | `ReembolsoIntegralStrategy` |
 | RN-041/RN-042 | Cancelamento entre 2h e 24h = reembolso parcial (retenção de 30% — ainda fixa, ver C-06) | `ReembolsoParcialStrategy` |

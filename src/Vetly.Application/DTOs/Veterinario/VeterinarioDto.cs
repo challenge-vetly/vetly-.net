@@ -1,3 +1,4 @@
+using Vetly.Application.DTOs.Comum;
 using Vetly.Domain.Enums;
 
 namespace Vetly.Application.DTOs.Veterinario;

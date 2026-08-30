@@ -1,4 +1,5 @@
 using Moq;
+using Vetly.Application.DTOs.Comum;
 using Vetly.Application.DTOs.Veterinario;
 using Vetly.Application.Exceptions;
 using Vetly.Application.Interfaces;
