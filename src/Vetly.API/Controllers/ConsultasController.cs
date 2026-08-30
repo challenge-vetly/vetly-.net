@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Vetly.Application.DTOs.Cancelamento;
+using Vetly.Application.DTOs.Comum;
 using Vetly.Application.DTOs.Consulta;
 using Vetly.Application.Interfaces;
 
@@ -20,15 +21,18 @@ public class ConsultasController : ControllerBase
 
     public ConsultasController(IConsultaService service) => _service = service;
 
-    /// <summary>Retorna todas as consultas com filtros opcionais.</summary>
+    /// <summary>
+    /// Lista consultas com filtros opcionais, paginada (§2.3).
+    /// A resposta e o envelope { itens, total, pagina, tamanho }; sem paginacao
+    /// informada valem pagina 1 e 20 itens, com teto de 100 por pagina.
+    /// </summary>
     [HttpGet]
-    [ProducesResponseType(typeof(IEnumerable<ConsultaDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ResultadoPaginado<ConsultaDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> ObterTodas(
-        [FromQuery] DateTime? dataInicio,
-        [FromQuery] DateTime? dataFim,
-        [FromQuery] Guid? veterinarioId,
-        [FromQuery] bool? cancelada) =>
-        Ok(await _service.ObterTodosAsync(dataInicio, dataFim, veterinarioId, cancelada));
+        [FromQuery] FiltroConsultaDto filtro,
+        [FromQuery] Paginacao paginacao) =>
+        Ok(await _service.ObterTodosAsync(filtro, paginacao));
 
     /// <summary>Retorna uma consulta pelo ID.</summary>
     [HttpGet("{id:guid}")]

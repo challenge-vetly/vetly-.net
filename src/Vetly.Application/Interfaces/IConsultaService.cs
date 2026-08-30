@@ -1,4 +1,5 @@
 using Vetly.Application.DTOs.Cancelamento;
+using Vetly.Application.DTOs.Comum;
 using Vetly.Application.DTOs.Consulta;
 
 namespace Vetly.Application.Interfaces;
@@ -6,7 +7,8 @@ namespace Vetly.Application.Interfaces;
 /// <summary>Contrato do serviço de consultas.</summary>
 public interface IConsultaService
 {
-    Task<IEnumerable<ConsultaDto>> ObterTodosAsync(DateTime? dataInicio, DateTime? dataFim, Guid? veterinarioId, bool? cancelada);
+    /// <summary>Lista consultas paginadas, aplicando os filtros informados (§2.3, §3.5).</summary>
+    Task<ResultadoPaginado<ConsultaDto>> ObterTodosAsync(FiltroConsultaDto filtro, Paginacao paginacao);
     Task<ConsultaDto> ObterPorIdAsync(Guid id);
     Task<IEnumerable<ConsultaDto>> ObterPorVeterinarioAsync(Guid veterinarioId);
     Task<IEnumerable<ConsultaDto>> ObterPorAnimalAsync(Guid animalId);

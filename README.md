@@ -12,7 +12,7 @@ O Vetly é uma API REST para gestão de clínicas veterinárias, cobrindo todo o
 | Autenticação | JWT Bearer |
 | Documentação | Scalar (tema DeepSpace) em `/scalar/v1` |
 | IA | Ollama local (modelo `llama3.1`) |
-| Testes | xUnit + Moq (121 testes verdes) |
+| Testes | xUnit + Moq (133 testes verdes) |
 
 ## Padrões aplicados
 
@@ -169,7 +169,7 @@ curl http://localhost:5099/health/ready
 ### Consultas
 | Método | Rota | Descrição |
 |---|---|---|
-| GET | `/api/consultas` | Lista com filtros: `dataInicio`, `dataFim`, `veterinarioId`, `cancelada` |
+| GET | `/api/consultas` | Lista paginada (`?pagina=&tamanho=`) com filtros: `dataInicio`, `dataFim`, `veterinarioId`, `tutorId`, `animalId`, `status`, `cancelada` |
 | GET | `/api/consultas/{id}` | Detalhe |
 | GET | `/api/consultas/veterinario/{id}` | Por veterinário |
 | GET | `/api/consultas/animal/{id}` | Por animal |
@@ -209,7 +209,7 @@ curl http://localhost:5099/health/ready
 ### Pagamentos
 | Método | Rota | Descrição |
 |---|---|---|
-| GET | `/api/pagamentos` | Lista todos |
+| GET | `/api/pagamentos` | Lista paginada (`?pagina=&tamanho=`) |
 | GET | `/api/pagamentos/{id}` | Detalhe |
 | POST | `/api/pagamentos` | Registrar pagamento |
 | POST | `/api/pagamentos/{id}/processar-split` | Split financeiro via Strategy (autônomo 80% / vinculado 60%) |
@@ -243,6 +243,16 @@ curl http://localhost:5099/health/ready
 > **Todas as respostas da IA são sugestões — o veterinário deve validar manualmente antes de gerar qualquer documento clínico (RN-082).**
 
 ---
+
+### Paginação
+
+As listagens grandes (`GET /api/consultas`, `GET /api/pagamentos`) aceitam `?pagina=` e `?tamanho=` e respondem com o envelope:
+
+```json
+{ "itens": [ ... ], "total": 45, "pagina": 1, "tamanho": 20, "totalDePaginas": 3, "temProximaPagina": true }
+```
+
+Sem parâmetros valem página 1 e 20 itens. O tamanho é limitado a 100 por página — valores fora da faixa são normalizados, não rejeitados.
 
 ## Regras de Negócio
 

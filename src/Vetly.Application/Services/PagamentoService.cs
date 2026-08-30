@@ -1,3 +1,4 @@
+using Vetly.Application.DTOs.Comum;
 using Vetly.Application.DTOs.Pagamento;
 using Vetly.Application.Exceptions;
 using Vetly.Application.Interfaces;
@@ -26,10 +27,10 @@ public class PagamentoService : IPagamentoService
         _splitStrategies = splitStrategies;
     }
 
-    public async Task<IEnumerable<PagamentoDto>> ObterTodosAsync()
+    public async Task<ResultadoPaginado<PagamentoDto>> ObterTodosAsync(Paginacao paginacao)
     {
-        var pagamentos = await _repo.ObterTodosAsync();
-        return pagamentos.Select(MapearParaDto);
+        var pagina = await _repo.ObterPaginadoAsync(paginacao);
+        return pagina.Mapear(MapearParaDto);
     }
 
     public async Task<PagamentoDto> ObterPorIdAsync(Guid id)

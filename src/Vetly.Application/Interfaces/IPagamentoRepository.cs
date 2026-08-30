@@ -1,3 +1,4 @@
+using Vetly.Application.DTOs.Comum;
 using Vetly.Domain.Entities;
 
 namespace Vetly.Application.Interfaces;
@@ -7,6 +8,9 @@ public interface IPagamentoRepository : IRepositoryBase<Pagamento>
 {
     /// <summary>Retorna todos os pagamentos de um tutor.</summary>
     Task<IEnumerable<Pagamento>> ObterPorTutorAsync(Guid tutorId);
+
+    /// <summary>Retorna uma página de pagamentos, do mais recente para o mais antigo (§2.3).</summary>
+    Task<ResultadoPaginado<Pagamento>> ObterPaginadoAsync(Paginacao paginacao);
 
     /// <summary>Retorna o pagamento vinculado a uma consulta, se existir.</summary>
     Task<Pagamento?> ObterPorConsultaAsync(Guid consultaId);
