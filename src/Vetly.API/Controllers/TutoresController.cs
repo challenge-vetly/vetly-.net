@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Vetly.API.Filters;
 using Vetly.Application.DTOs.Tutor;
 using Vetly.Application.Interfaces;
 
@@ -27,8 +28,12 @@ public class TutoresController : ControllerBase
     public async Task<IActionResult> ObterTodos() =>
         Ok(await _service.ObterTodosAsync());
 
-    /// <summary>Retorna um tutor pelo ID.</summary>
+    /// <summary>
+    /// Retorna um tutor pelo ID. Isento do portao de consentimento: o Responsavel
+    /// precisa conseguir ler o proprio cadastro antes de consentir (RN-060).
+    /// </summary>
     [HttpGet("{id:guid}")]
+    [IsentoDeConsentimento]
     [ProducesResponseType(typeof(TutorDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> ObterPorId(Guid id) =>
@@ -71,4 +76,34 @@ public class TutoresController : ControllerBase
         await _service.DesativarAsync(id);
         return NoContent();
     }
+
+    /// <summary>
+    /// Estado das cinco finalidades de consentimento, com as datas de concessao e
+    /// revogacao (RN-061). Isento do portao: e a tela que o Responsavel abre antes
+    /// de consentir.
+    /// </summary>
+    [HttpGet("{id:guid}/consentimentos")]
+    [IsentoDeConsentimento]
+    [ProducesResponseType(typeof(IEnumerable<ConsentimentoDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ObterConsentimentos(Guid id) =>
+        Ok(await _service.ObterConsentimentosAsync(id));
+
+    /// <summary>
+    /// Concede ou revoga finalidades de consentimento (RN-061/RN-062). O que nao vier
+    /// no corpo permanece como esta — um PUT nao revoga por omissao.
+    /// A revogacao cessa concessoes futuras e nao apaga registro clinico ja produzido.
+    /// </summary>
+    [HttpPut("{id:guid}/consentimentos")]
+    [IsentoDeConsentimento]
+    [ProducesResponseType(typeof(IEnumerable<ConsentimentoDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> AtualizarConsentimentos(
+        Guid id, [FromBody] AtualizarConsentimentosDto dto) =>
+        Ok(await _service.AtualizarConsentimentosAsync(id, dto));
 }

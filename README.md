@@ -12,7 +12,7 @@ O Vetly é uma API REST para gestão de clínicas veterinárias, cobrindo todo o
 | Autenticação | JWT Bearer |
 | Documentação | Scalar (tema DeepSpace) em `/scalar/v1` |
 | IA | Ollama local (modelo `llama3.1`) |
-| Testes | xUnit + Moq (199 testes verdes) |
+| Testes | xUnit + Moq (207 testes verdes) |
 
 ## Padrões aplicados
 
@@ -185,6 +185,8 @@ curl http://localhost:5099/health/ready
 | GET | `/api/tutores/{id}/animais` | Animais do tutor |
 | POST | `/api/tutores` | Cadastrar |
 | PUT | `/api/tutores/{id}` | Atualizar |
+| GET | `/api/tutores/{id}/consentimentos` | Estado das 5 finalidades, com datas de concessão e revogação (RN-061) |
+| PUT | `/api/tutores/{id}/consentimentos` | Concede ou revoga finalidades — não revoga por omissão (RN-061/RN-062) |
 | DELETE | `/api/tutores/{id}` | Desativar (soft delete + anonimização LGPD) |
 
 ### Consultas
@@ -295,6 +297,8 @@ Sem parâmetros valem página 1 e 20 itens. O tamanho é limitado a 100 por pág
 | RN-041 | Cancelamento com mais de 24h de antecedência = reembolso integral | `ReembolsoIntegralStrategy` |
 | RN-041/RN-042 | Cancelamento entre 2h e 24h = reembolso parcial, com o percentual configurado pela clínica (padrão 30%) | `ReembolsoParcialStrategy` + `ConsultaService.CancelarAsync` |
 | RN-041 | Cancelamento com menos de 2h = sem reembolso | `SemReembolsoStrategy` |
+| RN-060 | Sem consentimento de atendimento, as rotas de negócio do Responsável devolvem 422 — a base legal precede o tratamento | `ConsentimentoAtendimentoFilter` |
+| RN-061/RN-062 | Consentimento granular por finalidade, com data de concessão e de revogação; revogar não apaga registro clínico já produzido | `Tutor.RegistrarConsentimento` + `TutorService` |
 | RN-081 | Sugestão de dose exige peso do animal — `POST /api/ia/protocolo` com peso ausente/zero devolve 422, e o cadastro do pet passa a exigir `pesoKg` | `OllamaService.SugerirProtocoloAsync` + `AnimalService` |
 | RN-082 | Documentos só podem ser gerados após `consulta.DiagnosticoValidado = true` E pagamento confirmado | `DocumentoService.GerarAsync` |
 | RN-087 | Finalizar consulta exige documento `ReceitaVeterinaria` assinado digitalmente | `ConsultaService.FinalizarAsync` |

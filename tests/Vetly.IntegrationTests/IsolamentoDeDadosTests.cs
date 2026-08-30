@@ -40,6 +40,14 @@ public class IsolamentoDeDadosTests : IClassFixture<VetlyWebApplicationFactory>
         var token = sessao.GetProperty("token").GetString()!;
         var tutorId = sessao.GetProperty("tutorId").GetGuid();
 
+        // Consentimento antes de qualquer acao de negocio — e o caminho real do app (RN-060)
+        var consentir = new HttpRequestMessage(HttpMethod.Put, $"/api/tutores/{tutorId}/consentimentos")
+        {
+            Content = Corpo("""{"consentimentos":[{"finalidade":"Atendimento","concedido":true}]}""")
+        };
+        consentir.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        Assert.Equal(HttpStatusCode.OK, (await _client.SendAsync(consentir)).StatusCode);
+
         var criarPet = new HttpRequestMessage(HttpMethod.Post, "/api/animais")
         {
             Content = Corpo($$"""
