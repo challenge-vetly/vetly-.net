@@ -107,6 +107,19 @@ public class AuthFluxoTests : IClassFixture<VetlyWebApplicationFactory>
     }
 
     [Fact]
+    public async Task Me_ComTokenInvalido_Retorna401()
+    {
+        // O 401 tem que vir da validacao do token pelo middleware, nao de checagem
+        // manual dentro da action
+        var requisicao = new HttpRequestMessage(HttpMethod.Get, "/api/auth/me");
+        requisicao.Headers.Authorization = new AuthenticationHeaderValue("Bearer", "token.invalido.qualquer");
+
+        var resposta = await _client.SendAsync(requisicao);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, resposta.StatusCode);
+    }
+
+    [Fact]
     public async Task Refresh_RotacionaOTokenEInvalidaOAnterior()
     {
         var sessao = await RegistrarAsync(EmailUnico());
