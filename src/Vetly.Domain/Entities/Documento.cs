@@ -60,6 +60,46 @@ public class Documento
     [MaxLength(15)]
     public string? CrmvSolicitanteCorrecao { get; private set; }
 
+    // ── Conteúdo, assinatura e publicação (RN-083, RN-087, RN-090) ───────────
+
+    /// <summary>
+    /// Conteúdo do documento. Até esta migration a tabela guardava só metadados e o
+    /// conteúdo não persistia — sem ele o documento não existe de fato para o
+    /// Responsável no board do pet (RN-090).
+    /// A geração parte do estado final aprovado pelo veterinário: é formatação,
+    /// não nova inferência clínica (RN-083).
+    /// </summary>
+    public string? Conteudo { get; private set; }
+
+    /// <summary>Id da mídia com o PDF renderizado do documento, no storage de objetos.</summary>
+    public Guid? PdfMidiaId { get; private set; }
+
+    /// <summary>
+    /// Subtipo do atestado (saúde, óbito ou transporte). Nulo nos demais tipos de
+    /// documento (RN-086).
+    /// </summary>
+    public TipoAtestado? Subtipo { get; private set; }
+
+    /// <summary>
+    /// Método da assinatura. No MVP é o nome digitado; em produção, certificado
+    /// ICP-Brasil vinculado ao CRMV (RN-087).
+    /// </summary>
+    [MaxLength(50)]
+    public string? AssinaturaMetodo { get; private set; }
+
+    /// <summary>Carimbo textual da assinatura, exibido no documento (RN-087).</summary>
+    [MaxLength(300)]
+    public string? AssinaturaCarimbo { get; private set; }
+
+    /// <summary>
+    /// Data em que o documento foi publicado no board do pet. Nulo enquanto o
+    /// documento existe mas ainda não chegou ao Responsável (RN-011/RN-090).
+    /// </summary>
+    public DateTime? PublicadoEm { get; private set; }
+
+    /// <summary>Data em que o Responsável abriu o documento no app.</summary>
+    public DateTime? LidoEm { get; private set; }
+
     /// <summary>Construtor privado reservado ao EF Core para materialização de entidades.</summary>
     private Documento()
     {
@@ -83,6 +123,54 @@ public class Documento
 
     /// <summary>Registra a assinatura digital do documento (RN-087).</summary>
     public void Assinar() => AssinadoDigitalmente = true;
+
+    /// <summary>
+    /// Registra a assinatura com o método e o carimbo produzidos pelo adaptador de
+    /// assinatura (RN-087). No MVP o método é o nome digitado, que não habilita
+    /// dispensação externa de controlados.
+    /// </summary>
+    public void RegistrarAssinatura(string metodo, string carimbo)
+    {
+        if (string.IsNullOrWhiteSpace(metodo))
+            throw new ArgumentException("O método da assinatura é obrigatório.", nameof(metodo));
+
+        AssinaturaMetodo = metodo;
+        AssinaturaCarimbo = carimbo;
+        AssinadoDigitalmente = true;
+    }
+
+    /// <summary>
+    /// Grava o conteúdo do documento, formatado a partir do estado final aprovado
+    /// pelo veterinário (RN-083).
+    /// </summary>
+    public void RegistrarConteudo(string conteudo)
+    {
+        if (string.IsNullOrWhiteSpace(conteudo))
+            throw new ArgumentException("O conteúdo do documento não pode ser vazio.", nameof(conteudo));
+
+        Conteudo = conteudo;
+    }
+
+    /// <summary>Vincula o PDF renderizado do documento, guardado no storage de objetos.</summary>
+    public void AnexarPdf(Guid pdfMidiaId) => PdfMidiaId = pdfMidiaId;
+
+    /// <summary>Define o subtipo do atestado. Só faz sentido em documentos do tipo Atestado (RN-086).</summary>
+    public void DefinirSubtipoAtestado(TipoAtestado subtipo)
+    {
+        if (TipoDocumento != TipoDocumento.Atestado)
+            throw new InvalidOperationException("Somente atestados possuem subtipo.");
+
+        Subtipo = subtipo;
+    }
+
+    /// <summary>
+    /// Publica o documento no board do pet (RN-011/RN-090). Idempotente: republicar
+    /// preserva a data original, que é a referência da notificação ao Responsável.
+    /// </summary>
+    public void Publicar(DateTime publicadoEm) => PublicadoEm ??= publicadoEm;
+
+    /// <summary>Registra a leitura do documento pelo Responsável no app.</summary>
+    public void MarcarComoLido(DateTime lidoEm) => LidoEm ??= lidoEm;
 
     /// <summary>Incrementa a versão do documento ao criar uma correção.</summary>
     public void IncrementarVersao() => Versao++;

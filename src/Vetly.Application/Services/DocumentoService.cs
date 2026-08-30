@@ -118,6 +118,9 @@ public class DocumentoService : IDocumentoService
         DataGeracao = d.DataGeracao, CrmvSignatario = d.CrmvSignatario,
         AssinadoDigitalmente = d.AssinadoDigitalmente,
         VersaoOriginalId = d.VersaoOriginalId, DataCorrecao = d.DataCorrecao,
-        CrmvSolicitanteCorrecao = d.CrmvSolicitanteCorrecao
+        CrmvSolicitanteCorrecao = d.CrmvSolicitanteCorrecao,
+        Conteudo = d.Conteudo, PdfMidiaId = d.PdfMidiaId, Subtipo = d.Subtipo,
+        AssinaturaMetodo = d.AssinaturaMetodo, AssinaturaCarimbo = d.AssinaturaCarimbo,
+        PublicadoEm = d.PublicadoEm, LidoEm = d.LidoEm
     };
 }

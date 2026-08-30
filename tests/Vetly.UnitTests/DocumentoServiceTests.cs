@@ -39,6 +39,84 @@ public class DocumentoServiceTests
         return consulta;
     }
 
+    // ── Conteúdo, assinatura e publicação (RN-083, RN-087, RN-090) ──────────
+
+    private static Documento CriarDocumento(TipoDocumento tipo = TipoDocumento.Prontuario) =>
+        new(tipo, "12345-SP", consultaId: Guid.NewGuid());
+
+    [Fact]
+    public void RegistrarConteudo_ConteudoVazio_LancaArgumentException()
+    {
+        var doc = CriarDocumento();
+
+        Assert.Throws<ArgumentException>(() => doc.RegistrarConteudo("   "));
+    }
+
+    [Fact]
+    public void RegistrarConteudo_GravaOTextoDoDocumento()
+    {
+        var doc = CriarDocumento();
+
+        doc.RegistrarConteudo("PRONTUARIO — queixa: vomito ha 24h.");
+
+        Assert.Contains("vomito", doc.Conteudo);
+    }
+
+    [Fact]
+    public void RegistrarAssinatura_MarcaAssinadoEGuardaMetodoECarimbo()
+    {
+        var doc = CriarDocumento(TipoDocumento.ReceitaVeterinaria);
+
+        doc.RegistrarAssinatura("NomeDigitado", "Assinado por Dra. Marina Costa — CRMV 12345-SP");
+
+        Assert.True(doc.AssinadoDigitalmente);
+        Assert.Equal("NomeDigitado", doc.AssinaturaMetodo);
+        Assert.Contains("CRMV 12345-SP", doc.AssinaturaCarimbo);
+    }
+
+    [Fact]
+    public void DefinirSubtipoAtestado_EmDocumentoQueNaoEAtestado_LancaInvalidOperation()
+    {
+        var doc = CriarDocumento(TipoDocumento.Prontuario);
+
+        Assert.Throws<InvalidOperationException>(() => doc.DefinirSubtipoAtestado(TipoAtestado.Saude));
+    }
+
+    [Fact]
+    public void DefinirSubtipoAtestado_EmAtestado_GuardaOSubtipo()
+    {
+        var doc = CriarDocumento(TipoDocumento.Atestado);
+
+        doc.DefinirSubtipoAtestado(TipoAtestado.Saude);
+
+        Assert.Equal(TipoAtestado.Saude, doc.Subtipo);
+    }
+
+    [Fact]
+    public void Publicar_EIdempotente_EPreservaADataOriginal()
+    {
+        var doc = CriarDocumento();
+        var primeiraPublicacao = new DateTime(2026, 8, 1, 10, 0, 0, DateTimeKind.Utc);
+
+        doc.Publicar(primeiraPublicacao);
+        doc.Publicar(primeiraPublicacao.AddDays(2));
+
+        // A data da publicacao e a referencia da notificacao ao Responsavel (RN-090)
+        Assert.Equal(primeiraPublicacao, doc.PublicadoEm);
+    }
+
+    [Fact]
+    public void MarcarComoLido_GuardaSomenteAPrimeiraLeitura()
+    {
+        var doc = CriarDocumento();
+        var primeiraLeitura = new DateTime(2026, 8, 2, 9, 0, 0, DateTimeKind.Utc);
+
+        doc.MarcarComoLido(primeiraLeitura);
+        doc.MarcarComoLido(primeiraLeitura.AddHours(5));
+
+        Assert.Equal(primeiraLeitura, doc.LidoEm);
+    }
+
     [Fact]
     public async Task Gerar_SelecionaFactoryCorreta_PorTipoDocumento()
     {

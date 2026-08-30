@@ -63,6 +63,35 @@ public class DocumentoConfiguration : IEntityTypeConfiguration<Documento>
             .HasColumnType("VARCHAR2(15)")
             .HasColumnName("CRMV_SOLICITANTE_CORRECAO");
 
+        // ── Conteúdo, assinatura e publicação (RN-083/087/090) ───────────────
+
+        // CLOB: o conteúdo do documento não cabe em VARCHAR2(4000)
+        builder.Property(d => d.Conteudo)
+            .HasColumnType("CLOB")
+            .HasColumnName("CONTEUDO");
+
+        builder.Property(d => d.PdfMidiaId)
+            .HasColumnType("CHAR(36)")
+            .HasColumnName("PDF_MIDIA_ID");
+
+        builder.Property(d => d.Subtipo)
+            .HasConversion<int?>()
+            .HasColumnName("SUBTIPO");
+
+        builder.Property(d => d.AssinaturaMetodo)
+            .HasColumnType("VARCHAR2(50)")
+            .HasColumnName("ASSINATURA_METODO");
+
+        builder.Property(d => d.AssinaturaCarimbo)
+            .HasColumnType("VARCHAR2(300)")
+            .HasColumnName("ASSINATURA_CARIMBO");
+
+        builder.Property(d => d.PublicadoEm)
+            .HasColumnName("PUBLICADO_EM");
+
+        builder.Property(d => d.LidoEm)
+            .HasColumnName("LIDO_EM");
+
         builder.HasIndex(d => d.ConsultaId).HasDatabaseName("IX_DOCUMENTO_CONSULTA");
         builder.HasIndex(d => d.InternacaoId).HasDatabaseName("IX_DOCUMENTO_INTERNACAO");
     }
