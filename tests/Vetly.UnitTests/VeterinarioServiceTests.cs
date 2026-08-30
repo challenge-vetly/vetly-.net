@@ -17,8 +17,21 @@ namespace Vetly.UnitTests;
 public class VeterinarioServiceTests
 {
     private readonly Mock<IVeterinarioRepository> _repoMock = new();
+    private readonly Mock<ICrmvAdapter> _crmvAdapterMock = new();
 
-    private VeterinarioService CriarServico() => new(_repoMock.Object);
+    private VeterinarioService CriarServico() => new(_repoMock.Object, _crmvAdapterMock.Object);
+
+    /// <summary>Configura a resposta do conselho para o proximo cadastro (RN-107).</summary>
+    private void ConselhoResponde(ResultadoValidacaoCrmv resultado) =>
+        _crmvAdapterMock
+            .Setup(a => a.ValidarRegistroAsync(It.IsAny<string>(), It.IsAny<string>()))
+            .ReturnsAsync(new ResultadoCrmvDto
+            {
+                Resultado = resultado,
+                ConsultadoEm = DateTime.UtcNow
+            });
+
+    public VeterinarioServiceTests() => ConselhoResponde(ResultadoValidacaoCrmv.Valido);
 
     private static CriarVeterinarioDto CriarDto(string crmv = "12345-SP") => new()
     {
@@ -31,6 +44,78 @@ public class VeterinarioServiceTests
 
     private static Veterinario CriarVeterinario() =>
         new("Dr. Teste", new Crmv("12345-SP"), "SP", PersonaVeterinario.Autonomo, PlanoAssinatura.Profissional);
+
+    // ── Validação de CRMV junto ao conselho (RN-107, C-05) ───────────────────
+
+    [Fact]
+    public async Task CriarAsync_ConselhoRespondeValido_PublicaOPerfilNoMatching()
+    {
+        ConselhoResponde(ResultadoValidacaoCrmv.Valido);
+        _repoMock.Setup(r => r.ObterPorCrmvAsync(It.IsAny<string>())).ReturnsAsync((Veterinario?)null);
+        _repoMock.Setup(r => r.AdicionarAsync(It.IsAny<Veterinario>())).Returns(Task.CompletedTask);
+        _repoMock.Setup(r => r.SalvarAsync()).ReturnsAsync(1);
+
+        var resultado = await CriarServico().CriarAsync(CriarDto("11111-SP"));
+
+        Assert.Equal(StatusCrmv.Valido, resultado.CrmvStatus);
+        Assert.True(resultado.Publicado);
+        Assert.NotNull(resultado.PublicadoEm);
+    }
+
+    [Theory]
+    [InlineData(ResultadoValidacaoCrmv.Invalido, StatusCrmv.Invalido)]
+    [InlineData(ResultadoValidacaoCrmv.Suspenso, StatusCrmv.Suspenso)]
+    [InlineData(ResultadoValidacaoCrmv.Indisponivel, StatusCrmv.PendenteValidacao)]
+    public async Task CriarAsync_ConselhoNaoConfirma_NaoPublicaOPerfil(
+        ResultadoValidacaoCrmv respostaDoConselho, StatusCrmv statusEsperado)
+    {
+        ConselhoResponde(respostaDoConselho);
+        _repoMock.Setup(r => r.ObterPorCrmvAsync(It.IsAny<string>())).ReturnsAsync((Veterinario?)null);
+        _repoMock.Setup(r => r.AdicionarAsync(It.IsAny<Veterinario>())).Returns(Task.CompletedTask);
+        _repoMock.Setup(r => r.SalvarAsync()).ReturnsAsync(1);
+
+        var resultado = await CriarServico().CriarAsync(CriarDto("11111-SP"));
+
+        Assert.Equal(statusEsperado, resultado.CrmvStatus);
+        // Indisponibilidade do conselho nao aprova por omissao (RN-107)
+        Assert.False(resultado.Publicado);
+    }
+
+    [Fact]
+    public async Task RevalidarCrmvAsync_ConselhoVoltaAResponder_TiraOPerfilDaPendencia()
+    {
+        var vet = CriarVeterinario();
+        vet.RegistrarValidacaoCrmv(StatusCrmv.PendenteValidacao, DateTime.UtcNow);
+
+        _repoMock.Setup(r => r.ObterPorIdAsync(vet.Id)).ReturnsAsync(vet);
+        _repoMock.Setup(r => r.Atualizar(It.IsAny<Veterinario>()));
+        _repoMock.Setup(r => r.SalvarAsync()).ReturnsAsync(1);
+        ConselhoResponde(ResultadoValidacaoCrmv.Valido);
+
+        var resultado = await CriarServico().RevalidarCrmvAsync(vet.Id);
+
+        Assert.Equal(ResultadoValidacaoCrmv.Valido, resultado.Resultado);
+        Assert.Equal(StatusCrmv.Valido, vet.CrmvStatus);
+        Assert.True(vet.Publicado);
+    }
+
+    [Fact]
+    public async Task RevalidarCrmvAsync_ConselhoSuspende_DespublicaPerfilAntesPublicado()
+    {
+        var vet = CriarVeterinario();
+        vet.RegistrarValidacaoCrmv(StatusCrmv.Valido, DateTime.UtcNow);
+        vet.PublicarNoMatching(DateTime.UtcNow);
+
+        _repoMock.Setup(r => r.ObterPorIdAsync(vet.Id)).ReturnsAsync(vet);
+        _repoMock.Setup(r => r.Atualizar(It.IsAny<Veterinario>()));
+        _repoMock.Setup(r => r.SalvarAsync()).ReturnsAsync(1);
+        ConselhoResponde(ResultadoValidacaoCrmv.Suspenso);
+
+        await CriarServico().RevalidarCrmvAsync(vet.Id);
+
+        Assert.Equal(StatusCrmv.Suspenso, vet.CrmvStatus);
+        Assert.False(vet.Publicado);
+    }
 
     // ── Endereço e coordenada (RN-026) ───────────────────────────────────────
 

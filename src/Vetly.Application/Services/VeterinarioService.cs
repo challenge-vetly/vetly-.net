@@ -4,6 +4,7 @@ using Vetly.Application.DTOs.Veterinario;
 using Vetly.Application.Exceptions;
 using Vetly.Application.Interfaces;
 using Vetly.Domain.Entities;
+using Vetly.Domain.Enums;
 using Vetly.Domain.ValueObjects;
 
 namespace Vetly.Application.Services;
@@ -17,8 +18,13 @@ public class VeterinarioService : IVeterinarioService
     private static readonly Regex CrmvRegex = new(@"^\d{4,6}-[A-Z]{2}$", RegexOptions.Compiled);
 
     private readonly IVeterinarioRepository _repo;
+    private readonly ICrmvAdapter _crmvAdapter;
 
-    public VeterinarioService(IVeterinarioRepository repo) => _repo = repo;
+    public VeterinarioService(IVeterinarioRepository repo, ICrmvAdapter crmvAdapter)
+    {
+        _repo = repo;
+        _crmvAdapter = crmvAdapter;
+    }
 
     /// <inheritdoc/>
     public async Task<IEnumerable<VeterinarioDto>> ObterTodosAsync()
@@ -70,9 +76,69 @@ public class VeterinarioService : IVeterinarioService
         if (dto.TitulacaoAcademica is not null)
             vet.AtualizarDados(dto.Nome, dto.UfAtuacao, dto.TitulacaoAcademica);
 
+        // RN-107: o formato ja passou; agora vale o que o conselho responde. Perfil so e
+        // publicado no matching com registro Valido — Indisponivel mantem pendente.
+        await ValidarCrmvNoConselhoAsync(vet);
+
         await _repo.AdicionarAsync(vet);
         await _repo.SalvarAsync();
         return MapearParaDto(vet);
+    }
+
+    /// <inheritdoc/>
+    public async Task<ResultadoCrmvDto> RevalidarCrmvAsync(Guid id)
+    {
+        var vet = await _repo.ObterPorIdAsync(id)
+            ?? throw new NotFoundException("Veterinario", id);
+
+        var resultado = await ValidarCrmvNoConselhoAsync(vet);
+
+        _repo.Atualizar(vet);
+        await _repo.SalvarAsync();
+        return resultado;
+    }
+
+    /// <inheritdoc/>
+    public async Task<SituacaoCrmvDto> ObterSituacaoCrmvAsync(Guid id)
+    {
+        var vet = await _repo.ObterPorIdAsync(id)
+            ?? throw new NotFoundException("Veterinario", id);
+
+        return new SituacaoCrmvDto
+        {
+            VeterinarioId = vet.Id,
+            Crmv = vet.Crmv.Valor,
+            UfAtuacao = vet.UfAtuacao,
+            Status = vet.CrmvStatus,
+            ValidadoEm = vet.CrmvValidadoEm,
+            Publicado = vet.Publicado,
+            PublicadoEm = vet.PublicadoEm
+        };
+    }
+
+    /// <summary>
+    /// Consulta o conselho e aplica o resultado ao perfil (RN-107).
+    /// <c>Indisponivel</c> nao aprova nem reprova: mantem o perfil em PendenteValidacao,
+    /// fora do matching — a plataforma nunca aprova por omissao.
+    /// </summary>
+    private async Task<ResultadoCrmvDto> ValidarCrmvNoConselhoAsync(Veterinario vet)
+    {
+        var resultado = await _crmvAdapter.ValidarRegistroAsync(vet.Crmv.Valor, vet.UfAtuacao);
+
+        var status = resultado.Resultado switch
+        {
+            ResultadoValidacaoCrmv.Valido => StatusCrmv.Valido,
+            ResultadoValidacaoCrmv.Invalido => StatusCrmv.Invalido,
+            ResultadoValidacaoCrmv.Suspenso => StatusCrmv.Suspenso,
+            _ => StatusCrmv.PendenteValidacao
+        };
+
+        vet.RegistrarValidacaoCrmv(status, resultado.ConsultadoEm);
+
+        if (status == StatusCrmv.Valido)
+            vet.PublicarNoMatching(resultado.ConsultadoEm);
+
+        return resultado;
     }
 
     /// <inheritdoc/>
