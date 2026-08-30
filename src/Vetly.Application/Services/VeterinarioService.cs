@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using Vetly.Application.DTOs.Comum;
 using Vetly.Application.DTOs.Consulta;
 using Vetly.Application.DTOs.Veterinario;
 using Vetly.Application.Exceptions;

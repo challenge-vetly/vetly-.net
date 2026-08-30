@@ -1,9 +1,9 @@
 using System.ComponentModel.DataAnnotations;
 
-namespace Vetly.Application.DTOs.Veterinario;
+namespace Vetly.Application.DTOs.Comum;
 
 /// <summary>
-/// Endereço do prestador. A latitude/longitude não é informada pelo cliente:
+/// Endereço de um prestador — veterinário autônomo ou empresa. A latitude/longitude não é informada pelo cliente:
 /// é derivada do endereço persistido pela geocodificação (RN-026).
 /// </summary>
 public class EnderecoDto
