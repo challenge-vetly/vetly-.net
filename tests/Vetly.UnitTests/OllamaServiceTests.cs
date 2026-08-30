@@ -4,6 +4,7 @@ using System.Text.Json;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Configuration.Memory;
 using Vetly.Application.DTOs.IA;
+using Vetly.Application.Exceptions;
 using Vetly.Application.Services;
 
 namespace Vetly.UnitTests;
@@ -26,6 +27,24 @@ public class OllamaServiceTests
     {
         var handler = new MockHttpMessageHandler(jsonResposta);
         return new HttpClient(handler) { BaseAddress = new Uri("http://localhost:11434") };
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-2)]
+    public async Task SugerirProtocolo_SemPeso_LancaBusinessRuleExceptionRN081(decimal pesoKg)
+    {
+        // Handler que falha se chamado: a guarda tem que barrar antes de consultar a IA
+        var http = new HttpClient(new MockHttpMessageHandler(BuildOllamaResponse("{}")))
+        {
+            BaseAddress = new Uri("http://localhost:11434")
+        };
+        var service = new OllamaService(http, CriarConfig());
+
+        var ex = await Assert.ThrowsAsync<BusinessRuleException>(
+            () => service.SugerirProtocoloAsync("Gastrite aguda", "Canino", pesoKg));
+
+        Assert.Equal("RN-081", ex.Codigo);
     }
 
     [Fact]

@@ -28,10 +28,14 @@ public class OllamaController : ControllerBase
     public async Task<IActionResult> SugerirDiagnostico([FromBody] ContextoClinicoDto contexto) =>
         Ok(await _service.SugerirDiagnosticoAsync(contexto));
 
-    /// <summary>Sugere um protocolo de tratamento dado um diagnostico, especie e peso.</summary>
+    /// <summary>
+    /// Sugere um protocolo de tratamento dado um diagnostico, especie e peso.
+    /// Peso ausente ou zero devolve 422 (RN-081): sem peso nao ha sugestao de dose.
+    /// </summary>
     [HttpPost("protocolo")]
     [ProducesResponseType(typeof(ProtocoloTratamentoDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
     public async Task<IActionResult> SugerirProtocolo([FromBody] ProtocoloRequest request) =>
         Ok(await _service.SugerirProtocoloAsync(request.Diagnostico, request.Especie, request.PesoKg));
 
@@ -55,5 +59,7 @@ public sealed class ProtocoloRequest
 {
     public string Diagnostico { get; set; } = string.Empty;
     public string Especie { get; set; } = string.Empty;
+
+    /// <summary>Peso do animal em quilogramas. Obrigatorio para sugestao de dose (RN-081).</summary>
     public decimal PesoKg { get; set; }
 }

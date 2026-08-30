@@ -4,6 +4,7 @@ using Vetly.Application.DTOs.Prontuario;
 using Vetly.Application.Exceptions;
 using Vetly.Application.Interfaces;
 using Vetly.Domain.Entities;
+using Vetly.Domain.ValueObjects;
 
 namespace Vetly.Application.Services;
 
@@ -55,6 +56,8 @@ public class AnimalService : IAnimalService
     public async Task<AnimalDto> CriarAsync(CriarAnimalDto dto)
     {
         var animal = new Animal(dto.Nome, dto.Especie, dto.Raca, dto.DataNascimento, dto.TutorId);
+        AplicarPerfilClinico(animal, dto);
+
         await _repo.AdicionarAsync(animal);
         await _repo.SalvarAsync();
         return MapearParaDto(animal);
@@ -65,6 +68,8 @@ public class AnimalService : IAnimalService
         var animal = await _repo.ObterPorIdAsync(id)
             ?? throw new NotFoundException("Animal", id);
         animal.AtualizarDados(dto.Nome, dto.Especie, dto.Raca, dto.DataNascimento);
+        AplicarPerfilClinico(animal, dto);
+
         _repo.Atualizar(animal);
         await _repo.SalvarAsync();
     }
@@ -78,10 +83,37 @@ public class AnimalService : IAnimalService
         await _repo.SalvarAsync();
     }
 
+    /// <summary>
+    /// Transfere o perfil clínico do DTO para a entidade. O peso passa por
+    /// <c>RegistrarPeso</c>, que rejeita valor não positivo (RN-081).
+    /// </summary>
+    private static void AplicarPerfilClinico(Animal animal, CriarAnimalDto dto)
+    {
+        // O [Range] do DTO ja barra peso invalido no controller; esta guarda cobre as chamadas
+        // que nao passam pela validacao do model binder e devolve 422 com o codigo da RN,
+        // em vez do 500 que a ArgumentOutOfRangeException do dominio produziria.
+        if (dto.PesoKg <= 0)
+            throw new BusinessRuleException("RN-081",
+                "O peso do animal e obrigatorio e deve ser maior que zero — sem ele a IA nao pode sugerir dose.");
+
+        animal.RegistrarPeso(dto.PesoKg);
+        animal.DefinirPerfilClinico(
+            dto.Sexo, dto.Castrado, dto.FotoMidiaId, dto.Alergias, dto.CondicoesPreexistentes);
+        animal.DefinirCarteiraVacinacao(
+            dto.CarteiraVacinacao.Select(v => new RegistroVacinacao(v.Tipo, v.AplicadaEm)));
+    }
+
     private static AnimalDto MapearParaDto(Animal a) => new()
     {
         Id = a.Id, Nome = a.Nome, Especie = a.Especie, Raca = a.Raca,
         DataNascimento = a.DataNascimento, IdadeEmAnos = a.IdadeEmAnos(),
-        TutorId = a.TutorId, AlertasAtivos = a.AlertasAtivos, Ativo = a.Ativo
+        TutorId = a.TutorId, AlertasAtivos = a.AlertasAtivos,
+        PesoKg = a.PesoKg, Sexo = a.Sexo, Castrado = a.Castrado, FotoMidiaId = a.FotoMidiaId,
+        Alergias = a.Alergias, CondicoesPreexistentes = a.CondicoesPreexistentes,
+        CarteiraVacinacao = [.. a.CarteiraVacinacao.Select(v => new RegistroVacinacaoDto
+        {
+            Tipo = v.Tipo, AplicadaEm = v.AplicadaEm
+        })],
+        Ativo = a.Ativo
     };
 }

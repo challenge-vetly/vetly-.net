@@ -12,7 +12,7 @@ O Vetly é uma API REST para gestão de clínicas veterinárias, cobrindo todo o
 | Autenticação | JWT Bearer |
 | Documentação | Scalar (tema DeepSpace) em `/scalar/v1` |
 | IA | Ollama local (modelo `llama3.1`) |
-| Testes | xUnit + Moq (51 testes verdes) |
+| Testes | xUnit + Moq (59 testes verdes) |
 
 ## Padrões aplicados
 
@@ -148,8 +148,8 @@ curl http://localhost:5099/health/ready
 | GET | `/api/animais/{id}` | Detalhe |
 | GET | `/api/animais/{id}/prontuarios` | Histórico longitudinal de prontuários |
 | GET | `/api/animais/{id}/exames` | Exames do animal |
-| POST | `/api/animais` | Cadastrar |
-| PUT | `/api/animais/{id}` | Atualizar |
+| POST | `/api/animais` | Cadastrar — exige `pesoKg`; aceita sexo, castrado, alergias, condições pré-existentes e carteira de vacinação |
+| PUT | `/api/animais/{id}` | Atualizar — mesmos campos do cadastro |
 | DELETE | `/api/animais/{id}` | Desativar (soft delete) |
 
 ### Tutores
@@ -251,6 +251,7 @@ curl http://localhost:5099/health/ready
 | RN-019 | Cancelamento com mais de 24h de antecedência = reembolso integral | `ReembolsoIntegralStrategy` |
 | RN-020 | Cancelamento entre 2h e 24h = reembolso parcial (70% devolvido) | `ReembolsoParcialStrategy` |
 | RN-021 | Cancelamento com menos de 2h = sem reembolso | `SemReembolsoStrategy` |
+| RN-081 | Sugestão de dose exige peso do animal — `POST /api/ia/protocolo` com peso ausente/zero devolve 422, e o cadastro do pet passa a exigir `pesoKg` | `OllamaService.SugerirProtocoloAsync` + `AnimalService` |
 | RN-024 | Documentos só podem ser gerados após `consulta.DiagnosticoValidado = true` E pagamento confirmado | `DocumentoService.GerarAsync` |
 | RN-029 | Após 3 tentativas sem resposta, `AlertaEnviadoClinica = true` | `LembreteService.ProcessarTentativaAsync` |
 | RN-030 | Resposta do tutor encerra a régua de contato | `LembreteService.RegistrarRespostaAsync` |
