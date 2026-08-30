@@ -19,9 +19,13 @@ public class PagamentoServiceTests
     private readonly Mock<IPagamentoRepository> _repoMock = new();
     private readonly Mock<IVeterinarioRepository> _vetRepoMock = new();
     private readonly Mock<IConsultaRepository> _consultaRepoMock = new();
+    private readonly Mock<IUsuarioAtual> _usuarioMock = new();
 
     private PagamentoService CriarServico(params ISplitFinanceiroStrategy[] strategies) =>
-        new(_repoMock.Object, _vetRepoMock.Object, _consultaRepoMock.Object, strategies);
+        new(_repoMock.Object, _vetRepoMock.Object, _consultaRepoMock.Object, strategies, _usuarioMock.Object);
+
+    /// <summary>Por padrao os testes rodam como Admin, que enxerga todo o escopo.</summary>
+    public PagamentoServiceTests() => _usuarioMock.SetupGet(u => u.EhAdmin).Returns(true);
 
     [Fact]
     public async Task ProcessarSplitAsync_SemConsultaId_LancaBusinessRuleExceptionPAGAMENTO001()

@@ -11,11 +11,25 @@ public class TutorService : ITutorService
 {
     private readonly ITutorRepository _repo;
     private readonly IAnimalRepository _animalRepo;
+    private readonly IUsuarioAtual _usuario;
 
-    public TutorService(ITutorRepository repo, IAnimalRepository animalRepo)
+    public TutorService(ITutorRepository repo, IAnimalRepository animalRepo, IUsuarioAtual usuario)
     {
         _repo = repo;
         _animalRepo = animalRepo;
+        _usuario = usuario;
+    }
+
+    /// <summary>
+    /// Recusa acesso aos dados de outro Responsável (RN-105/RN-106). O Admin passa;
+    /// o Tutor só alcança o próprio cadastro.
+    /// </summary>
+    private void GarantirPosse(Guid tutorId)
+    {
+        if (_usuario.EhAdmin || _usuario.TutorId == tutorId)
+            return;
+
+        throw new AcessoNegadoException("RN-106", "Este cadastro nao pertence ao seu escopo de acesso.");
     }
 
     public async Task<IEnumerable<TutorDto>> ObterTodosAsync()
@@ -26,6 +40,8 @@ public class TutorService : ITutorService
 
     public async Task<TutorDto> ObterPorIdAsync(Guid id)
     {
+        GarantirPosse(id);
+
         var tutor = await _repo.ObterPorIdAsync(id)
             ?? throw new NotFoundException("Tutor", id);
         return MapearParaDto(tutor);
@@ -33,6 +49,8 @@ public class TutorService : ITutorService
 
     public async Task<IEnumerable<AnimalDto>> ObterAnimaisAsync(Guid tutorId)
     {
+        GarantirPosse(tutorId);
+
         _ = await _repo.ObterPorIdAsync(tutorId)
             ?? throw new NotFoundException("Tutor", tutorId);
 
@@ -59,6 +77,8 @@ public class TutorService : ITutorService
 
     public async Task AtualizarAsync(Guid id, CriarTutorDto dto)
     {
+        GarantirPosse(id);
+
         var tutor = await _repo.ObterPorIdAsync(id)
             ?? throw new NotFoundException("Tutor", id);
         tutor.AtualizarDados(dto.Nome, dto.Email, dto.Telefone);
@@ -68,6 +88,8 @@ public class TutorService : ITutorService
 
     public async Task DesativarAsync(Guid id)
     {
+        GarantirPosse(id);
+
         var tutor = await _repo.ObterPorIdAsync(id)
             ?? throw new NotFoundException("Tutor", id);
         tutor.Desativar();

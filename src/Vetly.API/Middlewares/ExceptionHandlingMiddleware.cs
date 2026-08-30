@@ -48,6 +48,13 @@ public class ExceptionHandlingMiddleware
             context.Response.ContentType = "application/problem+json";
             await context.Response.WriteAsJsonAsync(details);
         }
+        catch (AcessoNegadoException ex)
+        {
+            _logger.LogWarning("CorrelationId={CorrelationId} | AcessoNegado [{Codigo}]: {Message}",
+                correlationId, ex.Codigo, ex.Message);
+            await EscreverRespostaAsync(context, HttpStatusCode.Forbidden,
+                ex.Message, correlationId, ex.Codigo);
+        }
         catch (BusinessRuleException ex)
         {
             _logger.LogWarning("CorrelationId={CorrelationId} | BusinessRule [{Codigo}]: {Message}", correlationId, ex.Codigo, ex.Message);
@@ -77,6 +84,7 @@ public class ExceptionHandlingMiddleware
             Title = status switch
             {
                 HttpStatusCode.NotFound => "Recurso nao encontrado",
+                HttpStatusCode.Forbidden => "Acesso negado",
                 HttpStatusCode.UnprocessableEntity => "Regra de negocio violada",
                 _ => "Erro interno do servidor"
             },

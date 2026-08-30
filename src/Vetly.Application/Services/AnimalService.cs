@@ -12,12 +12,22 @@ namespace Vetly.Application.Services;
 public class AnimalService : IAnimalService
 {
     private readonly IAnimalRepository _repo;
+    private readonly IUsuarioAtual _usuario;
 
-    public AnimalService(IAnimalRepository repo) => _repo = repo;
+    public AnimalService(IAnimalRepository repo, IUsuarioAtual usuario)
+    {
+        _repo = repo;
+        _usuario = usuario;
+    }
 
+    /// <summary>
+    /// Lista os animais dentro do escopo de quem chama (RN-105/RN-106):
+    /// o Responsável vê os seus, o veterinário vê os que atendeu ou tem agendados,
+    /// e só o Admin vê todos.
+    /// </summary>
     public async Task<IEnumerable<AnimalDto>> ObterTodosAsync()
     {
-        var animais = await _repo.ObterAtivosAsync();
+        var animais = await ObterNoEscopoAsync();
         return animais.Select(MapearParaDto);
     }
 
@@ -25,11 +35,55 @@ public class AnimalService : IAnimalService
     {
         var animal = await _repo.ObterPorIdAsync(id)
             ?? throw new NotFoundException("Animal", id);
+
+        await GarantirAcessoAoAnimalAsync(animal);
         return MapearParaDto(animal);
+    }
+
+    /// <summary>Aplica o escopo do usuário atual sobre a listagem.</summary>
+    private async Task<IEnumerable<Animal>> ObterNoEscopoAsync()
+    {
+        if (_usuario.EhAdmin)
+            return await _repo.ObterAtivosAsync();
+
+        if (_usuario.EhTutor && _usuario.TutorId is { } tutorId)
+            return await _repo.ObterPorTutorAsync(tutorId);
+
+        if (_usuario.EhVeterinario && _usuario.VeterinarioId is { } vetId)
+            return await _repo.ObterPorVeterinarioAsync(vetId);
+
+        // Token autenticado sem escopo reconhecido nao ve nada. Falhar fechado e o
+        // comportamento certo aqui: dado de saude e sensivel (RN-069).
+        return [];
+    }
+
+    /// <summary>
+    /// Recusa o acesso a animal fora do escopo (RN-105). O Responsável só alcança os
+    /// seus; o veterinário, os que atendeu ou tem agendados.
+    /// </summary>
+    private async Task GarantirAcessoAoAnimalAsync(Animal animal)
+    {
+        if (_usuario.EhAdmin)
+            return;
+
+        if (_usuario.EhTutor && _usuario.TutorId == animal.TutorId)
+            return;
+
+        if (_usuario.EhVeterinario && _usuario.VeterinarioId is { } vetId &&
+            await _repo.VeterinarioAtendeAnimalAsync(vetId, animal.Id))
+        {
+            return;
+        }
+
+        throw new AcessoNegadoException("RN-105", "Este animal nao pertence ao seu escopo de acesso.");
     }
 
     public async Task<IEnumerable<ProntuarioDto>> ObterHistoricoAsync(Guid animalId)
     {
+        var animal = await _repo.ObterPorIdAsync(animalId)
+            ?? throw new NotFoundException("Animal", animalId);
+        await GarantirAcessoAoAnimalAsync(animal);
+
         var prontuarios = await _repo.ObterHistoricoLongitudinalAsync(animalId);
         return prontuarios.Select(p => new ProntuarioDto
         {
@@ -43,6 +97,10 @@ public class AnimalService : IAnimalService
 
     public async Task<IEnumerable<ExameDto>> ObterExamesAsync(Guid animalId)
     {
+        var animal = await _repo.ObterPorIdAsync(animalId)
+            ?? throw new NotFoundException("Animal", animalId);
+        await GarantirAcessoAoAnimalAsync(animal);
+
         var exames = await _repo.ObterExamesAsync(animalId);
         return exames.Select(e => new ExameDto
         {
@@ -55,6 +113,11 @@ public class AnimalService : IAnimalService
 
     public async Task<AnimalDto> CriarAsync(CriarAnimalDto dto)
     {
+        // Responsavel so cadastra pet no proprio nome; passar o tutorId de outro no
+        // corpo da requisicao nao pode funcionar (RN-105).
+        if (_usuario.EhTutor && _usuario.TutorId != dto.TutorId)
+            throw new AcessoNegadoException("RN-105", "Nao e possivel cadastrar animal para outro responsavel.");
+
         var animal = new Animal(dto.Nome, dto.Especie, dto.Raca, dto.DataNascimento, dto.TutorId);
         AplicarPerfilClinico(animal, dto);
 
@@ -67,6 +130,8 @@ public class AnimalService : IAnimalService
     {
         var animal = await _repo.ObterPorIdAsync(id)
             ?? throw new NotFoundException("Animal", id);
+        await GarantirAcessoAoAnimalAsync(animal);
+
         animal.AtualizarDados(dto.Nome, dto.Especie, dto.Raca, dto.DataNascimento);
         AplicarPerfilClinico(animal, dto);
 
@@ -78,6 +143,8 @@ public class AnimalService : IAnimalService
     {
         var animal = await _repo.ObterPorIdAsync(id)
             ?? throw new NotFoundException("Animal", id);
+        await GarantirAcessoAoAnimalAsync(animal);
+
         animal.Desativar();
         _repo.Atualizar(animal);
         await _repo.SalvarAsync();

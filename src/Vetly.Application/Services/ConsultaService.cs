@@ -23,6 +23,7 @@ public class ConsultaService : IConsultaService
     private readonly IVeterinarioRepository _veterinarioRepo;
     private readonly IEmpresaRepository _empresaRepo;
     private readonly IEnumerable<ICancelamentoStrategy> _strategies;
+    private readonly IUsuarioAtual _usuario;
 
     public ConsultaService(
         IConsultaRepository repo,
@@ -31,7 +32,8 @@ public class ConsultaService : IConsultaService
         IAnimalRepository animalRepo,
         IVeterinarioRepository veterinarioRepo,
         IEmpresaRepository empresaRepo,
-        IEnumerable<ICancelamentoStrategy> strategies)
+        IEnumerable<ICancelamentoStrategy> strategies,
+        IUsuarioAtual usuario)
     {
         _repo = repo;
         _pagamentoRepo = pagamentoRepo;
@@ -40,19 +42,64 @@ public class ConsultaService : IConsultaService
         _veterinarioRepo = veterinarioRepo;
         _empresaRepo = empresaRepo;
         _strategies = strategies;
+        _usuario = usuario;
     }
 
     public async Task<ResultadoPaginado<ConsultaDto>> ObterTodosAsync(
         FiltroConsultaDto filtro, Paginacao paginacao)
     {
-        var pagina = await _repo.ObterComFiltrosAsync(filtro, paginacao);
+        var pagina = await _repo.ObterComFiltrosAsync(AplicarEscopo(filtro), paginacao);
         return pagina.Mapear(MapearParaDto);
+    }
+
+    /// <summary>
+    /// Fixa no filtro o escopo de quem chama (RN-105/RN-106). O valor vem do token, e
+    /// sobrescreve o que veio na query string: senao bastaria trocar o tutorId da URL
+    /// para ler a agenda de outra pessoa.
+    /// </summary>
+    private FiltroConsultaDto AplicarEscopo(FiltroConsultaDto filtro)
+    {
+        if (_usuario.EhAdmin)
+            return filtro;
+
+        if (_usuario.EhTutor && _usuario.TutorId is { } tutorId)
+        {
+            filtro.TutorId = tutorId;
+            return filtro;
+        }
+
+        if (_usuario.EhVeterinario && _usuario.VeterinarioId is { } vetId)
+        {
+            filtro.VeterinarioId = vetId;
+            return filtro;
+        }
+
+        // Sem escopo reconhecido nao ha o que listar — falha fechado
+        filtro.TutorId = Guid.Empty;
+        return filtro;
+    }
+
+    /// <summary>Recusa acesso a consulta fora do escopo de quem chama (RN-105/RN-106).</summary>
+    private void GarantirAcessoAConsulta(Consulta consulta)
+    {
+        if (_usuario.EhAdmin)
+            return;
+
+        if (_usuario.EhTutor && _usuario.TutorId == consulta.TutorId)
+            return;
+
+        if (_usuario.EhVeterinario && _usuario.VeterinarioId == consulta.VeterinarioId)
+            return;
+
+        throw new AcessoNegadoException("RN-105", "Esta consulta nao pertence ao seu escopo de acesso.");
     }
 
     public async Task<ConsultaDto> ObterPorIdAsync(Guid id)
     {
         var consulta = await _repo.ObterPorIdAsync(id)
             ?? throw new NotFoundException("Consulta", id);
+
+        GarantirAcessoAConsulta(consulta);
         return MapearParaDto(consulta);
     }
 

@@ -19,11 +19,13 @@ public class PagamentoRepository : RepositoryBase<Pagamento>, IPagamentoReposito
             .ToListAsync();
 
     /// <inheritdoc/>
-    public async Task<ResultadoPaginado<Pagamento>> ObterPaginadoAsync(Paginacao paginacao)
+    public async Task<ResultadoPaginado<Pagamento>> ObterPaginadoAsync(Paginacao paginacao, Guid? tutorId = null)
     {
-        var total = await _dbSet.CountAsync();
+        var query = tutorId is null ? _dbSet : _dbSet.Where(p => p.TutorId == tutorId.Value);
 
-        var itens = await _dbSet
+        var total = await query.CountAsync();
+
+        var itens = await query
             .OrderByDescending(p => p.Momento)
             .Skip(paginacao.Deslocamento)
             .Take(paginacao.Tamanho)
