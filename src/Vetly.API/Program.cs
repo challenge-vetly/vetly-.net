@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -26,7 +27,15 @@ builder.Configuration
         reloadOnChange: true);
 
 // ── Controllers ───────────────────────────────────────────────────────────────
-builder.Services.AddControllers();
+builder.Services
+    .AddControllers()
+    .AddJsonOptions(options =>
+    {
+        // Enums trafegam como STRING no JSON ("Presencial", "Confirmado"), nao como numero.
+        // O contrato numerico e ilegivel para o front e quebra a cada reordenacao do enum.
+        // A persistencia nao muda: o EF Core continua gravando NUMBER pelo valor do enum.
+        options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
+    });
 
 // ── OpenAPI / Scalar ─────────────────────────────────────────────────────────
 builder.Services.AddOpenApi();
