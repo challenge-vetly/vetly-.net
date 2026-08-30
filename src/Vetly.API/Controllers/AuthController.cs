@@ -14,7 +14,6 @@ namespace Vetly.API.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/[controller]")]
-[AllowAnonymous]
 [IsentoDeConsentimento]   // autenticacao precede o consentimento (RN-060)
 public class AuthController : ControllerBase
 {
@@ -35,6 +34,7 @@ public class AuthController : ControllerBase
     /// Responsavel a tela de consentimento antes de qualquer acao de negocio.
     /// </summary>
     [HttpPost("registro/tutor")]
+    [AllowAnonymous]
     [ProducesResponseType(typeof(TokenEmitidoDto), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
@@ -46,6 +46,7 @@ public class AuthController : ControllerBase
 
     /// <summary>Autentica por e-mail e senha e emite o par de tokens.</summary>
     [HttpPost("login")]
+    [AllowAnonymous]
     [ProducesResponseType(typeof(TokenEmitidoDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
@@ -57,6 +58,7 @@ public class AuthController : ControllerBase
     /// derruba todas as sessoes do usuario — e sinal de vazamento.
     /// </summary>
     [HttpPost("refresh")]
+    [AllowAnonymous]
     [ProducesResponseType(typeof(TokenEmitidoDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
@@ -65,6 +67,7 @@ public class AuthController : ControllerBase
 
     /// <summary>Encerra a sessao revogando o refresh token. Idempotente.</summary>
     [HttpPost("logout")]
+    [AllowAnonymous]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> Logout([FromBody] RefreshDto dto)
@@ -98,6 +101,7 @@ public class AuthController : ControllerBase
     /// credencial em producao seria uma porta aberta.
     /// </remarks>
     [HttpPost("token")]
+    [AllowAnonymous]
     [Obsolete("Rota de desenvolvimento. Use POST /api/auth/login.")]
     [ProducesResponseType(typeof(TokenEmitidoDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
