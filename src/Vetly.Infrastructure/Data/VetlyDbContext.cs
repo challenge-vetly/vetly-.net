@@ -26,6 +26,15 @@ public class VetlyDbContext : DbContext
     /// <summary>Dispositivos do Responsável registrados para push (RN-007/RN-092).</summary>
     public DbSet<Dispositivo> Dispositivos => Set<Dispositivo>();
 
+    /// <summary>Configuração de agenda dos veterinários (RN-034).</summary>
+    public DbSet<AgendaConfig> AgendaConfigs => Set<AgendaConfig>();
+
+    /// <summary>Horários materializados da agenda (RN-034/RN-035).</summary>
+    public DbSet<Slot> Slots => Set<Slot>();
+
+    /// <summary>Serviços oferecidos pelos prestadores (RN-032/RN-074).</summary>
+    public DbSet<Servico> Servicos => Set<Servico>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(VetlyDbContext).Assembly);
