@@ -6,7 +6,9 @@ namespace Vetly.Application.Strategies.Cancelamento;
 /// <summary>
 /// RN-041/RN-042: Cancelamento entre 24h e 2h de antecedência → reembolso parcial,
 /// com percentual de retenção configurado pela clínica (RN-042).
-/// A taxa de retenção é configurável via appsettings (percentualRetencao).
+/// O percentual chega pronto do <c>ConsultaService</c>, que o lê de
+/// <c>Empresa.PercentualRetencaoParcial</c> — a política é da clínica, definida no
+/// onboarding, e a plataforma apenas a aplica e a torna transparente (RN-042).
 /// </summary>
 public class ReembolsoParcialStrategy : ICancelamentoStrategy
 {

@@ -21,9 +21,30 @@ public class ConsultaServiceTests
     private readonly Mock<IPagamentoRepository> _pagamentoRepoMock = new();
     private readonly Mock<IDocumentoRepository> _documentoRepoMock = new();
     private readonly Mock<IAnimalRepository> _animalRepoMock = new();
+    private readonly Mock<IVeterinarioRepository> _vetRepoMock = new();
+    private readonly Mock<IEmpresaRepository> _empresaRepoMock = new();
 
     private ConsultaService CriarServico(params ICancelamentoStrategy[] strategies) =>
-        new(_repoMock.Object, _pagamentoRepoMock.Object, _documentoRepoMock.Object, _animalRepoMock.Object, strategies);
+        new(_repoMock.Object, _pagamentoRepoMock.Object, _documentoRepoMock.Object,
+            _animalRepoMock.Object, _vetRepoMock.Object, _empresaRepoMock.Object, strategies);
+
+    /// <summary>
+    /// Prepara um veterinario vinculado a uma clinica com a politica de retencao informada,
+    /// e devolve o id do veterinario para montar a consulta (RN-042).
+    /// </summary>
+    private Guid VetVinculadoAClinicaComRetencao(decimal percentual)
+    {
+        var empresa = new Empresa("Clinica Vida Pet", "Clinica", Guid.NewGuid());
+        empresa.DefinirPoliticaRetencao(percentual);
+
+        var vet = new Veterinario("Dra. Marina", new Crmv("12345-SP"), "SP",
+            PersonaVeterinario.Vinculado, PlanoAssinatura.Enterprise);
+        vet.VincularEmpresa(empresa.Id);
+
+        _vetRepoMock.Setup(r => r.ObterPorIdAsync(vet.Id)).ReturnsAsync(vet);
+        _empresaRepoMock.Setup(r => r.ObterPorIdAsync(empresa.Id)).ReturnsAsync(empresa);
+        return vet.Id;
+    }
 
     private static CriarConsultaDto CriarDto(Guid pagamentoId) => new()
     {
@@ -138,6 +159,71 @@ public class ConsultaServiceTests
 
         Assert.Equal("Reembolso Integral", resultado.EstrategiaAplicada);
         Assert.Equal(200m, resultado.ValorReembolso);
+    }
+
+    // ── Retenção configurável pela clínica (RN-042, C-06) ────────────────────
+
+    [Theory]
+    [InlineData(15, 170)]   // clinica retem 15% de R$ 200 => reembolsa 170
+    [InlineData(50, 100)]
+    [InlineData(0, 200)]    // clinica que nao retem nada devolve integral mesmo na faixa parcial
+    public async Task CancelarAsync_FaixaParcial_UsaOPercentualDaClinica(
+        decimal percentualDaClinica, decimal reembolsoEsperado)
+    {
+        var veterinarioId = VetVinculadoAClinicaComRetencao(percentualDaClinica);
+
+        var consulta = new Consulta(
+            DateTime.UtcNow.AddHours(10), ModalidadeAtendimento.Presencial,
+            veterinarioId, Guid.NewGuid(), Guid.NewGuid());
+        var pagamento = new Pagamento(Guid.NewGuid(), 200m, MeioPagamento.Pix, consulta.Id);
+        pagamento.Confirmar();
+
+        _repoMock.Setup(r => r.ObterPorIdAsync(consulta.Id)).ReturnsAsync(consulta);
+        _pagamentoRepoMock.Setup(r => r.ObterPorConsultaAsync(consulta.Id)).ReturnsAsync(pagamento);
+        _repoMock.Setup(r => r.Atualizar(It.IsAny<Consulta>()));
+        _pagamentoRepoMock.Setup(r => r.Atualizar(It.IsAny<Pagamento>()));
+        _repoMock.Setup(r => r.SalvarAsync()).ReturnsAsync(1);
+
+        var service = CriarServico(
+            new ReembolsoIntegralStrategy(),
+            new ReembolsoParcialStrategy(),
+            new SemReembolsoStrategy());
+
+        var resultado = await service.CancelarAsync(consulta.Id);
+
+        Assert.Equal("Reembolso Parcial", resultado.EstrategiaAplicada);
+        Assert.Equal(percentualDaClinica, resultado.PercentualRetencao);
+        Assert.Equal(reembolsoEsperado, resultado.ValorReembolso);
+    }
+
+    [Fact]
+    public async Task CancelarAsync_VetAutonomoSemEmpresa_CaiNoPadraoDeTrintaPorCento()
+    {
+        var vet = new Veterinario("Dr. Autonomo", new Crmv("54321-SP"), "SP",
+            PersonaVeterinario.Autonomo, PlanoAssinatura.Basico);
+        _vetRepoMock.Setup(r => r.ObterPorIdAsync(vet.Id)).ReturnsAsync(vet);
+
+        var consulta = new Consulta(
+            DateTime.UtcNow.AddHours(10), ModalidadeAtendimento.Presencial,
+            vet.Id, Guid.NewGuid(), Guid.NewGuid());
+        var pagamento = new Pagamento(Guid.NewGuid(), 200m, MeioPagamento.Pix, consulta.Id);
+        pagamento.Confirmar();
+
+        _repoMock.Setup(r => r.ObterPorIdAsync(consulta.Id)).ReturnsAsync(consulta);
+        _pagamentoRepoMock.Setup(r => r.ObterPorConsultaAsync(consulta.Id)).ReturnsAsync(pagamento);
+        _repoMock.Setup(r => r.Atualizar(It.IsAny<Consulta>()));
+        _pagamentoRepoMock.Setup(r => r.Atualizar(It.IsAny<Pagamento>()));
+        _repoMock.Setup(r => r.SalvarAsync()).ReturnsAsync(1);
+
+        var service = CriarServico(
+            new ReembolsoIntegralStrategy(),
+            new ReembolsoParcialStrategy(),
+            new SemReembolsoStrategy());
+
+        var resultado = await service.CancelarAsync(consulta.Id);
+
+        Assert.Equal(30m, resultado.PercentualRetencao);
+        Assert.Equal(140m, resultado.ValorReembolso);
     }
 
     [Fact]

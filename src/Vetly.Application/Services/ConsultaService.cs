@@ -19,6 +19,8 @@ public class ConsultaService : IConsultaService
     private readonly IPagamentoRepository _pagamentoRepo;
     private readonly IDocumentoRepository _documentoRepo;
     private readonly IAnimalRepository _animalRepo;
+    private readonly IVeterinarioRepository _veterinarioRepo;
+    private readonly IEmpresaRepository _empresaRepo;
     private readonly IEnumerable<ICancelamentoStrategy> _strategies;
 
     public ConsultaService(
@@ -26,12 +28,16 @@ public class ConsultaService : IConsultaService
         IPagamentoRepository pagamentoRepo,
         IDocumentoRepository documentoRepo,
         IAnimalRepository animalRepo,
+        IVeterinarioRepository veterinarioRepo,
+        IEmpresaRepository empresaRepo,
         IEnumerable<ICancelamentoStrategy> strategies)
     {
         _repo = repo;
         _pagamentoRepo = pagamentoRepo;
         _documentoRepo = documentoRepo;
         _animalRepo = animalRepo;
+        _veterinarioRepo = veterinarioRepo;
+        _empresaRepo = empresaRepo;
         _strategies = strategies;
     }
 
@@ -119,7 +125,9 @@ public class ConsultaService : IConsultaService
             .OrderBy(s => s.Prioridade)
             .First(s => s.Aplicavel(consulta.DataHora, DateTime.UtcNow));
 
-        var resultado = strategy.Executar(pagamento, percentualRetencao: 30m);
+        // RN-042: a politica de retencao e da clinica, nao da plataforma
+        var percentualRetencao = await ObterPercentualRetencaoAsync(consulta.VeterinarioId);
+        var resultado = strategy.Executar(pagamento, percentualRetencao);
 
         pagamento.Estornar(resultado.ValorReembolso);
         consulta.Cancelar();
@@ -212,6 +220,26 @@ public class ConsultaService : IConsultaService
         consulta.ValidarDiagnostico();
         _repo.Atualizar(consulta);
         await _repo.SalvarAsync();
+    }
+
+    /// <summary>
+    /// Percentual de retencao aplicavel ao cancelamento parcial (RN-042).
+    ///
+    /// A politica pertence a clinica e e configurada no onboarding: le-se de
+    /// <c>Empresa.PercentualRetencaoParcial</c> pelo vinculo do veterinario.
+    ///
+    /// Veterinario autonomo nao tem empresa e ainda nao tem coluna propria de politica
+    /// (entra junto de PUT /api/veterinarios/{id}/servicos, na onda 3); ate la vale o
+    /// padrao de 30% do onboarding, que e o mesmo valor que estava fixo no codigo.
+    /// </summary>
+    private async Task<decimal> ObterPercentualRetencaoAsync(Guid veterinarioId)
+    {
+        var vet = await _veterinarioRepo.ObterPorIdAsync(veterinarioId);
+        if (vet?.EmpresaId is null)
+            return Empresa.PercentualRetencaoPadrao;
+
+        var empresa = await _empresaRepo.ObterPorIdAsync(vet.EmpresaId.Value);
+        return empresa?.PercentualRetencaoParcial ?? Empresa.PercentualRetencaoPadrao;
     }
 
     /// <summary>
