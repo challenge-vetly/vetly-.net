@@ -18,6 +18,10 @@ public class VeterinarioRepository : RepositoryBase<Veterinario>, IVeterinarioRe
             .FirstOrDefaultAsync(v => v.Crmv.Valor == crmv.ToUpperInvariant());
 
     /// <inheritdoc/>
+    public async Task<Veterinario?> ObterPorEmailAsync(string email) =>
+        await _dbSet.FirstOrDefaultAsync(v => v.Email == email.Trim().ToLower());
+
+    /// <inheritdoc/>
     public async Task<IEnumerable<Veterinario>> ObterPorUfAsync(string uf) =>
         await _dbSet
             .Where(v => v.Ativo && v.UfAtuacao == uf.ToUpperInvariant())

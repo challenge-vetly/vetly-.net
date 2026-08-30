@@ -62,7 +62,7 @@ public class ConsultasControllerTests : IClassFixture<VetlyWebApplicationFactory
         _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
 
         var payload = new StringContent(
-            """{"nome":"Dr. Teste","crmv":"ABC-SP","ufAtuacao":"SP","persona":1,"plano":1}""",
+            """{"nome":"Dr. Teste","crmv":"ABC-SP","ufAtuacao":"SP","email":"dr.teste@exemplo.com","persona":1,"plano":1}""",
             Encoding.UTF8, "application/json");
 
         var response = await _client.PostAsync("/api/veterinarios", payload);
@@ -89,7 +89,7 @@ public class ConsultasControllerTests : IClassFixture<VetlyWebApplicationFactory
         _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
 
         var payload = new StringContent(
-            $$$"""{"nome":"Dr. Duplicado","crmv":"{{{crmvExistente}}}","ufAtuacao":"SP","persona":1,"plano":1}""",
+            $$$"""{"nome":"Dr. Duplicado","crmv":"{{{crmvExistente}}}","ufAtuacao":"SP","email":"dr.duplicado@exemplo.com","persona":1,"plano":1}""",
             Encoding.UTF8, "application/json");
 
         var response = await _client.PostAsync("/api/veterinarios", payload);
@@ -121,7 +121,7 @@ public class ConsultasControllerTests : IClassFixture<VetlyWebApplicationFactory
         _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
 
         var payload = new StringContent(
-            """{"nome":"Dra. Enum","crmv":"77777-SP","ufAtuacao":"SP","persona":"Autonomo","plano":"Enterprise"}""",
+            """{"nome":"Dra. Enum","crmv":"77777-SP","ufAtuacao":"SP","email":"dra.enum@exemplo.com","persona":"Autonomo","plano":"Enterprise"}""",
             Encoding.UTF8, "application/json");
 
         var response = await _client.PostAsync("/api/veterinarios", payload);

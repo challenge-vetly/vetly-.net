@@ -11,6 +11,12 @@ public interface IVeterinarioRepository : IRepositoryBase<Veterinario>
     /// <summary>Busca um veterinário pelo valor do CRMV (ex: "12345-SP").</summary>
     Task<Veterinario?> ObterPorCrmvAsync(string crmv);
 
+    /// <summary>
+    /// Busca por e-mail de acesso. Inclui inativos de proposito: o vet desativado
+    /// precisa conseguir entrar para pedir o extrato dos proprios atendimentos (RN-024).
+    /// </summary>
+    Task<Veterinario?> ObterPorEmailAsync(string email);
+
     /// <summary>Retorna todos os veterinários ativos de uma determinada UF.</summary>
     Task<IEnumerable<Veterinario>> ObterPorUfAsync(string uf);
 

@@ -51,6 +51,24 @@ public class Veterinario
     [Required]
     public PlanoAssinatura Plano { get; private set; }
 
+    /// <summary>
+    /// E-mail de acesso à plataforma. Nulo em cadastros anteriores à migration de
+    /// credenciais; obrigatório nos novos.
+    /// </summary>
+    [MaxLength(254)]
+    [EmailAddress(ErrorMessage = "E-mail inválido.")]
+    public string? Email { get; private set; }
+
+    /// <summary>Hash da senha de acesso. A entidade nunca vê a senha em claro.</summary>
+    [MaxLength(255)]
+    public string? SenhaHash { get; private set; }
+
+    /// <summary>
+    /// Indica que a senha atual é a temporária entregue ao Admin no cadastro e ainda
+    /// não foi trocada pelo profissional (pendência P-05).
+    /// </summary>
+    public bool SenhaTemporaria { get; private set; }
+
     /// <summary>Indica se o cadastro está ativo. Desativação é feita via soft delete.</summary>
     public bool Ativo { get; private set; }
 
@@ -162,6 +180,31 @@ public class Veterinario
         EmpresaId = empresaId;
         Persona = PersonaVeterinario.Vinculado;
     }
+
+    /// <summary>Define o e-mail de acesso à plataforma.</summary>
+    public void DefinirEmail(string email)
+    {
+        if (string.IsNullOrWhiteSpace(email))
+            throw new ArgumentException("O e-mail é obrigatório.", nameof(email));
+
+        Email = email.Trim().ToLowerInvariant();
+    }
+
+    /// <summary>
+    /// Define o hash da senha. <paramref name="temporaria"/> marca a senha gerada no
+    /// cadastro pelo Admin, que o profissional precisa trocar no primeiro acesso.
+    /// </summary>
+    public void DefinirSenhaHash(string hash, bool temporaria)
+    {
+        if (string.IsNullOrWhiteSpace(hash))
+            throw new ArgumentException("O hash da senha é obrigatório.", nameof(hash));
+
+        SenhaHash = hash;
+        SenhaTemporaria = temporaria;
+    }
+
+    /// <summary>Verdadeiro quando o veterinário já consegue entrar com e-mail e senha.</summary>
+    public bool TemCredencial() => !string.IsNullOrWhiteSpace(Email) && !string.IsNullOrWhiteSpace(SenhaHash);
 
     /// <summary>Define ou substitui o endereço do veterinário (RN-026).</summary>
     public void DefinirEndereco(Endereco endereco)

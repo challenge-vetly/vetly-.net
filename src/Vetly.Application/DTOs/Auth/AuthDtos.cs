@@ -69,6 +69,24 @@ public class TokenEmitidoDto
     /// Responsável à tela de consentimento antes de qualquer outra ação (RN-060).
     /// </summary>
     public bool ConsentimentoPendente { get; set; }
+
+    /// <summary>
+    /// Verdadeiro quando o veterinário ainda usa a senha temporária gerada no
+    /// cadastro pelo Admin e precisa trocá-la (P-05).
+    /// </summary>
+    public bool SenhaTemporaria { get; set; }
+}
+
+/// <summary>Troca de senha do usuário autenticado.</summary>
+public class TrocarSenhaDto
+{
+    [Required(ErrorMessage = "A senha atual é obrigatória.")]
+    public string SenhaAtual { get; set; } = string.Empty;
+
+    [Required(ErrorMessage = "A nova senha é obrigatória.")]
+    [MinLength(8, ErrorMessage = "A nova senha deve ter ao menos 8 caracteres.")]
+    [MaxLength(128)]
+    public string NovaSenha { get; set; } = string.Empty;
 }
 
 /// <summary>Perfil do usuário autenticado e o que ainda falta ele resolver.</summary>

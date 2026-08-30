@@ -12,7 +12,7 @@ O Vetly é uma API REST para gestão de clínicas veterinárias, cobrindo todo o
 | Autenticação | JWT Bearer |
 | Documentação | Scalar (tema DeepSpace) em `/scalar/v1` |
 | IA | Ollama local (modelo `llama3.1`) |
-| Testes | xUnit + Moq (216 testes verdes) |
+| Testes | xUnit + Moq (229 testes verdes) |
 
 ## Padrões aplicados
 
@@ -113,7 +113,9 @@ curl -X POST https://localhost:7262/api/auth/refresh -H "Content-Type: applicati
 
 O token de acesso vale 8 horas; o refresh token, 30 dias, e é **rotativo**: cada renovação revoga o anterior. Reapresentar um token já usado derruba todas as sessões daquele usuário — é o sinal de que ele vazou.
 
-**Admin e veterinário (desenvolvimento)** — enquanto a credencial do vet não entra, a rota obsoleta segue disponível apenas em `Development`:
+**Veterinário** — o Admin cadastra o profissional em `POST /api/veterinarios` e a resposta traz a **senha temporária** de primeiro acesso, exibida uma única vez. O veterinário entra em `/api/auth/login` com ela e troca em `POST /api/auth/trocar-senha`. Vet desativado ainda faz login, mas com a role `VetDesativado`, limitada ao extrato dos próprios atendimentos (RN-022/RN-024).
+
+**Admin (desenvolvimento)** — o Admin ainda não tem cadastro próprio; a rota obsoleta segue disponível apenas em `Development`:
 
 ```bash
 curl -X POST https://localhost:7262/api/auth/token -H "Content-Type: application/json" -d '{"usuario":"admin-teste","role":"Admin"}'
@@ -151,6 +153,7 @@ curl http://localhost:5099/health/ready
 | POST | `/api/auth/refresh` | Renova o acesso rotacionando o refresh token |
 | POST | `/api/auth/logout` | Encerra a sessão (idempotente) |
 | GET | `/api/auth/me` | Perfil do usuário autenticado e pendências |
+| POST | `/api/auth/trocar-senha` | Troca a senha e encerra as demais sessões |
 | POST | `/api/auth/token` | **Obsoleto** — emite JWT sem senha; responde 404 fora de `Development` |
 
 ### Veterinarios
@@ -160,7 +163,7 @@ curl http://localhost:5099/health/ready
 | GET | `/api/veterinarios/{id}` | Detalhe |
 | GET | `/api/veterinarios/regiao/{uf}` | Por UF (ex: SP, RJ) |
 | GET | `/api/veterinarios/{id}/agenda` | Agenda futura de consultas |
-| POST | `/api/veterinarios` | Cadastrar — requer role Admin (RN-107); aceita bloco de endereço (RN-026) |
+| POST | `/api/veterinarios` | Cadastrar — requer role Admin (RN-107); aceita endereço (RN-026); devolve a **senha temporária** de primeiro acesso, uma única vez (P-05) |
 | PUT | `/api/veterinarios/{id}` | Atualizar |
 | GET | `/api/veterinarios/{id}/crmv` | Situação do CRMV junto ao conselho e reflexo no matching (RN-107) |
 | POST | `/api/veterinarios/{id}/crmv` | Reconsulta o conselho e reaplica o resultado — requer role Admin (RN-107) |
@@ -300,6 +303,7 @@ Sem parâmetros valem página 1 e 20 itens. O tamanho é limitado a 100 por pág
 | RN-041 | Cancelamento com mais de 24h de antecedência = reembolso integral | `ReembolsoIntegralStrategy` |
 | RN-041/RN-042 | Cancelamento entre 2h e 24h = reembolso parcial, com o percentual configurado pela clínica (padrão 30%) | `ReembolsoParcialStrategy` + `ConsultaService.CancelarAsync` |
 | RN-041 | Cancelamento com menos de 2h = sem reembolso | `SemReembolsoStrategy` |
+| RN-022/RN-024 | Vet desativado entra com role `VetDesativado` e é bloqueado em toda rota de negócio, mantendo só o que a RN-024 garante | `VetDesativadoFilter` + `AuthService` |
 | RN-060 | Sem consentimento de atendimento, as rotas de negócio do Responsável devolvem 422 — a base legal precede o tratamento | `ConsentimentoAtendimentoFilter` |
 | RN-061/RN-062 | Consentimento granular por finalidade, com data de concessão e de revogação; revogar não apaga registro clínico já produzido | `Tutor.RegistrarConsentimento` + `TutorService` |
 | RN-081 | Sugestão de dose exige peso do animal — `POST /api/ia/protocolo` com peso ausente/zero devolve 422, e o cadastro do pet passa a exigir `pesoKg` | `OllamaService.SugerirProtocoloAsync` + `AnimalService` |

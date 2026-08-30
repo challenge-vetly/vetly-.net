@@ -27,4 +27,11 @@ public interface IAuthService
 
     /// <summary>Perfil do usuário autenticado e suas pendências (RN-060, RN-107).</summary>
     Task<PerfilDto> ObterPerfilAsync(Guid usuarioId);
+
+    /// <summary>
+    /// Troca a senha do usuário autenticado. É o que fecha o ciclo da senha temporária
+    /// do veterinário (P-05). Derruba as demais sessões: se a senha antiga vazou, o
+    /// refresh dela não pode continuar valendo.
+    /// </summary>
+    Task TrocarSenhaAsync(Guid usuarioId, TrocarSenhaDto dto);
 }
