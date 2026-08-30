@@ -38,6 +38,9 @@ public class VetlyDbContext : DbContext
     /// <summary>Tabela de apoio da geocodificação simulada (RN-026, §5.6).</summary>
     public DbSet<CepCoordenada> CepCoordenadas => Set<CepCoordenada>();
 
+    /// <summary>Lista de espera por horário (RN-004/RN-037).</summary>
+    public DbSet<ItemListaEspera> ListaDeEspera => Set<ItemListaEspera>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(VetlyDbContext).Assembly);
