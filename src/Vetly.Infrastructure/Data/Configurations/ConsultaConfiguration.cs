@@ -57,6 +57,19 @@ public class ConsultaConfiguration : IEntityTypeConfiguration<Consulta>
             .HasColumnName("STATUS_PAGAMENTO")
             .IsRequired();
 
+        // ── Checkout (RN-003/RN-032/RN-035/RN-040) ───────────────────────────
+        builder.Property(c => c.SlotId)
+            .HasColumnType("CHAR(36)").HasColumnName("SLOT_ID");
+
+        builder.Property(c => c.ServicoId)
+            .HasColumnType("CHAR(36)").HasColumnName("SERVICO_ID");
+
+        builder.Property(c => c.EmpresaId)
+            .HasColumnType("CHAR(36)").HasColumnName("EMPRESA_ID");
+
+        builder.Property(c => c.Origem)
+            .HasConversion<int>().HasColumnName("ORIGEM").IsRequired();
+
         // Estado da consulta na maquina de estados (RN-035/RN-038).
         // Fonte de verdade; CANCELADA e FINALIZADA seguem por dupla escrita.
         builder.Property(c => c.Status)

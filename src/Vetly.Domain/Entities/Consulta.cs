@@ -66,6 +66,24 @@ public class Consulta
     /// </summary>
     public bool Finalizada { get; private set; }
 
+    /// <summary>
+    /// Horário da agenda reservado para esta consulta. Nulo na emergência presencial,
+    /// que não passa por slot (RN-040).
+    /// </summary>
+    public Guid? SlotId { get; private set; }
+
+    /// <summary>Serviço contratado, que define o valor da consulta (RN-032).</summary>
+    public Guid? ServicoId { get; private set; }
+
+    /// <summary>
+    /// Clínica que designou o profissional, quando o agendamento foi feito com ela
+    /// e não com um autônomo (RN-003).
+    /// </summary>
+    public Guid? EmpresaId { get; private set; }
+
+    /// <summary>Como a consulta entrou na plataforma (RN-035/RN-040).</summary>
+    public OrigemConsulta Origem { get; private set; }
+
     /// <summary>Construtor privado reservado ao EF Core para materialização de entidades.</summary>
     private Consulta() { }
 
@@ -83,6 +101,26 @@ public class Consulta
         TutorId = tutorId;
         StatusPagamento = StatusPagamento.Pendente; // pagamento confirmado é pré-requisito (RN-006)
         Status = StatusConsulta.EmCheckout;
+        Origem = OrigemConsulta.Emergencia;
+    }
+
+    /// <summary>
+    /// Cria a consulta do fluxo de checkout do app: nasce em <c>EmCheckout</c>, presa
+    /// ao horário travado, e só a confirmação do pagamento a promove (RN-006/RN-035).
+    /// </summary>
+    public static Consulta ParaCheckout(
+        DateTime dataHora, Guid veterinarioId, Guid animalId, Guid tutorId,
+        Guid slotId, Guid servicoId, Guid? empresaId = null)
+    {
+        var consulta = new Consulta(dataHora, ModalidadeAtendimento.Presencial, veterinarioId, animalId, tutorId)
+        {
+            SlotId = slotId,
+            ServicoId = servicoId,
+            EmpresaId = empresaId,
+            Origem = OrigemConsulta.Checkout
+        };
+
+        return consulta;
     }
 
     /// <summary>Marca o pagamento como confirmado, liberando o agendamento (RN-006).</summary>
