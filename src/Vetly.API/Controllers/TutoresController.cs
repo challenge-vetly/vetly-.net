@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Vetly.API.Filters;
+using Vetly.Application.DTOs.Dispositivo;
 using Vetly.Application.DTOs.Tutor;
 using Vetly.Application.Interfaces;
 
@@ -13,8 +14,13 @@ namespace Vetly.API.Controllers;
 public class TutoresController : ControllerBase
 {
     private readonly ITutorService _service;
+    private readonly IDispositivoService _dispositivos;
 
-    public TutoresController(ITutorService service) => _service = service;
+    public TutoresController(ITutorService service, IDispositivoService dispositivos)
+    {
+        _service = service;
+        _dispositivos = dispositivos;
+    }
 
     /// <summary>
     /// Retorna todos os tutores ativos. Restrito a Admins (RN-069/RN-106): a lista
@@ -106,4 +112,40 @@ public class TutoresController : ControllerBase
     public async Task<IActionResult> AtualizarConsentimentos(
         Guid id, [FromBody] AtualizarConsentimentosDto dto) =>
         Ok(await _service.AtualizarConsentimentosAsync(id, dto));
+
+    /// <summary>Dispositivos ativos do Responsavel, usados para push (RN-007/RN-092).</summary>
+    [HttpGet("{id:guid}/dispositivos")]
+    [ProducesResponseType(typeof(IEnumerable<DispositivoDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> ObterDispositivos(Guid id) =>
+        Ok(await _dispositivos.ObterDoTutorAsync(id));
+
+    /// <summary>
+    /// Registra um dispositivo para receber push (RN-007/RN-092).
+    /// Idempotente por push token: reinstalar o app reaproveita o registro.
+    /// </summary>
+    [HttpPost("{id:guid}/dispositivos")]
+    [ProducesResponseType(typeof(DispositivoDto), StatusCodes.Status201Created)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> RegistrarDispositivo(Guid id, [FromBody] RegistrarDispositivoDto dto)
+    {
+        var dispositivo = await _dispositivos.RegistrarAsync(id, dto);
+        return Created(string.Empty, dispositivo);
+    }
+
+    /// <summary>Remove um dispositivo do Responsavel (remocao logica).</summary>
+    [HttpDelete("{id:guid}/dispositivos/{dispositivoId:guid}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> RemoverDispositivo(Guid id, Guid dispositivoId)
+    {
+        await _dispositivos.RemoverAsync(id, dispositivoId);
+        return NoContent();
+    }
 }

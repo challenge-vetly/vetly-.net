@@ -12,7 +12,7 @@ O Vetly é uma API REST para gestão de clínicas veterinárias, cobrindo todo o
 | Autenticação | JWT Bearer |
 | Documentação | Scalar (tema DeepSpace) em `/scalar/v1` |
 | IA | Ollama local (modelo `llama3.1`) |
-| Testes | xUnit + Moq (207 testes verdes) |
+| Testes | xUnit + Moq (215 testes verdes) |
 
 ## Padrões aplicados
 
@@ -187,6 +187,9 @@ curl http://localhost:5099/health/ready
 | PUT | `/api/tutores/{id}` | Atualizar |
 | GET | `/api/tutores/{id}/consentimentos` | Estado das 5 finalidades, com datas de concessão e revogação (RN-061) |
 | PUT | `/api/tutores/{id}/consentimentos` | Concede ou revoga finalidades — não revoga por omissão (RN-061/RN-062) |
+| GET | `/api/tutores/{id}/dispositivos` | Dispositivos ativos para push (RN-007/RN-092) |
+| POST | `/api/tutores/{id}/dispositivos` | Registra dispositivo — idempotente por push token |
+| DELETE | `/api/tutores/{id}/dispositivos/{dispositivoId}` | Remove dispositivo (remoção lógica) |
 | DELETE | `/api/tutores/{id}` | Desativar (soft delete + anonimização LGPD) |
 
 ### Consultas
