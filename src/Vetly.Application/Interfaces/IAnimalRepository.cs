@@ -21,4 +21,15 @@ public interface IAnimalRepository : IRepositoryBase<Animal>
 
     /// <summary>Retorna todos os animais ativos cadastrados.</summary>
     Task<IEnumerable<Animal>> ObterAtivosAsync();
+
+    /// <summary>
+    /// Retorna os animais que um veterinário atendeu ou que estão agendados para ele.
+    /// É o escopo de acesso do vet vinculado (RN-105).
+    /// </summary>
+    Task<IEnumerable<Animal>> ObterPorVeterinarioAsync(Guid veterinarioId);
+
+    /// <summary>
+    /// Indica se o veterinário tem alguma consulta com o animal — atendida ou agendada.
+    /// </summary>
+    Task<bool> VeterinarioAtendeAnimalAsync(Guid veterinarioId, Guid animalId);
 }

@@ -37,4 +37,16 @@ public class AnimalRepository : RepositoryBase<Animal>, IAnimalRepository
         await _dbSet
             .Where(a => a.Ativo)
             .ToListAsync();
+
+    /// <inheritdoc/>
+    public async Task<IEnumerable<Animal>> ObterPorVeterinarioAsync(Guid veterinarioId) =>
+        await _dbSet
+            .Where(a => a.Ativo && _context.Consultas
+                .Any(c => c.VeterinarioId == veterinarioId && c.AnimalId == a.Id))
+            .ToListAsync();
+
+    /// <inheritdoc/>
+    public async Task<bool> VeterinarioAtendeAnimalAsync(Guid veterinarioId, Guid animalId) =>
+        await _context.Consultas
+            .AnyAsync(c => c.VeterinarioId == veterinarioId && c.AnimalId == animalId);
 }

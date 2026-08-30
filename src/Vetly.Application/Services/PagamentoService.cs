@@ -14,22 +14,32 @@ public class PagamentoService : IPagamentoService
     private readonly IVeterinarioRepository _vetRepo;
     private readonly IConsultaRepository _consultaRepo;
     private readonly IEnumerable<ISplitFinanceiroStrategy> _splitStrategies;
+    private readonly IUsuarioAtual _usuario;
 
     public PagamentoService(
         IPagamentoRepository repo,
         IVeterinarioRepository vetRepo,
         IConsultaRepository consultaRepo,
-        IEnumerable<ISplitFinanceiroStrategy> splitStrategies)
+        IEnumerable<ISplitFinanceiroStrategy> splitStrategies,
+        IUsuarioAtual usuario)
     {
         _repo = repo;
         _vetRepo = vetRepo;
         _consultaRepo = consultaRepo;
         _splitStrategies = splitStrategies;
+        _usuario = usuario;
     }
 
+    /// <summary>
+    /// Lista pagamentos no escopo de quem chama: o Responsável vê a própria carteira,
+    /// o Admin vê o consolidado (RN-106).
+    /// </summary>
     public async Task<ResultadoPaginado<PagamentoDto>> ObterTodosAsync(Paginacao paginacao)
     {
-        var pagina = await _repo.ObterPaginadoAsync(paginacao);
+        // Escopo do token, nunca parametro do cliente. Sem escopo reconhecido, nada.
+        Guid? tutorId = _usuario.EhAdmin ? null : (_usuario.TutorId ?? Guid.Empty);
+
+        var pagina = await _repo.ObterPaginadoAsync(paginacao, tutorId);
         return pagina.Mapear(MapearParaDto);
     }
 
@@ -37,6 +47,10 @@ public class PagamentoService : IPagamentoService
     {
         var pagamento = await _repo.ObterPorIdAsync(id)
             ?? throw new NotFoundException("Pagamento", id);
+
+        if (!_usuario.EhAdmin && _usuario.TutorId != pagamento.TutorId)
+            throw new AcessoNegadoException("RN-106", "Este pagamento nao pertence ao seu escopo de acesso.");
+
         return MapearParaDto(pagamento);
     }
 

@@ -23,10 +23,15 @@ public class ConsultaServiceTests
     private readonly Mock<IAnimalRepository> _animalRepoMock = new();
     private readonly Mock<IVeterinarioRepository> _vetRepoMock = new();
     private readonly Mock<IEmpresaRepository> _empresaRepoMock = new();
+    private readonly Mock<IUsuarioAtual> _usuarioMock = new();
 
     private ConsultaService CriarServico(params ICancelamentoStrategy[] strategies) =>
         new(_repoMock.Object, _pagamentoRepoMock.Object, _documentoRepoMock.Object,
-            _animalRepoMock.Object, _vetRepoMock.Object, _empresaRepoMock.Object, strategies);
+            _animalRepoMock.Object, _vetRepoMock.Object, _empresaRepoMock.Object,
+            strategies, _usuarioMock.Object);
+
+    /// <summary>Por padrao os testes rodam como Admin, que enxerga todo o escopo.</summary>
+    public ConsultaServiceTests() => _usuarioMock.SetupGet(u => u.EhAdmin).Returns(true);
 
     /// <summary>
     /// Prepara um veterinario vinculado a uma clinica com a politica de retencao informada,

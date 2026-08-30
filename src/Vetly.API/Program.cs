@@ -15,6 +15,7 @@ using Vetly.Infrastructure.Repositories;
 using Vetly.Infrastructure.Security;
 using Vetly.API.Middlewares;
 using Vetly.API.HealthChecks;
+using Vetly.API.Security;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 
@@ -90,6 +91,11 @@ builder.Services.AddScoped<IPagamentoRepository, PagamentoRepository>();
 builder.Services.AddScoped<IEmpresaRepository, EmpresaRepository>();
 builder.Services.AddScoped<ILembreteRepository, LembreteRepository>();
 builder.Services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
+
+// ── Escopo do usuário da requisição (RN-105/RN-106) ──────────────────────────
+// Os serviços leem identidade e escopo daqui, nunca de parametro vindo do cliente.
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<IUsuarioAtual, UsuarioAtual>();
 
 // ── Segurança: hash de senha e emissão de token ──────────────────────────────
 // PBKDF2-HMAC-SHA256 com os parâmetros do OWASP; ver Pbkdf2SenhaHasher.
