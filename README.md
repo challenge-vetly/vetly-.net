@@ -12,7 +12,7 @@ O Vetly é uma API REST para gestão de clínicas veterinárias, cobrindo todo o
 | Autenticação | JWT Bearer |
 | Documentação | Scalar (tema DeepSpace) em `/scalar/v1` |
 | IA | Ollama local (modelo `llama3.1`) |
-| Testes | xUnit + Moq (62 testes verdes) |
+| Testes | xUnit + Moq (77 testes verdes) |
 
 ## Padrões aplicados
 
@@ -138,7 +138,7 @@ curl http://localhost:5099/health/ready
 | GET | `/api/veterinarios/{id}` | Detalhe |
 | GET | `/api/veterinarios/regiao/{uf}` | Por UF (ex: SP, RJ) |
 | GET | `/api/veterinarios/{id}/agenda` | Agenda futura de consultas |
-| POST | `/api/veterinarios` | Cadastrar — requer role Admin (RN-107) |
+| POST | `/api/veterinarios` | Cadastrar — requer role Admin (RN-107); aceita bloco de endereço (RN-026) |
 | PUT | `/api/veterinarios/{id}` | Atualizar |
 | DELETE | `/api/veterinarios/{id}` | Desativar — requer role Admin, retorna agendamentos futuros (RN-022/RN-025) |
 
@@ -251,6 +251,8 @@ curl http://localhost:5099/health/ready
 |---|---|---|
 | RN-006 | Consulta só pode ser agendada se o pagamento estiver com status Confirmado | `ConsultaService.AgendarAsync` |
 | RN-022/RN-025 | Desativação de veterinário encerra o acesso e retorna agendamentos futuros ao chamador | `VeterinarioService.DesativarAsync` |
+| RN-026 | Endereço do prestador persistido no próprio registro, com latitude/longitude derivadas dele — nunca informadas pelo cliente | `Endereco` (owned type em TB_VETERINARIO) |
+| RN-033/RN-057 | Nota só é pública a partir de 3 avaliações; `PUBLICADO_EM` ancora o selo "Novo na Vetly" por 30 dias | `Veterinario.TemNotaPublica` + `PublicarNoMatching` |
 | RN-039 | Atendimento remoto está fora do escopo desta fase — agendamento aceita apenas `Presencial` | `ConsultaService.AgendarAsync` + `AtualizarAsync` |
 | RN-041 | Cancelamento com mais de 24h de antecedência = reembolso integral | `ReembolsoIntegralStrategy` |
 | RN-041/RN-042 | Cancelamento entre 2h e 24h = reembolso parcial (retenção de 30% — ainda fixa, ver C-06) | `ReembolsoParcialStrategy` |
@@ -263,7 +265,7 @@ curl http://localhost:5099/health/ready
 | RN-094 | Resposta do tutor encerra a régua de contato | `LembreteService.RegistrarRespostaAsync` |
 | RN-095 | Após 3 tentativas sem resposta, `AlertaEnviadoClinica = true` | `LembreteService.ProcessarTentativaAsync` |
 | RN-100 | Procedimentos acumulam `ValorTotalApurado`; alta retorna `saldo = total − caução` | `InternacaoService.RegistrarProcedimentosAsync` + `DarAltaAsync` |
-| RN-107 | CRMV validado por regex `^\d{4,6}-[A-Z]{2}$` e verificação de duplicidade (validação junto ao conselho é pendente — C-05) | `VeterinarioService.CriarAsync` |
+| RN-107 | CRMV validado por regex `^\d{4,6}-[A-Z]{2}$` + duplicidade; perfil nasce `PendenteValidacao` e só é publicado no matching com CRMV `Valido` (adaptador do conselho: C-05) | `VeterinarioService.CriarAsync` + `Veterinario.PublicarNoMatching` |
 | CONSULTA-001 | Consulta já cancelada não pode ser cancelada novamente | `ConsultaService.CancelarAsync` |
 | CONSULTA-002 | Pagamento da consulta não encontrado ao cancelar | `ConsultaService.CancelarAsync` |
 | CONSULTA-003 | Não é possível validar diagnóstico de consulta cancelada | `ConsultaService.ValidarDiagnosticoAsync` |

@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Vetly.Domain.Entities;
+using Vetly.Domain.Enums;
 
 namespace Vetly.Infrastructure.Data.Configurations;
 
@@ -80,7 +81,84 @@ public class VeterinarioConfiguration : IEntityTypeConfiguration<Veterinario>
                 .IsRequired();
         });
 
+        // ── CRMV junto ao conselho, matching e reputação (RN-026/030/033/057/107) ──
+        // Sem HasDefaultValue no modelo: a entidade sempre escreve o valor explicito, e um
+        // DEFAULT de banco em enum dispara o aviso de sentinela do EF (o CLR default 0 nao e
+        // membro valido). O valor das linhas ja existentes vem do defaultValue da migration.
+
+        builder.Property(v => v.CrmvStatus)
+            .HasConversion<int>()
+            .HasColumnName("CRMV_STATUS")
+            .IsRequired();
+
+        builder.Property(v => v.CrmvValidadoEm)
+            .HasColumnName("CRMV_VALIDADO_EM");
+
+        builder.Property(v => v.NotaMedia)
+            .HasColumnType("NUMBER(3,2)")
+            .HasColumnName("NOTA_MEDIA")
+            .IsRequired();
+
+        builder.Property(v => v.NumAvaliacoes)
+            .HasColumnType("NUMBER(10)")
+            .HasColumnName("NUM_AVALIACOES")
+            .IsRequired();
+
+        builder.Property(v => v.MatchingStatus)
+            .HasConversion<int>()
+            .HasColumnName("MATCHING_STATUS")
+            .IsRequired();
+
+        builder.Property(v => v.Publicado)
+            .HasColumnType("NUMBER(1)")
+            .HasColumnName("PUBLICADO")
+            .IsRequired();
+
+        builder.Property(v => v.PublicadoEm)
+            .HasColumnName("PUBLICADO_EM");
+
+        // Endereço embutido na própria tabela (RN-026), mesmo padrão de owned entity
+        // já usado no value object Crmv. Opcional: os cadastros anteriores à migration
+        // não têm endereço, e todas as colunas ficam nullable.
+        builder.OwnsOne(v => v.Endereco, endereco =>
+        {
+            // CEP e a propriedade que marca a existencia do dependente opcional: sem ela o
+            // EF nao sabe distinguir "sem endereco" de "endereco com tudo nulo". A coluna
+            // continua nullable no banco (as linhas antigas nao tem endereco).
+            endereco.Property(e => e.Cep)
+                .HasColumnType("VARCHAR2(9)").HasColumnName("CEP").IsRequired();
+            endereco.Property(e => e.Logradouro)
+                .HasColumnType("VARCHAR2(200)").HasColumnName("LOGRADOURO");
+            endereco.Property(e => e.Numero)
+                .HasColumnType("VARCHAR2(20)").HasColumnName("NUMERO");
+            endereco.Property(e => e.Complemento)
+                .HasColumnType("VARCHAR2(100)").HasColumnName("COMPLEMENTO");
+            endereco.Property(e => e.Bairro)
+                .HasColumnType("VARCHAR2(150)").HasColumnName("BAIRRO");
+            endereco.Property(e => e.Cidade)
+                .HasColumnType("VARCHAR2(150)").HasColumnName("CIDADE");
+            endereco.Property(e => e.Uf)
+                .HasColumnType("CHAR(2)").HasColumnName("UF");
+
+            // NUMBER(9,6) dá ~11 cm de resolução — muito além do que o matching precisa
+            endereco.Property(e => e.Latitude)
+                .HasColumnType("NUMBER(9,6)").HasColumnName("LATITUDE");
+            endereco.Property(e => e.Longitude)
+                .HasColumnType("NUMBER(9,6)").HasColumnName("LONGITUDE");
+            endereco.Property(e => e.CoordenadaRevisar)
+                .HasColumnType("NUMBER(1)").HasColumnName("COORDENADA_REVISAR");
+
+            // Índice composto para o filtro por bounding box da busca por proximidade
+            // (§6.3: bounding box usa o índice, Haversine roda só sobre o conjunto reduzido)
+            endereco.HasIndex(e => new { e.Latitude, e.Longitude })
+                .HasDatabaseName("IX_VETERINARIO_COORDENADA");
+        });
+
         // Índice na UF para buscas por região (GET /api/veterinarios/regiao/{uf})
         builder.HasIndex(v => v.UfAtuacao).HasDatabaseName("IX_VETERINARIO_UF");
+
+        // Perfis elegíveis ao matching: filtro de entrada de toda busca (§6.3)
+        builder.HasIndex(v => new { v.Publicado, v.MatchingStatus, v.CrmvStatus })
+            .HasDatabaseName("IX_VETERINARIO_MATCHING");
     }
 }
