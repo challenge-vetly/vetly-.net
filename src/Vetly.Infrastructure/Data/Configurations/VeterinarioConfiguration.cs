@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Vetly.Domain.Entities;
 using Vetly.Domain.Enums;
@@ -61,14 +62,16 @@ public class VeterinarioConfiguration : IEntityTypeConfiguration<Veterinario>
         builder.Property(v => v.Especialidades)
             .HasConversion(
                 v => v.Count == 0 ? ";" : string.Join(';', v),
-                v => v.Split(';', StringSplitOptions.RemoveEmptyEntries).ToList())
+                v => v.Split(';', StringSplitOptions.RemoveEmptyEntries).ToList(),
+                ComparadorDeListaDeTexto)
             .HasColumnType("VARCHAR2(1000)")
             .HasColumnName("ESPECIALIDADES");
 
         builder.Property(v => v.EspeciesAtendidas)
             .HasConversion(
                 v => v.Count == 0 ? ";" : string.Join(';', v),
-                v => v.Split(';', StringSplitOptions.RemoveEmptyEntries).ToList())
+                v => v.Split(';', StringSplitOptions.RemoveEmptyEntries).ToList(),
+                ComparadorDeListaDeTexto)
             .HasColumnType("VARCHAR2(1000)")
             .HasColumnName("ESPECIES_ATENDIDAS");
 
@@ -161,4 +164,12 @@ public class VeterinarioConfiguration : IEntityTypeConfiguration<Veterinario>
         builder.HasIndex(v => new { v.Publicado, v.MatchingStatus, v.CrmvStatus })
             .HasDatabaseName("IX_VETERINARIO_MATCHING");
     }
+
+    // Sem ValueComparer o EF Core compara a colecao por REFERENCIA: AdicionarEspecialidade()
+    // muta a mesma List<string>, o snapshot aponta para ela, e a mudanca nunca e detectada —
+    // o UPDATE simplesmente nao acontece. Compara por conteudo e clona no snapshot.
+    private static readonly ValueComparer<List<string>> ComparadorDeListaDeTexto = new(
+        (a, b) => a != null && b != null && a.SequenceEqual(b),
+        v => v.Aggregate(0, (acc, item) => HashCode.Combine(acc, item.GetHashCode())),
+        v => v.ToList());
 }
