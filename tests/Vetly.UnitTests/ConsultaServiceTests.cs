@@ -161,6 +161,83 @@ public class ConsultaServiceTests
         Assert.Equal(200m, resultado.ValorReembolso);
     }
 
+    // ── Máquina de estados da consulta (RN-035/RN-038) ───────────────────────
+
+    private static Consulta NovaConsulta() => new(
+        DateTime.UtcNow.AddHours(10), ModalidadeAtendimento.Presencial,
+        Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
+
+    [Fact]
+    public void Consulta_NasceEmCheckout()
+    {
+        var consulta = NovaConsulta();
+
+        Assert.Equal(StatusConsulta.EmCheckout, consulta.Status);
+        Assert.Equal(StatusPagamento.Pendente, consulta.StatusPagamento);
+    }
+
+    [Fact]
+    public void ConfirmarPagamento_PromoveDeCheckoutParaConfirmada()
+    {
+        var consulta = NovaConsulta();
+
+        consulta.ConfirmarPagamento();
+
+        Assert.Equal(StatusConsulta.Confirmada, consulta.Status);
+    }
+
+    [Fact]
+    public void ConfirmarPagamento_EmConsultaCancelada_NaoAReabre()
+    {
+        var consulta = NovaConsulta();
+        consulta.Cancelar();
+
+        consulta.ConfirmarPagamento();
+
+        Assert.Equal(StatusConsulta.Cancelada, consulta.Status);
+    }
+
+    [Fact]
+    public void Cancelar_EFinalizar_MantemOsBooleanosEmDuplaEscrita()
+    {
+        var cancelada = NovaConsulta();
+        cancelada.Cancelar();
+
+        var realizada = NovaConsulta();
+        realizada.ConfirmarPagamento();
+        realizada.Finalizar();
+
+        // Enquanto durar a dupla escrita, STATUS e os booleanos nao podem divergir
+        Assert.Equal(StatusConsulta.Cancelada, cancelada.Status);
+        Assert.True(cancelada.Cancelada);
+
+        Assert.Equal(StatusConsulta.Realizada, realizada.Status);
+        Assert.True(realizada.Finalizada);
+    }
+
+    [Fact]
+    public void RegistrarNoShow_EDistintoDeCancelamento()
+    {
+        var consulta = NovaConsulta();
+        consulta.ConfirmarPagamento();
+
+        consulta.RegistrarNoShow();
+
+        // O que os tres booleanos nao conseguiam expressar: no-show nao e cancelamento (RN-044)
+        Assert.Equal(StatusConsulta.NoShow, consulta.Status);
+        Assert.False(consulta.Cancelada);
+    }
+
+    [Fact]
+    public void Expirar_MarcaConsultaCujoLockVenceu()
+    {
+        var consulta = NovaConsulta();
+
+        consulta.Expirar();
+
+        Assert.Equal(StatusConsulta.Expirada, consulta.Status);
+    }
+
     // ── Retenção configurável pela clínica (RN-042, C-06) ────────────────────
 
     [Theory]
