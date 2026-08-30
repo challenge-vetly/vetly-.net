@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Vetly.API.Filters;
 using Vetly.Application.DTOs.Auth;
 using Vetly.Application.Interfaces;
 using Vetly.Domain.Enums;
@@ -14,6 +15,7 @@ namespace Vetly.API.Controllers;
 [ApiController]
 [Route("api/[controller]")]
 [AllowAnonymous]
+[IsentoDeConsentimento]   // autenticacao precede o consentimento (RN-060)
 public class AuthController : ControllerBase
 {
     private readonly IAuthService _service;

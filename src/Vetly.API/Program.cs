@@ -15,6 +15,7 @@ using Vetly.Infrastructure.Repositories;
 using Vetly.Infrastructure.Security;
 using Vetly.API.Middlewares;
 using Vetly.API.HealthChecks;
+using Vetly.API.Filters;
 using Vetly.API.Security;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
@@ -31,7 +32,12 @@ builder.Configuration
 
 // ── Controllers ───────────────────────────────────────────────────────────────
 builder.Services
-    .AddControllers()
+    .AddControllers(options =>
+    {
+        // Portao de consentimento (RN-060): roda em tudo e falha fechado. A rota que
+        // precisa funcionar antes do consentimento se declara [IsentoDeConsentimento].
+        options.Filters.Add<ConsentimentoAtendimentoFilter>();
+    })
     .AddJsonOptions(options =>
     {
         // Enums trafegam como STRING no JSON ("Presencial", "Confirmado"), nao como numero.
