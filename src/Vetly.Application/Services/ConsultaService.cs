@@ -66,6 +66,8 @@ public class ConsultaService : IConsultaService
     /// </summary>
     public async Task<ConsultaDto> AgendarAsync(CriarConsultaDto dto)
     {
+        GarantirModalidadePresencial(dto.Modalidade);
+
         var pagamento = await _pagamentoRepo.ObterPorIdAsync(dto.PagamentoId)
             ?? throw new NotFoundException("Pagamento", dto.PagamentoId);
 
@@ -89,6 +91,8 @@ public class ConsultaService : IConsultaService
 
     public async Task AtualizarAsync(Guid id, CriarConsultaDto dto)
     {
+        GarantirModalidadePresencial(dto.Modalidade);
+
         var consulta = await _repo.ObterPorIdAsync(id)
             ?? throw new NotFoundException("Consulta", id);
         consulta.Reagendar(dto.DataHora);
@@ -208,6 +212,17 @@ public class ConsultaService : IConsultaService
         consulta.ValidarDiagnostico();
         _repo.Atualizar(consulta);
         await _repo.SalvarAsync();
+    }
+
+    /// <summary>
+    /// RN-039: no MVP todo atendimento e presencial. O valor <c>Remoto</c> permanece no enum
+    /// (remove-lo exigiria migration por nada), mas e rejeitado na entrada com mensagem clara.
+    /// </summary>
+    private static void GarantirModalidadePresencial(ModalidadeAtendimento modalidade)
+    {
+        if (modalidade == ModalidadeAtendimento.Remoto)
+            throw new BusinessRuleException("RN-039",
+                "Atendimento remoto esta fora do escopo desta fase. Agende como Presencial.");
     }
 
     private static ConsultaDto MapearParaDto(Consulta c) => new()

@@ -12,7 +12,8 @@ namespace Vetly.UnitTests;
 
 /// <summary>
 /// Testes unitarios do ConsultaService.
-/// Cobre RN-015 (agendamento requer pagamento confirmado) e seleção de Strategy de cancelamento.
+/// Cobre RN-015 (agendamento requer pagamento confirmado), RN-039 (modalidade remota fora de
+/// escopo) e seleção de Strategy de cancelamento.
 /// </summary>
 public class ConsultaServiceTests
 {
@@ -67,6 +68,34 @@ public class ConsultaServiceTests
             () => CriarServico().AgendarAsync(CriarDto(pagamentoId)));
 
         Assert.Equal("RN-015", ex.Codigo);
+    }
+
+    [Fact]
+    public async Task AgendarAsync_ModalidadeRemota_LancaBusinessRuleExceptionRN039()
+    {
+        var dto = CriarDto(Guid.NewGuid());
+        dto.Modalidade = ModalidadeAtendimento.Remoto;
+
+        var ex = await Assert.ThrowsAsync<BusinessRuleException>(
+            () => CriarServico().AgendarAsync(dto));
+
+        Assert.Equal("RN-039", ex.Codigo);
+        // A guarda roda antes de qualquer efeito colateral: o pagamento nem chega a ser lido
+        _pagamentoRepoMock.Verify(r => r.ObterPorIdAsync(It.IsAny<Guid>()), Times.Never);
+        _repoMock.Verify(r => r.AdicionarAsync(It.IsAny<Consulta>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task AtualizarAsync_ModalidadeRemota_LancaBusinessRuleExceptionRN039()
+    {
+        var dto = CriarDto(Guid.NewGuid());
+        dto.Modalidade = ModalidadeAtendimento.Remoto;
+
+        var ex = await Assert.ThrowsAsync<BusinessRuleException>(
+            () => CriarServico().AtualizarAsync(Guid.NewGuid(), dto));
+
+        Assert.Equal("RN-039", ex.Codigo);
+        _repoMock.Verify(r => r.Atualizar(It.IsAny<Consulta>()), Times.Never);
     }
 
     [Fact]
