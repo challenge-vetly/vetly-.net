@@ -57,7 +57,8 @@ public class AnimalConfiguration : IEntityTypeConfiguration<Animal>
         builder.Property(a => a.AlertasAtivos)
             .HasConversion(
                 v => v.Count == 0 ? ";" : string.Join(';', v),
-                v => v.Split(';', StringSplitOptions.RemoveEmptyEntries).ToList())
+                v => v.Split(';', StringSplitOptions.RemoveEmptyEntries).ToList(),
+                ComparadorDeListaDeTexto)
             .HasColumnType("VARCHAR2(2000)")
             .HasColumnName("ALERTAS_ATIVOS");
 
