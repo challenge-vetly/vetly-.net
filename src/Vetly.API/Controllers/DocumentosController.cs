@@ -8,8 +8,8 @@ namespace Vetly.API.Controllers;
 
 /// <summary>
 /// Controller de documentos clinicos.
-/// Geracao requer diagnostico validado (RN-024).
-/// Assinatura digital (RN-031) e correcao de versao (RN-032/033/034).
+/// Geracao requer diagnostico validado e parte do estado final aprovado (RN-082/RN-083).
+/// Assinatura digital (RN-087) e correcao de versao (RN-088/RN-089).
 /// </summary>
 [ApiController]
 [Route("api/[controller]")]
@@ -33,7 +33,7 @@ public class DocumentosController : ControllerBase
     public async Task<IActionResult> ObterPorId(Guid id) =>
         Ok(await _service.ObterPorIdAsync(id));
 
-    /// <summary>Gera um documento para uma consulta (seleciona a Factory pelo tipo — RN-024).</summary>
+    /// <summary>Gera um documento para uma consulta (seleciona a Factory pelo tipo — RN-082/RN-083).</summary>
     [HttpPost("consulta/{consultaId:guid}")]
     [ProducesResponseType(typeof(DocumentoDto), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -44,7 +44,7 @@ public class DocumentosController : ControllerBase
         return CreatedAtAction(nameof(ObterPorId), new { id = doc.Id }, doc);
     }
 
-    /// <summary>Assina digitalmente um documento (RN-031).</summary>
+    /// <summary>Assina digitalmente um documento (RN-087).</summary>
     [HttpPost("{id:guid}/assinar")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -55,7 +55,7 @@ public class DocumentosController : ControllerBase
         return NoContent();
     }
 
-    /// <summary>Cria uma versao corrigida de um documento (RN-032/033/034).</summary>
+    /// <summary>Cria uma versao corrigida de um documento (RN-088/RN-089).</summary>
     [HttpPost("{id:guid}/correcao")]
     [ProducesResponseType(typeof(DocumentoDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]

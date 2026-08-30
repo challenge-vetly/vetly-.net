@@ -4,7 +4,8 @@ using Vetly.Domain.Entities;
 namespace Vetly.Application.Strategies.Cancelamento;
 
 /// <summary>
-/// RN-020: Cancelamento entre 24h e 2h de antecedência → reembolso parcial.
+/// RN-041/RN-042: Cancelamento entre 24h e 2h de antecedência → reembolso parcial,
+/// com percentual de retenção configurado pela clínica (RN-042).
 /// A taxa de retenção é configurável via appsettings (percentualRetencao).
 /// </summary>
 public class ReembolsoParcialStrategy : ICancelamentoStrategy

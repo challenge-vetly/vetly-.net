@@ -13,15 +13,15 @@ public interface IConsultaService
     Task<ConsultaDto> AgendarAsync(CriarConsultaDto dto);
     Task AtualizarAsync(Guid id, CriarConsultaDto dto);
 
-    /// <summary>Cancela a consulta aplicando a Strategy de reembolso adequada (RN-019/020/021).</summary>
+    /// <summary>Cancela a consulta aplicando a Strategy de reembolso adequada (RN-014/RN-041/RN-042).</summary>
     Task<ResultadoCancelamentoDto> CancelarAsync(Guid id);
 
-    /// <summary>Finaliza a consulta — exige receita veterinária assinada digitalmente (RN-031).</summary>
+    /// <summary>Finaliza a consulta — exige receita veterinária assinada digitalmente (RN-087).</summary>
     Task FinalizarAsync(Guid consultaId);
 
     /// <summary>Retorna briefing pre-consulta com animal, historico e exames recentes.</summary>
     Task<BriefingConsultaDto> ObterBriefingAsync(Guid consultaId);
 
-    /// <summary>Registra que o veterinario validou o diagnostico (RN-024). Pre-requisito para gerar documentos.</summary>
+    /// <summary>Registra que o veterinario validou o diagnostico (RN-082). Pre-requisito para gerar documentos.</summary>
     Task ValidarDiagnosticoAsync(Guid consultaId);
 }

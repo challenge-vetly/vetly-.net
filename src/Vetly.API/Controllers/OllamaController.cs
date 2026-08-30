@@ -7,7 +7,7 @@ namespace Vetly.API.Controllers;
 
 /// <summary>
 /// Controller de IA assistente via Ollama.
-/// Todos os endpoints retornam apenas sugestoes — o veterinario deve validar (RN-024).
+/// Todos os endpoints retornam apenas sugestoes — o veterinario deve validar (RN-082).
 /// </summary>
 [ApiController]
 [Route("api/ia")]
@@ -19,7 +19,7 @@ public class OllamaController : ControllerBase
     public OllamaController(IOllamaService service) => _service = service;
 
     /// <summary>
-    /// Sugere hipoteses diagnosticas com base no contexto clinico (RN-024).
+    /// Sugere hipoteses diagnosticas com base no contexto clinico (RN-082).
     /// O resultado e uma sugestao de IA — deve ser validado pelo veterinario.
     /// </summary>
     [HttpPost("diagnostico")]

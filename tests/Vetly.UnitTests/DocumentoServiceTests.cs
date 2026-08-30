@@ -15,7 +15,7 @@ namespace Vetly.UnitTests;
 
 /// <summary>
 /// Testes unitarios do DocumentoService.
-/// Verifica que a factory correta e selecionada via IEnumerable e que RN-024 e aplicada.
+/// Verifica que a factory correta e selecionada via IEnumerable e que RN-082 e aplicada.
 /// </summary>
 public class DocumentoServiceTests
 {
@@ -101,7 +101,7 @@ public class DocumentoServiceTests
         var ex = await Assert.ThrowsAsync<BusinessRuleException>(
             () => service.GerarAsync(consulta.Id, TipoDocumento.Prontuario));
 
-        Assert.Equal("RN-024", ex.Codigo);
+        Assert.Equal("RN-082", ex.Codigo);
     }
 
     // ── Helper para controlar DataGeracao nos testes de correção ─────────────
@@ -141,7 +141,7 @@ public class DocumentoServiceTests
         var ex = await Assert.ThrowsAsync<BusinessRuleException>(
             () => CriarServico().CorrigirAsync(doc.Id, "novos dados", null, "12345-SP"));
 
-        Assert.Equal("RN-034", ex.Codigo);
+        Assert.Equal("RN-089", ex.Codigo);
     }
 
     [Fact]

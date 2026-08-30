@@ -23,8 +23,8 @@ public class CriarConsultaDto
 
     /// <summary>
     /// Id do pagamento já processado.
-    /// Obrigatório pois a consulta só é confirmada após pagamento (RN-015).
+    /// Obrigatório pois a consulta só é confirmada após pagamento (RN-006).
     /// </summary>
-    [Required(ErrorMessage = "O id do pagamento confirmado é obrigatório (RN-015).")]
+    [Required(ErrorMessage = "O id do pagamento confirmado é obrigatório (RN-006).")]
     public Guid PagamentoId { get; set; }
 }

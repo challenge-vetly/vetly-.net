@@ -4,7 +4,7 @@ using Vetly.Domain.Entities;
 namespace Vetly.Application.Strategies.Cancelamento;
 
 /// <summary>
-/// RN-021: Cancelamento com menos de 2h de antecedência ou no ato → sem reembolso.
+/// RN-041: Cancelamento com menos de 2h de antecedência ou no ato → sem reembolso.
 /// É a política de fallback (prioridade 3) — aplicada quando as outras não se aplicam.
 /// </summary>
 public class SemReembolsoStrategy : ICancelamentoStrategy

@@ -4,7 +4,7 @@ namespace Vetly.Domain.Entities;
 
 /// <summary>
 /// Registro clínico de uma consulta. Suporta auto-relacionamento para versionamento de correções.
-/// RN-032/033/034: correções dentro de 24h não exigem justificativa; após 24h, é obrigatória.
+/// RN-088/RN-089: correções dentro de 24h não exigem justificativa; após 24h, é obrigatória.
 /// </summary>
 public class Prontuario
 {
@@ -34,7 +34,7 @@ public class Prontuario
 
     /// <summary>
     /// Justificativa para a correção.
-    /// Obrigatória quando a correção ocorre após 24h do registro original (RN-033/034).
+    /// Obrigatória quando a correção ocorre após 24h do registro original (RN-089).
     /// </summary>
     [MaxLength(1000)]
     public string? JustificativaCorrecao { get; private set; }
@@ -79,7 +79,7 @@ public class Prontuario
 
     /// <summary>
     /// Indica se a correção deste prontuário exige justificativa.
-    /// Verdadeiro quando já passou mais de 24h da criação (RN-033).
+    /// Verdadeiro quando já passou mais de 24h da criação (RN-089).
     /// </summary>
     public bool ExigeJustificativa() =>
         DataCriacao < DateTime.UtcNow.AddHours(-24);

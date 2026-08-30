@@ -4,7 +4,7 @@ namespace Vetly.Application.Interfaces;
 
 /// <summary>
 /// Contrato do serviço de integração com o Ollama (LLM local).
-/// Todos os métodos retornam apenas sugestões — o veterinário deve validar (RN-024).
+/// Todos os métodos retornam apenas sugestões — o veterinário deve validar (RN-082).
 /// </summary>
 public interface IOllamaService
 {

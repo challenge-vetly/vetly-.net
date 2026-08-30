@@ -12,7 +12,7 @@ namespace Vetly.UnitTests;
 
 /// <summary>
 /// Testes unitarios do ConsultaService.
-/// Cobre RN-015 (agendamento requer pagamento confirmado) e seleção de Strategy de cancelamento.
+/// Cobre RN-006 (agendamento requer pagamento confirmado) e seleção de Strategy de cancelamento.
 /// </summary>
 public class ConsultaServiceTests
 {
@@ -66,7 +66,7 @@ public class ConsultaServiceTests
         var ex = await Assert.ThrowsAsync<BusinessRuleException>(
             () => CriarServico().AgendarAsync(CriarDto(pagamentoId)));
 
-        Assert.Equal("RN-015", ex.Codigo);
+        Assert.Equal("RN-006", ex.Codigo);
     }
 
     [Fact]
@@ -145,7 +145,7 @@ public class ConsultaServiceTests
         var ex = await Assert.ThrowsAsync<BusinessRuleException>(
             () => CriarServico().FinalizarAsync(consulta.Id));
 
-        Assert.Equal("RN-031", ex.Codigo);
+        Assert.Equal("RN-087", ex.Codigo);
     }
 
     [Fact]
@@ -164,7 +164,7 @@ public class ConsultaServiceTests
         var ex = await Assert.ThrowsAsync<BusinessRuleException>(
             () => CriarServico().FinalizarAsync(consulta.Id));
 
-        Assert.Equal("RN-031", ex.Codigo);
+        Assert.Equal("RN-087", ex.Codigo);
     }
 
     [Fact]

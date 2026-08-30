@@ -7,7 +7,7 @@ namespace Vetly.Application.Services;
 
 /// <summary>
 /// Servico de lembretes agendados.
-/// Controla regua de contato e alerta clinica apos 3 tentativas sem resposta (RN-029/030).
+/// Controla regua de contato e alerta clinica apos 3 tentativas sem resposta (RN-094/RN-095).
 /// </summary>
 public class LembreteService : ILembreteService
 {
@@ -24,7 +24,7 @@ public class LembreteService : ILembreteService
     }
 
     /// <summary>
-    /// Registra tentativa de contato. Aciona alerta para clinica apos 3 tentativas (RN-030).
+    /// Registra tentativa de contato. Aciona alerta para clinica apos 3 tentativas (RN-095).
     /// Se o tutor ja respondeu, a regua esta encerrada e nao registra nova tentativa.
     /// </summary>
     public async Task<LembreteAgendado> ProcessarTentativaAsync(Guid lembreteId)

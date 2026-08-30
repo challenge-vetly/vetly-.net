@@ -111,7 +111,7 @@ public class Veterinario
 
     /// <summary>
     /// Vincula o veterinário a uma empresa e altera a persona para Vinculado.
-    /// RN-008: o veterinário autônomo pode ser vinculado a apenas uma empresa.
+    /// Modelo relacional: o veterinário pertence a uma Empresa (N:1) quando vinculado (vetly-tech §2).
     /// </summary>
     public void VincularEmpresa(Guid empresaId)
     {

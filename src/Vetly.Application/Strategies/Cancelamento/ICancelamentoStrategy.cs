@@ -6,7 +6,7 @@ namespace Vetly.Application.Strategies.Cancelamento;
 /// <summary>
 /// Contrato do Strategy Pattern para políticas de cancelamento e reembolso.
 /// O ConsultaService seleciona a strategy de menor prioridade que seja aplicável
-/// ao horário de cancelamento em relação ao horário da consulta (RN-019/020/021).
+/// ao horário de cancelamento em relação ao horário da consulta (RN-014/RN-041/RN-042).
 /// </summary>
 public interface ICancelamentoStrategy
 {

@@ -9,7 +9,7 @@ namespace Vetly.UnitTests;
 
 /// <summary>
 /// Testes unitarios do LembreteService.
-/// Cobre agendamento, alerta apos 3 tentativas (RN-030) e encerramento da regua (RN-029).
+/// Cobre agendamento, alerta apos 3 tentativas (RN-095) e encerramento da regua (RN-094).
 /// </summary>
 public class LembreteServiceTests
 {

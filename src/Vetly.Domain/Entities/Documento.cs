@@ -6,7 +6,7 @@ namespace Vetly.Domain.Entities;
 /// <summary>
 /// Representa um documento clínico gerado na plataforma Vetly.
 /// Pode estar vinculado a uma consulta ou a uma internação.
-/// RN-031: todo documento deve ser assinado digitalmente antes da finalização da consulta.
+/// RN-087: todo documento deve ser assinado digitalmente antes da finalização da consulta.
 /// </summary>
 public class Documento
 {
@@ -46,17 +46,17 @@ public class Documento
 
     /// <summary>
     /// Indica se o documento foi assinado digitalmente.
-    /// RN-031: a assinatura é pré-requisito para finalização da consulta.
+    /// RN-087: a assinatura é pré-requisito para finalização da consulta.
     /// </summary>
     public bool AssinadoDigitalmente { get; private set; }
 
-    /// <summary>Id do documento original quando este é uma versão corrigida (RN-032).</summary>
+    /// <summary>Id do documento original quando este é uma versão corrigida (RN-088).</summary>
     public Guid? VersaoOriginalId { get; private set; }
 
-    /// <summary>Data e hora em que a correção foi realizada (RN-032).</summary>
+    /// <summary>Data e hora em que a correção foi realizada (RN-088).</summary>
     public DateTime? DataCorrecao { get; private set; }
 
-    /// <summary>CRMV do veterinário que solicitou a correção (RN-032).</summary>
+    /// <summary>CRMV do veterinário que solicitou a correção (RN-088).</summary>
     [MaxLength(15)]
     public string? CrmvSolicitanteCorrecao { get; private set; }
 
@@ -81,14 +81,14 @@ public class Documento
         DataGeracao = DateTime.UtcNow;
     }
 
-    /// <summary>Registra a assinatura digital do documento (RN-031).</summary>
+    /// <summary>Registra a assinatura digital do documento (RN-087).</summary>
     public void Assinar() => AssinadoDigitalmente = true;
 
     /// <summary>Incrementa a versão do documento ao criar uma correção.</summary>
     public void IncrementarVersao() => Versao++;
 
     /// <summary>
-    /// Marca este documento como versão corrigida de outro (RN-032).
+    /// Marca este documento como versão corrigida de outro (RN-088).
     /// Vincula ao documento original e registra o responsável pela correção.
     /// </summary>
     public void Corrigir(Guid versaoOriginalId, DateTime dataCorrecao, string crmvSolicitante)

@@ -41,7 +41,7 @@ public class VeterinariosController : ControllerBase
     public async Task<IActionResult> ObterAgenda(Guid id) =>
         Ok(await _service.ObterAgendaAsync(id));
 
-    /// <summary>Cadastra um novo veterinario (RN-011: CRMV validado). Restrito a Admins.</summary>
+    /// <summary>Cadastra um novo veterinario (RN-107: CRMV validado). Restrito a Admins.</summary>
     [HttpPost]
     [Authorize(Policy = "ApenasAdmin")]
     [ProducesResponseType(typeof(VeterinarioDto), StatusCodes.Status201Created)]
@@ -64,7 +64,7 @@ public class VeterinariosController : ControllerBase
         return NoContent();
     }
 
-    /// <summary>Desativa um veterinario (soft delete — RN-008). Restrito a Admins.</summary>
+    /// <summary>Desativa um veterinario (soft delete — RN-022/RN-025). Restrito a Admins.</summary>
     [HttpDelete("{id:guid}")]
     [Authorize(Policy = "ApenasAdmin")]
     [ProducesResponseType(typeof(IEnumerable<object>), StatusCodes.Status200OK)]

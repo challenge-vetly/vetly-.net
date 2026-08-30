@@ -11,7 +11,7 @@ namespace Vetly.UnitTests;
 
 /// <summary>
 /// Testes unitarios do VeterinarioService.
-/// Cobre RN-011 (validação de CRMV) e RN-008 (retorno de agendamentos futuros no soft delete).
+/// Cobre RN-107 (validação de CRMV) e RN-022/RN-025 (retorno de agendamentos futuros no soft delete).
 /// </summary>
 public class VeterinarioServiceTests
 {
@@ -58,7 +58,7 @@ public class VeterinarioServiceTests
         var ex = await Assert.ThrowsAsync<BusinessRuleException>(
             () => CriarServico().CriarAsync(CriarDto("12345-SP")));
 
-        Assert.Equal("RN-011", ex.Codigo);
+        Assert.Equal("RN-107", ex.Codigo);
     }
 
     [Fact]

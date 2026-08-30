@@ -7,7 +7,7 @@ namespace Vetly.API.Controllers;
 
 /// <summary>
 /// Controller de lembretes agendados.
-/// Regua de contato com alerta a clinica apos 3 tentativas sem resposta (RN-029/030).
+/// Regua de contato com alerta a clinica apos 3 tentativas sem resposta (RN-094/RN-095).
 /// </summary>
 [ApiController]
 [Route("api/[controller]")]
@@ -28,7 +28,7 @@ public class LembretesController : ControllerBase
         return CreatedAtAction(nameof(RegistrarTentativa), new { id = lembrete.Id }, MapearParaDto(lembrete));
     }
 
-    /// <summary>Registra uma tentativa de contato. Apos 3 tentativas sem resposta, alerta e enviado a clinica (RN-030).</summary>
+    /// <summary>Registra uma tentativa de contato. Apos 3 tentativas sem resposta, alerta e enviado a clinica (RN-095).</summary>
     [HttpPost("{id:guid}/tentativa")]
     [ProducesResponseType(typeof(LembreteDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -39,7 +39,7 @@ public class LembretesController : ControllerBase
         return Ok(MapearParaDto(lembrete));
     }
 
-    /// <summary>Registra a resposta do tutor, encerrando a regua de contato (RN-029).</summary>
+    /// <summary>Registra a resposta do tutor, encerrando a regua de contato (RN-094).</summary>
     [HttpPost("{id:guid}/resposta")]
     [ProducesResponseType(typeof(LembreteDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]

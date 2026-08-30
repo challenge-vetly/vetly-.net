@@ -9,8 +9,8 @@ using Vetly.Domain.ValueObjects;
 namespace Vetly.Application.Services;
 
 /// <summary>
-/// Servico de veterinarios. Orquestra validacoes de CRMV (RN-011),
-/// soft delete com retorno de agendamentos (RN-008) e gerenciamento de perfil.
+/// Servico de veterinarios. Orquestra validacoes de CRMV (RN-107),
+/// soft delete com retorno de agendamentos (RN-022/RN-025) e gerenciamento de perfil.
 /// </summary>
 public class VeterinarioService : IVeterinarioService
 {
@@ -52,12 +52,12 @@ public class VeterinarioService : IVeterinarioService
     /// <inheritdoc/>
     public async Task<VeterinarioDto> CriarAsync(CriarVeterinarioDto dto)
     {
-        // RN-011: valida formato do CRMV antes de aceitar o cadastro
+        // RN-107: valida formato do CRMV antes de aceitar o cadastro
         ValidarCrmv(dto.Crmv);
 
         var existente = await _repo.ObterPorCrmvAsync(dto.Crmv);
         if (existente is not null)
-            throw new BusinessRuleException("RN-011", $"CRMV '{dto.Crmv}' ja esta cadastrado na plataforma.");
+            throw new BusinessRuleException("RN-107", $"CRMV '{dto.Crmv}' ja esta cadastrado na plataforma.");
 
         var crmv = new Crmv(dto.Crmv);
         var vet = new Veterinario(dto.Nome, crmv, dto.UfAtuacao, dto.Persona, dto.Plano);
@@ -90,7 +90,7 @@ public class VeterinarioService : IVeterinarioService
         var vet = await _repo.ObterPorIdAsync(id)
             ?? throw new NotFoundException("Veterinario", id);
 
-        // RN-008: retorna agendamentos futuros antes de desativar para o controller informar o cliente
+        // RN-025: retorna agendamentos futuros antes de desativar para o controller informar o cliente
         var agendamentos = await _repo.ObterAgendaFuturaAsync(id);
         vet.Desativar();
         _repo.Atualizar(vet);
@@ -99,7 +99,7 @@ public class VeterinarioService : IVeterinarioService
     }
 
     /// <summary>
-    /// RN-011: valida o formato do CRMV com regex.
+    /// RN-107: valida o formato do CRMV com regex.
     /// Em producao, esta etapa seria seguida de consulta a API do CFMV.
     /// </summary>
     private static void ValidarCrmv(string crmv)

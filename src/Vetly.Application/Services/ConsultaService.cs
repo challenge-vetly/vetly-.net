@@ -11,7 +11,7 @@ using Vetly.Domain.Enums;
 namespace Vetly.Application.Services;
 
 /// <summary>
-/// Servico de consultas. Orquestra agendamento (RN-015) e cancelamento via Strategy (RN-019/020/021).
+/// Servico de consultas. Orquestra agendamento (RN-006) e cancelamento via Strategy (RN-014/RN-041/RN-042).
 /// </summary>
 public class ConsultaService : IConsultaService
 {
@@ -62,7 +62,7 @@ public class ConsultaService : IConsultaService
     }
 
     /// <summary>
-    /// RN-015: o agendamento so e confirmado se o pagamento associado estiver com status Confirmado.
+    /// RN-006: o agendamento so e confirmado se o pagamento associado estiver com status Confirmado.
     /// </summary>
     public async Task<ConsultaDto> AgendarAsync(CriarConsultaDto dto)
     {
@@ -70,7 +70,7 @@ public class ConsultaService : IConsultaService
             ?? throw new NotFoundException("Pagamento", dto.PagamentoId);
 
         if (pagamento.StatusPagamento != StatusPagamento.Confirmado)
-            throw new BusinessRuleException("RN-015",
+            throw new BusinessRuleException("RN-006",
                 "A consulta so pode ser agendada apos confirmacao do pagamento.");
 
         var consulta = new Consulta(dto.DataHora, dto.Modalidade, dto.VeterinarioId, dto.AnimalId, dto.TutorId);
@@ -97,7 +97,7 @@ public class ConsultaService : IConsultaService
     }
 
     /// <summary>
-    /// Cancela a consulta aplicando a Strategy de reembolso de menor prioridade aplicavel (RN-019/020/021).
+    /// Cancela a consulta aplicando a Strategy de reembolso de menor prioridade aplicavel (RN-014/RN-041/RN-042).
     /// </summary>
     public async Task<ResultadoCancelamentoDto> CancelarAsync(Guid id)
     {
@@ -128,7 +128,7 @@ public class ConsultaService : IConsultaService
     }
 
     /// <summary>
-    /// Finaliza a consulta exigindo receita veterinaria assinada digitalmente (RN-031).
+    /// Finaliza a consulta exigindo receita veterinaria assinada digitalmente (RN-087).
     /// </summary>
     public async Task FinalizarAsync(Guid consultaId)
     {
@@ -137,9 +137,9 @@ public class ConsultaService : IConsultaService
 
         var receita = await _documentoRepo.ObterPorConsultaETipoAsync(consultaId, TipoDocumento.ReceitaVeterinaria);
         if (receita is null)
-            throw new BusinessRuleException("RN-031", "Receita veterinaria nao encontrada para esta consulta.");
+            throw new BusinessRuleException("RN-087", "Receita veterinaria nao encontrada para esta consulta.");
         if (!receita.AssinadoDigitalmente)
-            throw new BusinessRuleException("RN-031", "A receita veterinaria deve estar assinada digitalmente.");
+            throw new BusinessRuleException("RN-087", "A receita veterinaria deve estar assinada digitalmente.");
 
         consulta.Finalizar();
         _repo.Atualizar(consulta);
@@ -193,7 +193,7 @@ public class ConsultaService : IConsultaService
     }
 
     /// <summary>
-    /// Registra a validacao manual do diagnostico pelo veterinario (RN-024).
+    /// Registra a validacao manual do diagnostico pelo veterinario (RN-082).
     /// Pre-requisito para gerar documentos via DocumentoService.
     /// </summary>
     public async Task ValidarDiagnosticoAsync(Guid consultaId)

@@ -14,7 +14,7 @@ public interface IVeterinarioRepository : IRepositoryBase<Veterinario>
     /// <summary>Retorna todos os veterinários ativos de uma determinada UF.</summary>
     Task<IEnumerable<Veterinario>> ObterPorUfAsync(string uf);
 
-    /// <summary>Retorna consultas futuras agendadas para um veterinário (usado no soft delete — RN-008).</summary>
+    /// <summary>Retorna consultas futuras agendadas para um veterinário (usado no soft delete — RN-022/RN-025).</summary>
     Task<IEnumerable<Consulta>> ObterAgendaFuturaAsync(Guid veterinarioId);
 
     /// <summary>Retorna todos os veterinários ativos cadastrados na plataforma.</summary>

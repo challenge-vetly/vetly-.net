@@ -8,7 +8,8 @@ namespace Vetly.Application.Services;
 
 /// <summary>
 /// Servico de documentos clinicos.
-/// Usa Factory Pattern para selecionar a factory correta pelo tipo de documento (RN-024).
+/// Usa Factory Pattern para selecionar a factory correta pelo tipo de documento.
+/// A geracao parte do estado final aprovado pelo veterinario (RN-082/RN-083).
 /// </summary>
 public class DocumentoService : IDocumentoService
 {
@@ -46,7 +47,7 @@ public class DocumentoService : IDocumentoService
     }
 
     /// <summary>
-    /// Gera um documento selecionando a factory pelo tipo (RN-024).
+    /// Gera um documento selecionando a factory pelo tipo (RN-083 — formatacao do estado final).
     /// Requer que o diagnostico esteja validado antes de gerar documentos.
     /// </summary>
     public async Task<DocumentoDto> GerarAsync(Guid consultaId, TipoDocumento tipo)
@@ -55,7 +56,7 @@ public class DocumentoService : IDocumentoService
             ?? throw new NotFoundException("Consulta", consultaId);
 
         if (!consulta.PodeGerarDocumentos())
-            throw new BusinessRuleException("RN-024",
+            throw new BusinessRuleException("RN-082",
                 "O diagnostico deve ser validado pelo veterinario antes de gerar documentos.");
 
         var vet = await _vetRepo.ObterPorIdAsync(consulta.VeterinarioId)
@@ -83,7 +84,7 @@ public class DocumentoService : IDocumentoService
         return MapearParaDto(documento);
     }
 
-    /// <summary>Assina digitalmente o documento (RN-031).</summary>
+    /// <summary>Assina digitalmente o documento (RN-087).</summary>
     public async Task AssinarAsync(Guid id)
     {
         var doc = await _repo.ObterPorIdAsync(id)
@@ -93,7 +94,7 @@ public class DocumentoService : IDocumentoService
         await _repo.SalvarAsync();
     }
 
-    /// <summary>Cria uma versao corrigida - valida necessidade de justificativa (RN-032/033/034).</summary>
+    /// <summary>Cria uma versao corrigida - valida necessidade de justificativa (RN-088/RN-089).</summary>
     public async Task<DocumentoDto> CorrigirAsync(Guid id, string novosDados, string? justificativa, string crmvSolicitante)
     {
         var doc = await _repo.ObterPorIdAsync(id)
@@ -101,7 +102,7 @@ public class DocumentoService : IDocumentoService
 
         var horasDesdeGeracao = (DateTime.UtcNow - doc.DataGeracao).TotalHours;
         if (horasDesdeGeracao > 24 && string.IsNullOrWhiteSpace(justificativa))
-            throw new BusinessRuleException("RN-034", "Correcoes apos 24h exigem justificativa.");
+            throw new BusinessRuleException("RN-089", "Correcoes apos 24h exigem justificativa.");
 
         var corrigido = new Domain.Entities.Documento(doc.TipoDocumento, crmvSolicitante, doc.ConsultaId, doc.InternacaoId);
         corrigido.Corrigir(doc.Id, DateTime.UtcNow, crmvSolicitante);
