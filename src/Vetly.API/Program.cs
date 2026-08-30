@@ -132,6 +132,17 @@ switch (adaptadorCrmv)
             $"Adaptador de CRMV '{adaptadorCrmv}' nao reconhecido. Valores validos: Simulado.");
 }
 
+var adaptadorGeo = builder.Configuration["Adaptadores:Geocodificacao"] ?? "Simulado";
+switch (adaptadorGeo)
+{
+    case "Simulado":
+        builder.Services.AddScoped<IGeocodificacaoAdapter, GeocodificacaoAdapterSimulado>();
+        break;
+    default:
+        throw new InvalidOperationException(
+            $"Adaptador de geocodificacao '{adaptadorGeo}' nao reconhecido. Valores validos: Simulado.");
+}
+
 // ── Serviços de Aplicação ────────────────────────────────────────────────────
 builder.Services.AddScoped<IVeterinarioService, VeterinarioService>();
 builder.Services.AddScoped<IAnimalService, AnimalService>();

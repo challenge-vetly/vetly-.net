@@ -35,6 +35,9 @@ public class VetlyDbContext : DbContext
     /// <summary>Serviços oferecidos pelos prestadores (RN-032/RN-074).</summary>
     public DbSet<Servico> Servicos => Set<Servico>();
 
+    /// <summary>Tabela de apoio da geocodificação simulada (RN-026, §5.6).</summary>
+    public DbSet<CepCoordenada> CepCoordenadas => Set<CepCoordenada>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(VetlyDbContext).Assembly);

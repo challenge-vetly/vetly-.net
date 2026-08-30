@@ -21,9 +21,22 @@ public class VeterinarioServiceTests
     private readonly Mock<ICrmvAdapter> _crmvAdapterMock = new();
     private readonly Mock<ISenhaHasher> _hasherMock = new();
     private readonly Mock<IGeradorDeSenhaTemporaria> _geradorDeSenhaMock = new();
+    private readonly Mock<IGeocodificacaoAdapter> _geocodificacaoMock = new();
 
     private VeterinarioService CriarServico() =>
-        new(_repoMock.Object, _crmvAdapterMock.Object, _hasherMock.Object, _geradorDeSenhaMock.Object);
+        new(_repoMock.Object, _crmvAdapterMock.Object, _hasherMock.Object,
+            _geradorDeSenhaMock.Object, _geocodificacaoMock.Object);
+
+    /// <summary>Configura a resposta da geocodificacao para o proximo endereco (RN-026).</summary>
+    private void GeocodificacaoResolve(decimal lat = -23.561414m, decimal lng = -46.655881m, bool revisar = false) =>
+        _geocodificacaoMock
+            .Setup(g => g.GeocodificarAsync(It.IsAny<EnderecoDto>()))
+            .ReturnsAsync(new CoordenadaDto
+            {
+                Latitude = lat, Longitude = lng,
+                Precisao = revisar ? PrecisaoCoordenada.Bairro : PrecisaoCoordenada.Cep,
+                Revisar = revisar
+            });
 
     /// <summary>Configura a resposta do conselho para o proximo cadastro (RN-107).</summary>
     private void ConselhoResponde(ResultadoValidacaoCrmv resultado) =>
@@ -41,6 +54,7 @@ public class VeterinarioServiceTests
         _hasherMock.Setup(h => h.GerarHash(It.IsAny<string>())).Returns("hash-da-senha-temporaria");
         _geradorDeSenhaMock.Setup(g => g.Gerar()).Returns("SenhaTemp123");
         _repoMock.Setup(r => r.ObterPorEmailAsync(It.IsAny<string>())).ReturnsAsync((Veterinario?)null);
+        GeocodificacaoResolve();
     }
 
     private static CriarVeterinarioDto CriarDto(string crmv = "12345-SP") => new()
@@ -151,8 +165,10 @@ public class VeterinarioServiceTests
         Assert.NotNull(resultado.Endereco);
         Assert.Equal("01310-100", resultado.Endereco!.Cep);
         Assert.Equal("SP", resultado.Endereco.Uf);
-        Assert.Null(resultado.Endereco.Latitude);
-        Assert.Null(resultado.Endereco.Longitude);
+        // A coordenada vem da geocodificacao do endereco persistido, nao do payload:
+        // o cliente mandou 99/99 e foi ignorado (RN-026)
+        Assert.Equal(-23.561414m, resultado.Endereco.Latitude);
+        Assert.Equal(-46.655881m, resultado.Endereco.Longitude);
     }
 
     [Theory]

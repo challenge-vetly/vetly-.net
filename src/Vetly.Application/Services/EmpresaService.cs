@@ -13,11 +13,14 @@ public class EmpresaService : IEmpresaService
 {
     private readonly IEmpresaRepository _repo;
     private readonly IVeterinarioRepository _vetRepo;
+    private readonly IGeocodificacaoAdapter _geocodificacao;
 
-    public EmpresaService(IEmpresaRepository repo, IVeterinarioRepository vetRepo)
+    public EmpresaService(
+        IEmpresaRepository repo, IVeterinarioRepository vetRepo, IGeocodificacaoAdapter geocodificacao)
     {
         _repo = repo;
         _vetRepo = vetRepo;
+        _geocodificacao = geocodificacao;
     }
 
     public async Task<IEnumerable<EmpresaDto>> ObterTodosAsync()
@@ -37,7 +40,7 @@ public class EmpresaService : IEmpresaService
     {
         var empresa = new Empresa(dto.Nome, dto.Tipo, dto.AdministradorId,
             dto.Plano ?? Vetly.Domain.Enums.PlanoAssinatura.Basico);
-        AplicarConfiguracaoDaUnidade(empresa, dto);
+        await AplicarConfiguracaoDaUnidadeAsync(empresa, dto);
 
         await _repo.AdicionarAsync(empresa);
         await _repo.SalvarAsync();
@@ -51,7 +54,7 @@ public class EmpresaService : IEmpresaService
         empresa.AtualizarDados(dto.Nome, dto.Tipo);
         if (dto.Plano is not null)
             empresa.AtualizarPlano(dto.Plano.Value);
-        AplicarConfiguracaoDaUnidade(empresa, dto);
+        await AplicarConfiguracaoDaUnidadeAsync(empresa, dto);
 
         _repo.Atualizar(empresa);
         await _repo.SalvarAsync();
@@ -109,13 +112,20 @@ public class EmpresaService : IEmpresaService
     /// Aplica endereco (RN-026) e politica de retencao (RN-042) vindos do DTO.
     /// Percentual omitido preserva o valor atual — o default de 30% ja vem do construtor.
     /// </summary>
-    private static void AplicarConfiguracaoDaUnidade(Empresa empresa, CriarEmpresaDto dto)
+    private async Task AplicarConfiguracaoDaUnidadeAsync(Empresa empresa, CriarEmpresaDto dto)
     {
         if (dto.Endereco is not null)
         {
-            empresa.DefinirEndereco(new Endereco(
+            var endereco = new Endereco(
                 dto.Endereco.Cep, dto.Endereco.Logradouro, dto.Endereco.Numero,
-                dto.Endereco.Bairro, dto.Endereco.Cidade, dto.Endereco.Uf, dto.Endereco.Complemento));
+                dto.Endereco.Bairro, dto.Endereco.Cidade, dto.Endereco.Uf, dto.Endereco.Complemento);
+
+            // Coordenada derivada do endereco, nunca informada pelo cliente (RN-026)
+            var coordenada = await _geocodificacao.GeocodificarAsync(dto.Endereco);
+            if (coordenada.Resolvida)
+                endereco.DefinirCoordenada(coordenada.Latitude!.Value, coordenada.Longitude!.Value, coordenada.Revisar);
+
+            empresa.DefinirEndereco(endereco);
         }
 
         if (dto.PercentualRetencaoParcial is not null)

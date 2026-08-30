@@ -18,8 +18,19 @@ public class EmpresaServiceTests
 {
     private readonly Mock<IEmpresaRepository> _repoMock = new();
     private readonly Mock<IVeterinarioRepository> _vetRepoMock = new();
+    private readonly Mock<IGeocodificacaoAdapter> _geocodificacaoMock = new();
 
-    private EmpresaService CriarServico() => new(_repoMock.Object, _vetRepoMock.Object);
+    private EmpresaService CriarServico() =>
+        new(_repoMock.Object, _vetRepoMock.Object, _geocodificacaoMock.Object);
+
+    public EmpresaServiceTests() =>
+        _geocodificacaoMock
+            .Setup(g => g.GeocodificarAsync(It.IsAny<EnderecoDto>()))
+            .ReturnsAsync(new CoordenadaDto
+            {
+                Latitude = -23.585m, Longitude = -46.685m,
+                Precisao = PrecisaoCoordenada.Cep, Revisar = false
+            });
 
     private static CriarEmpresaDto CriarDto() => new()
     {
@@ -146,6 +157,7 @@ public class EmpresaServiceTests
 
         Assert.NotNull(resultado.Endereco);
         Assert.Equal("04538-133", resultado.Endereco!.Cep);
-        Assert.Null(resultado.Endereco.Latitude);
+        // Coordenada derivada do endereco pela geocodificacao (RN-026)
+        Assert.Equal(-23.585m, resultado.Endereco.Latitude);
     }
 }
