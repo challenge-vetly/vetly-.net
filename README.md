@@ -12,7 +12,7 @@ O Vetly é uma API REST para gestão de clínicas veterinárias, cobrindo todo o
 | Autenticação | JWT Bearer |
 | Documentação | Scalar (tema DeepSpace) em `/scalar/v1` |
 | IA | Ollama local (modelo `llama3.1`) |
-| Testes | xUnit + Moq (77 testes verdes) |
+| Testes | xUnit + Moq (89 testes verdes) |
 
 ## Padrões aplicados
 
@@ -27,6 +27,7 @@ O Vetly é uma API REST para gestão de clínicas veterinárias, cobrindo todo o
 | Value Object | `Crmv` — imutável, valida regex `^\d{4,6}-[A-Z]{2}$` |
 | ProblemDetails | `ExceptionHandlingMiddleware` retorna RFC 7807 em todos os erros |
 | Enums como string | `JsonStringEnumConverter` — o JSON trafega `"Presencial"`, não `1` (entrada e saída) |
+| Adapter / Port | Dependências externas entram por porta na `Application` e implementação `*Simulado` na `Infrastructure`, escolhida por configuração (`Adaptadores:*`) — trocar de fornecedor é trocar o registro no DI |
 
 ---
 
@@ -140,6 +141,8 @@ curl http://localhost:5099/health/ready
 | GET | `/api/veterinarios/{id}/agenda` | Agenda futura de consultas |
 | POST | `/api/veterinarios` | Cadastrar — requer role Admin (RN-107); aceita bloco de endereço (RN-026) |
 | PUT | `/api/veterinarios/{id}` | Atualizar |
+| GET | `/api/veterinarios/{id}/crmv` | Situação do CRMV junto ao conselho e reflexo no matching (RN-107) |
+| POST | `/api/veterinarios/{id}/crmv` | Reconsulta o conselho e reaplica o resultado — requer role Admin (RN-107) |
 | DELETE | `/api/veterinarios/{id}` | Desativar — requer role Admin, retorna agendamentos futuros (RN-022/RN-025) |
 
 ### Animais
@@ -265,6 +268,7 @@ curl http://localhost:5099/health/ready
 | RN-094 | Resposta do tutor encerra a régua de contato | `LembreteService.RegistrarRespostaAsync` |
 | RN-095 | Após 3 tentativas sem resposta, `AlertaEnviadoClinica = true` | `LembreteService.ProcessarTentativaAsync` |
 | RN-100 | Procedimentos acumulam `ValorTotalApurado`; alta retorna `saldo = total − caução` | `InternacaoService.RegistrarProcedimentosAsync` + `DarAltaAsync` |
+| RN-107 | CRMV consultado no conselho regional via `ICrmvAdapter`; `Indisponivel` mantém o perfil pendente e fora do matching — nunca se aprova por omissão | `CrmvAdapterSimulado` + `VeterinarioService.RevalidarCrmvAsync` |
 | RN-107 | CRMV validado por regex `^\d{4,6}-[A-Z]{2}$` + duplicidade; perfil nasce `PendenteValidacao` e só é publicado no matching com CRMV `Valido` (adaptador do conselho: C-05) | `VeterinarioService.CriarAsync` + `Veterinario.PublicarNoMatching` |
 | CONSULTA-001 | Consulta já cancelada não pode ser cancelada novamente | `ConsultaService.CancelarAsync` |
 | CONSULTA-002 | Pagamento da consulta não encontrado ao cancelar | `ConsultaService.CancelarAsync` |

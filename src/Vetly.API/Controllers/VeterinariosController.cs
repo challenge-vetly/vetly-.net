@@ -64,6 +64,30 @@ public class VeterinariosController : ControllerBase
         return NoContent();
     }
 
+    /// <summary>
+    /// Situacao do CRMV junto ao conselho regional e reflexo no matching (RN-107).
+    /// </summary>
+    [HttpGet("{id:guid}/crmv")]
+    [ProducesResponseType(typeof(SituacaoCrmvDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ObterSituacaoCrmv(Guid id) =>
+        Ok(await _service.ObterSituacaoCrmvAsync(id));
+
+    /// <summary>
+    /// Reconsulta o conselho regional e reaplica o resultado ao perfil (RN-107).
+    /// Caminho de saida de um perfil que ficou pendente por indisponibilidade do conselho.
+    /// Restrito a Admins.
+    /// </summary>
+    [HttpPost("{id:guid}/crmv")]
+    [Authorize(Policy = "ApenasAdmin")]
+    [ProducesResponseType(typeof(ResultadoCrmvDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> RevalidarCrmv(Guid id) =>
+        Ok(await _service.RevalidarCrmvAsync(id));
+
     /// <summary>Desativa um veterinario (soft delete — RN-022/RN-025). Restrito a Admins.</summary>
     [HttpDelete("{id:guid}")]
     [Authorize(Policy = "ApenasAdmin")]

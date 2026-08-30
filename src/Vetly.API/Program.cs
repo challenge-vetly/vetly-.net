@@ -9,6 +9,7 @@ using Vetly.Application.Interfaces;
 using Vetly.Application.Services;
 using Vetly.Application.Strategies.Cancelamento;
 using Vetly.Application.Strategies.Split;
+using Vetly.Infrastructure.Adapters;
 using Vetly.Infrastructure.Data;
 using Vetly.Infrastructure.Repositories;
 using Vetly.API.Middlewares;
@@ -80,6 +81,20 @@ builder.Services.AddScoped<IDocumentoRepository, DocumentoRepository>();
 builder.Services.AddScoped<IPagamentoRepository, PagamentoRepository>();
 builder.Services.AddScoped<IEmpresaRepository, EmpresaRepository>();
 builder.Services.AddScoped<ILembreteRepository, LembreteRepository>();
+
+// ── Adaptadores de dependência externa (C2) ──────────────────────────────────
+// Trocar de fornecedor = trocar o registro aqui, sem tocar em serviço nenhum (§5).
+// "Simulado" e o padrao no MVP: a API e real, a dependencia externa e que e simulada.
+var adaptadorCrmv = builder.Configuration["Adaptadores:Crmv"] ?? "Simulado";
+switch (adaptadorCrmv)
+{
+    case "Simulado":
+        builder.Services.AddScoped<ICrmvAdapter, CrmvAdapterSimulado>();
+        break;
+    default:
+        throw new InvalidOperationException(
+            $"Adaptador de CRMV '{adaptadorCrmv}' nao reconhecido. Valores validos: Simulado.");
+}
 
 // ── Serviços de Aplicação ────────────────────────────────────────────────────
 builder.Services.AddScoped<IVeterinarioService, VeterinarioService>();
