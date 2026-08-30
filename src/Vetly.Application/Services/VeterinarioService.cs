@@ -62,6 +62,9 @@ public class VeterinarioService : IVeterinarioService
         var crmv = new Crmv(dto.Crmv);
         var vet = new Veterinario(dto.Nome, crmv, dto.UfAtuacao, dto.Persona, dto.Plano);
 
+        if (dto.Endereco is not null)
+            vet.DefinirEndereco(MapearEndereco(dto.Endereco));
+
         foreach (var esp in dto.Especialidades) vet.AdicionarEspecialidade(esp);
         foreach (var esp in dto.EspeciesAtendidas) vet.AdicionarEspecie(esp);
         if (dto.TitulacaoAcademica is not null)
@@ -80,6 +83,9 @@ public class VeterinarioService : IVeterinarioService
 
         vet.AtualizarDados(dto.Nome, dto.UfAtuacao, dto.TitulacaoAcademica);
         vet.AtualizarPlano(dto.Plano);
+
+        if (dto.Endereco is not null)
+            vet.DefinirEndereco(MapearEndereco(dto.Endereco));
         _repo.Atualizar(vet);
         await _repo.SalvarAsync();
     }
@@ -108,12 +114,31 @@ public class VeterinarioService : IVeterinarioService
             throw new ValidationException("crmv", $"CRMV '{crmv}' esta em formato invalido. Use o padrao XXXXXX-UF.");
     }
 
+    /// <summary>
+    /// Converte o endereço do DTO em value object. Latitude/longitude do payload sao
+    /// ignoradas de proposito: a coordenada e derivada do endereco pela geocodificacao,
+    /// nunca informada pelo cliente (RN-026).
+    /// </summary>
+    private static Endereco MapearEndereco(EnderecoDto dto) =>
+        new(dto.Cep, dto.Logradouro, dto.Numero, dto.Bairro, dto.Cidade, dto.Uf, dto.Complemento);
+
+    private static EnderecoDto? MapearEnderecoParaDto(Endereco? e) => e is null ? null : new EnderecoDto
+    {
+        Cep = e.Cep, Logradouro = e.Logradouro, Numero = e.Numero, Complemento = e.Complemento,
+        Bairro = e.Bairro, Cidade = e.Cidade, Uf = e.Uf,
+        Latitude = e.Latitude, Longitude = e.Longitude, CoordenadaRevisar = e.CoordenadaRevisar
+    };
+
     private static VeterinarioDto MapearParaDto(Veterinario v) => new()
     {
         Id = v.Id, Nome = v.Nome, Crmv = v.Crmv.Valor, UfAtuacao = v.UfAtuacao,
         Especialidades = v.Especialidades, EspeciesAtendidas = v.EspeciesAtendidas,
         TitulacaoAcademica = v.TitulacaoAcademica, Persona = v.Persona,
-        Plano = v.Plano, Ativo = v.Ativo, EmpresaId = v.EmpresaId
+        Plano = v.Plano, Ativo = v.Ativo, EmpresaId = v.EmpresaId,
+        Endereco = MapearEnderecoParaDto(v.Endereco),
+        CrmvStatus = v.CrmvStatus, CrmvValidadoEm = v.CrmvValidadoEm,
+        NotaMedia = v.NotaMedia, NumAvaliacoes = v.NumAvaliacoes, NotaPublica = v.TemNotaPublica(),
+        MatchingStatus = v.MatchingStatus, Publicado = v.Publicado, PublicadoEm = v.PublicadoEm
     };
 
     private static ConsultaDto MapearConsultaParaDto(Consulta c) => new()

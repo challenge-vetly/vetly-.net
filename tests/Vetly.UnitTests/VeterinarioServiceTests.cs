@@ -11,7 +11,8 @@ namespace Vetly.UnitTests;
 
 /// <summary>
 /// Testes unitarios do VeterinarioService.
-/// Cobre RN-107 (validação de CRMV) e RN-022/RN-025 (retorno de agendamentos futuros no soft delete).
+/// Cobre RN-107 (validação de CRMV e bloqueio de publicação), RN-022/RN-025 (retorno de
+/// agendamentos futuros no soft delete), RN-026 (endereço) e RN-033/RN-057 (reputação).
 /// </summary>
 public class VeterinarioServiceTests
 {
@@ -27,6 +28,149 @@ public class VeterinarioServiceTests
         Persona = PersonaVeterinario.Autonomo,
         Plano = PlanoAssinatura.Profissional
     };
+
+    private static Veterinario CriarVeterinario() =>
+        new("Dr. Teste", new Crmv("12345-SP"), "SP", PersonaVeterinario.Autonomo, PlanoAssinatura.Profissional);
+
+    // ── Endereço e coordenada (RN-026) ───────────────────────────────────────
+
+    [Fact]
+    public async Task CriarAsync_ComEndereco_PersisteEnderecoSemCoordenada()
+    {
+        _repoMock.Setup(r => r.ObterPorCrmvAsync(It.IsAny<string>())).ReturnsAsync((Veterinario?)null);
+        _repoMock.Setup(r => r.AdicionarAsync(It.IsAny<Veterinario>())).Returns(Task.CompletedTask);
+        _repoMock.Setup(r => r.SalvarAsync()).ReturnsAsync(1);
+
+        var dto = CriarDto("54321-SP");
+        dto.Endereco = new EnderecoDto
+        {
+            Cep = "01310-100", Logradouro = "Av. Paulista", Numero = "1578",
+            Bairro = "Bela Vista", Cidade = "Sao Paulo", Uf = "sp",
+            // Coordenada informada pelo cliente deve ser ignorada (RN-026)
+            Latitude = 99, Longitude = 99
+        };
+
+        var resultado = await CriarServico().CriarAsync(dto);
+
+        Assert.NotNull(resultado.Endereco);
+        Assert.Equal("01310-100", resultado.Endereco!.Cep);
+        Assert.Equal("SP", resultado.Endereco.Uf);
+        Assert.Null(resultado.Endereco.Latitude);
+        Assert.Null(resultado.Endereco.Longitude);
+    }
+
+    [Theory]
+    [InlineData(91, 0)]
+    [InlineData(0, 181)]
+    public void DefinirCoordenada_ForaDeFaixa_LancaArgumentOutOfRange(decimal lat, decimal lng)
+    {
+        var endereco = new Endereco("01310-100", "Av. Paulista", "1578", "Bela Vista", "Sao Paulo", "SP");
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => endereco.DefinirCoordenada(lat, lng));
+    }
+
+    [Fact]
+    public void DefinirCoordenada_ValoresValidos_MarcaEnderecoComoGeocodificado()
+    {
+        var endereco = new Endereco("01310-100", "Av. Paulista", "1578", "Bela Vista", "Sao Paulo", "SP");
+
+        Assert.False(endereco.TemCoordenada());
+
+        endereco.DefinirCoordenada(-23.561414m, -46.655881m, revisar: true);
+
+        Assert.True(endereco.TemCoordenada());
+        Assert.True(endereco.CoordenadaRevisar);
+    }
+
+    // ── Publicação no matching e CRMV (RN-107, RN-033) ───────────────────────
+
+    [Fact]
+    public void Veterinario_RecemCriado_NasceComCrmvPendenteENaoPublicado()
+    {
+        var vet = CriarVeterinario();
+
+        Assert.Equal(StatusCrmv.PendenteValidacao, vet.CrmvStatus);
+        Assert.False(vet.Publicado);
+    }
+
+    [Fact]
+    public void PublicarNoMatching_CrmvPendente_NaoPublica()
+    {
+        var vet = CriarVeterinario();
+
+        var publicou = vet.PublicarNoMatching(DateTime.UtcNow);
+
+        Assert.False(publicou);
+        Assert.False(vet.Publicado);
+        Assert.Null(vet.PublicadoEm);
+    }
+
+    [Fact]
+    public void PublicarNoMatching_CrmvValido_PublicaEPreservaDataOriginal()
+    {
+        var vet = CriarVeterinario();
+        vet.RegistrarValidacaoCrmv(StatusCrmv.Valido, DateTime.UtcNow);
+
+        var primeiraPublicacao = new DateTime(2026, 8, 1, 12, 0, 0, DateTimeKind.Utc);
+        Assert.True(vet.PublicarNoMatching(primeiraPublicacao));
+
+        // Republicar nao reinicia o selo "Novo na Vetly", que conta 30 dias da 1a publicacao (RN-033)
+        vet.PublicarNoMatching(primeiraPublicacao.AddDays(10));
+
+        Assert.True(vet.Publicado);
+        Assert.Equal(primeiraPublicacao, vet.PublicadoEm);
+    }
+
+    [Theory]
+    [InlineData(StatusCrmv.Invalido)]
+    [InlineData(StatusCrmv.Suspenso)]
+    [InlineData(StatusCrmv.PendenteValidacao)]
+    public void RegistrarValidacaoCrmv_ResultadoNaoValido_DespublicaOPerfil(StatusCrmv status)
+    {
+        var vet = CriarVeterinario();
+        vet.RegistrarValidacaoCrmv(StatusCrmv.Valido, DateTime.UtcNow);
+        vet.PublicarNoMatching(DateTime.UtcNow);
+
+        vet.RegistrarValidacaoCrmv(status, DateTime.UtcNow);
+
+        Assert.False(vet.Publicado);
+        Assert.Null(vet.PublicadoEm);
+    }
+
+    [Fact]
+    public void Desativar_TiraOPerfilDoMatching()
+    {
+        var vet = CriarVeterinario();
+        vet.RegistrarValidacaoCrmv(StatusCrmv.Valido, DateTime.UtcNow);
+        vet.PublicarNoMatching(DateTime.UtcNow);
+
+        vet.Desativar();
+
+        Assert.False(vet.Ativo);
+        Assert.False(vet.Publicado);
+    }
+
+    // ── Reputação (RN-057) ───────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData(0, false)]
+    [InlineData(2, false)]
+    [InlineData(3, true)]
+    public void TemNotaPublica_ExigeMinimoDeTresAvaliacoes(int numAvaliacoes, bool esperado)
+    {
+        var vet = CriarVeterinario();
+        vet.AtualizarReputacao(4.7m, numAvaliacoes);
+
+        Assert.Equal(esperado, vet.TemNotaPublica());
+    }
+
+    [Fact]
+    public void AtualizarReputacao_NotaForaDaEscala_LancaArgumentOutOfRange()
+    {
+        var vet = CriarVeterinario();
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => vet.AtualizarReputacao(5.1m, 10));
+    }
 
     [Fact]
     public async Task CriarAsync_CrmvValido_RetornaVeterinarioDtoComIdPreenchido()

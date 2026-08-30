@@ -25,6 +25,12 @@ public class CriarVeterinarioDto
     [Required]
     public PlanoAssinatura Plano { get; set; }
 
+    /// <summary>
+    /// Endereço do veterinário (RN-026). Opcional nesta fase: a obrigatoriedade entra
+    /// junto com o IGeocodificacaoAdapter, quando a coordenada passa a ser derivável.
+    /// </summary>
+    public EnderecoDto? Endereco { get; set; }
+
     public List<string> Especialidades { get; set; } = [];
     public List<string> EspeciesAtendidas { get; set; } = [];
     public string? TitulacaoAcademica { get; set; }
