@@ -12,7 +12,7 @@ O Vetly é uma API REST para gestão de clínicas veterinárias, cobrindo todo o
 | Autenticação | JWT Bearer |
 | Documentação | Scalar (tema DeepSpace) em `/scalar/v1` |
 | IA | Ollama local (modelo `llama3.1`) |
-| Testes | xUnit + Moq (51 testes verdes) |
+| Testes | xUnit + Moq (52 testes verdes) |
 
 ## Padrões aplicados
 
@@ -26,6 +26,7 @@ O Vetly é uma API REST para gestão de clínicas veterinárias, cobrindo todo o
 | Soft Delete | `Veterinario`, `Animal` e `Tutor` são desativados, nunca deletados |
 | Value Object | `Crmv` — imutável, valida regex `^\d{4,6}-[A-Z]{2}$` |
 | ProblemDetails | `ExceptionHandlingMiddleware` retorna RFC 7807 em todos os erros |
+| Enums como string | `JsonStringEnumConverter` — o JSON trafega `"Presencial"`, não `1` (entrada e saída) |
 
 ---
 

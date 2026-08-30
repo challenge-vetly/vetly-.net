@@ -108,6 +108,30 @@ public class ConsultasControllerTests : IClassFixture<VetlyWebApplicationFactory
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
+    // ── Contrato de enums no JSON ────────────────────────────────────────────
+
+    /// <summary>
+    /// Enums trafegam como string nos dois sentidos: aceitos na entrada e devolvidos
+    /// como string na resposta, em vez do inteiro que o front nao consegue interpretar.
+    /// </summary>
+    [Fact]
+    public async Task PostVeterinarios_ComEnumsComoString_Retorna201ESerializaEnumComoString()
+    {
+        var token = GerarTokenJwt();
+        _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        var payload = new StringContent(
+            """{"nome":"Dra. Enum","crmv":"77777-SP","ufAtuacao":"SP","persona":"Autonomo","plano":"Enterprise"}""",
+            Encoding.UTF8, "application/json");
+
+        var response = await _client.PostAsync("/api/veterinarios", payload);
+        var corpo = await response.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        Assert.Contains("\"persona\":\"Autonomo\"", corpo);
+        Assert.Contains("\"plano\":\"Enterprise\"", corpo);
+    }
+
     // ── Helper ───────────────────────────────────────────────────────────────
 
     private static string GerarTokenJwt(string role = "Admin")
