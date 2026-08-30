@@ -106,6 +106,7 @@ builder.Services.AddScoped<ILembreteRepository, LembreteRepository>();
 builder.Services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
 builder.Services.AddScoped<IDispositivoRepository, DispositivoRepository>();
 builder.Services.AddScoped<IAgendaRepository, AgendaRepository>();
+builder.Services.AddScoped<IBuscaRepository, BuscaRepository>();
 
 // ── Escopo do usuário da requisição (RN-105/RN-106) ──────────────────────────
 // Os serviços leem identidade e escopo daqui, nunca de parametro vindo do cliente.
@@ -157,6 +158,7 @@ builder.Services.AddScoped<ILembreteService, LembreteService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IDispositivoService, DispositivoService>();
 builder.Services.AddScoped<IAgendaService, AgendaService>();
+builder.Services.AddScoped<IBuscaService, BuscaService>();
 
 // ── Factories (IEnumerable<IDocumentoFactory> — resolvidas pelo DI) ──────────
 builder.Services.AddScoped<IDocumentoFactory, ProntuarioFactory>();

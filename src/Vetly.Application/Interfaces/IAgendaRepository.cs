@@ -41,6 +41,12 @@ public interface IAgendaRepository
     /// </summary>
     Task<Dictionary<Guid, int>> ContarDisponiveisNasProximas48hAsync(IEnumerable<Guid> veterinarioIds, DateTime agora);
 
+    /// <summary>
+    /// Próximo horário livre de cada veterinário, a partir de agora. É o que o
+    /// resultado da busca exibe e o que sustenta o filtro "atende hoje" (RN-032).
+    /// </summary>
+    Task<Dictionary<Guid, DateTime>> ObterProximoHorarioLivreAsync(IEnumerable<Guid> veterinarioIds, DateTime agora);
+
     /// <summary>Serviços ativos de um prestador.</summary>
     Task<IEnumerable<Servico>> ObterServicosAsync(Guid prestadorId);
 
