@@ -14,7 +14,8 @@ namespace Vetly.API.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/[controller]")]
-[IsentoDeConsentimento]   // autenticacao precede o consentimento (RN-060)
+[IsentoDeConsentimento]        // autenticacao precede o consentimento (RN-060)
+[PermitidoAoVetDesativado]     // o vet desligado ainda precisa entrar para pedir o extrato (RN-024)
 public class AuthController : ControllerBase
 {
     private readonly IAuthService _service;
@@ -90,6 +91,30 @@ public class AuthController : ControllerBase
             return Unauthorized();
 
         return Ok(await _service.ObterPerfilAsync(usuarioId));
+    }
+
+    /// <summary>
+    /// Troca a senha do usuario autenticado. Encerra as demais sessoes: se a senha
+    /// antiga vazou, o refresh dela nao pode continuar valendo.
+    /// </summary>
+    /// <remarks>
+    /// E por aqui que o veterinario troca a senha temporaria recebida do Admin (P-05).
+    /// </remarks>
+    [HttpPost("trocar-senha")]
+    [Authorize]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
+    public async Task<IActionResult> TrocarSenha([FromBody] TrocarSenhaDto dto)
+    {
+        var id = User.FindFirstValue(ClaimTypes.NameIdentifier);
+
+        if (!Guid.TryParse(id, out var usuarioId))
+            return Unauthorized();
+
+        await _service.TrocarSenhaAsync(usuarioId, dto);
+        return NoContent();
     }
 
     /// <summary>

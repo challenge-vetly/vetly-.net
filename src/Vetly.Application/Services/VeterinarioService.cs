@@ -20,11 +20,19 @@ public class VeterinarioService : IVeterinarioService
 
     private readonly IVeterinarioRepository _repo;
     private readonly ICrmvAdapter _crmvAdapter;
+    private readonly ISenhaHasher _hasher;
+    private readonly IGeradorDeSenhaTemporaria _geradorDeSenha;
 
-    public VeterinarioService(IVeterinarioRepository repo, ICrmvAdapter crmvAdapter)
+    public VeterinarioService(
+        IVeterinarioRepository repo,
+        ICrmvAdapter crmvAdapter,
+        ISenhaHasher hasher,
+        IGeradorDeSenhaTemporaria geradorDeSenha)
     {
         _repo = repo;
         _crmvAdapter = crmvAdapter;
+        _hasher = hasher;
+        _geradorDeSenha = geradorDeSenha;
     }
 
     /// <inheritdoc/>
@@ -57,7 +65,7 @@ public class VeterinarioService : IVeterinarioService
     }
 
     /// <inheritdoc/>
-    public async Task<VeterinarioDto> CriarAsync(CriarVeterinarioDto dto)
+    public async Task<VeterinarioCriadoDto> CriarAsync(CriarVeterinarioDto dto)
     {
         // RN-107: valida formato do CRMV antes de aceitar o cadastro
         ValidarCrmv(dto.Crmv);
@@ -66,8 +74,18 @@ public class VeterinarioService : IVeterinarioService
         if (existente is not null)
             throw new BusinessRuleException("RN-107", $"CRMV '{dto.Crmv}' ja esta cadastrado na plataforma.");
 
+        var emailExistente = await _repo.ObterPorEmailAsync(dto.Email);
+        if (emailExistente is not null)
+            throw new BusinessRuleException("VETERINARIO-001", "E-mail ja cadastrado na plataforma.");
+
         var crmv = new Crmv(dto.Crmv);
         var vet = new Veterinario(dto.Nome, crmv, dto.UfAtuacao, dto.Persona, dto.Plano);
+
+        // Credencial de primeiro acesso (P-05): sem servico de e-mail no projeto, a senha
+        // e devolvida ao Admin nesta resposta e so nela. Nasce marcada como temporaria.
+        var senhaTemporaria = _geradorDeSenha.Gerar();
+        vet.DefinirEmail(dto.Email);
+        vet.DefinirSenhaHash(_hasher.GerarHash(senhaTemporaria), temporaria: true);
 
         if (dto.Endereco is not null)
             vet.DefinirEndereco(MapearEndereco(dto.Endereco));
@@ -83,7 +101,13 @@ public class VeterinarioService : IVeterinarioService
 
         await _repo.AdicionarAsync(vet);
         await _repo.SalvarAsync();
-        return MapearParaDto(vet);
+
+        return new VeterinarioCriadoDto
+        {
+            Veterinario = MapearParaDto(vet),
+            SenhaTemporaria = senhaTemporaria,
+            Email = vet.Email!
+        };
     }
 
     /// <inheritdoc/>

@@ -10,7 +10,11 @@ public interface IVeterinarioService
     Task<VeterinarioDto> ObterPorIdAsync(Guid id);
     Task<IEnumerable<VeterinarioDto>> ObterPorRegiaoAsync(string uf);
     Task<IEnumerable<ConsultaDto>> ObterAgendaAsync(Guid veterinarioId);
-    Task<VeterinarioDto> CriarAsync(CriarVeterinarioDto dto);
+    /// <summary>
+    /// Cadastra o veterinário e gera a credencial de primeiro acesso. A senha
+    /// temporária volta apenas nesta resposta, para o Admin repassar (P-05).
+    /// </summary>
+    Task<VeterinarioCriadoDto> CriarAsync(CriarVeterinarioDto dto);
     Task AtualizarAsync(Guid id, CriarVeterinarioDto dto);
 
     /// <summary>Soft delete — retorna agendamentos futuros afetados (RN-022/RN-025).</summary>

@@ -37,6 +37,10 @@ builder.Services
         // Portao de consentimento (RN-060): roda em tudo e falha fechado. A rota que
         // precisa funcionar antes do consentimento se declara [IsentoDeConsentimento].
         options.Filters.Add<ConsentimentoAtendimentoFilter>();
+
+        // Encerramento de acesso do vet desativado (RN-022), preservando so o que a
+        // RN-024 garante a ele. Tambem falha fechado.
+        options.Filters.Add<VetDesativadoFilter>();
     })
     .AddJsonOptions(options =>
     {
@@ -77,6 +81,9 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy("ApenasAdmin", policy => policy.RequireRole("Admin"));
     options.AddPolicy("VeterinarioOuAdmin", policy => policy.RequireRole("Admin", "Veterinario"));
 
+    // Vet desativado nao entra aqui: a role dele e VetDesativado, e o acesso permitido
+    // se limita ao extrato dos proprios atendimentos (RN-022/RN-024).
+
     // Rotas do app do Responsavel (RN-060 em diante)
     options.AddPolicy("ApenasTutor", policy => policy.RequireRole("Tutor"));
 
@@ -108,6 +115,7 @@ builder.Services.AddScoped<IUsuarioAtual, UsuarioAtual>();
 // PBKDF2-HMAC-SHA256 com os parâmetros do OWASP; ver Pbkdf2SenhaHasher.
 builder.Services.AddSingleton<ISenhaHasher, Pbkdf2SenhaHasher>();
 builder.Services.AddSingleton<IGeradorDeTokenJwt, GeradorDeTokenJwt>();
+builder.Services.AddSingleton<IGeradorDeSenhaTemporaria, GeradorDeSenhaTemporaria>();
 
 // ── Adaptadores de dependência externa (C2) ──────────────────────────────────
 // Trocar de fornecedor = trocar o registro aqui, sem tocar em serviço nenhum (§5).

@@ -20,6 +20,15 @@ public class CriarVeterinarioDto
     [StringLength(2, MinimumLength = 2, ErrorMessage = "A UF deve ter 2 caracteres.")]
     public string UfAtuacao { get; set; } = string.Empty;
 
+    /// <summary>
+    /// E-mail de acesso do profissional. A senha de primeiro acesso é gerada pela
+    /// plataforma e devolvida ao Admin na resposta do cadastro (P-05).
+    /// </summary>
+    [Required(ErrorMessage = "O e-mail do veterinário é obrigatório.")]
+    [EmailAddress(ErrorMessage = "E-mail inválido.")]
+    [MaxLength(254)]
+    public string Email { get; set; } = string.Empty;
+
     [Required]
     public PersonaVeterinario Persona { get; set; }
 

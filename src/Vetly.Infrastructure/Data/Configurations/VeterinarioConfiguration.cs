@@ -84,6 +84,24 @@ public class VeterinarioConfiguration : IEntityTypeConfiguration<Veterinario>
                 .IsRequired();
         });
 
+        // ── Credencial de acesso (§2.2, pendência P-05) ──────────────────────
+        // Nullable: os cadastros anteriores a esta migration nao tem credencial.
+        builder.Property(v => v.Email)
+            .HasColumnType("VARCHAR2(254)")
+            .HasColumnName("EMAIL");
+
+        builder.Property(v => v.SenhaHash)
+            .HasColumnType("VARCHAR2(255)")
+            .HasColumnName("SENHA_HASH");
+
+        builder.Property(v => v.SenhaTemporaria)
+            .HasColumnType("NUMBER(1)")
+            .HasColumnName("SENHA_TEMPORARIA")
+            .IsRequired();
+
+        // Login busca por e-mail; o indice unico tambem barra duplicidade de conta
+        builder.HasIndex(v => v.Email).HasDatabaseName("IX_VETERINARIO_EMAIL").IsUnique();
+
         // ── CRMV junto ao conselho, matching e reputação (RN-026/030/033/057/107) ──
         // Sem HasDefaultValue no modelo: a entidade sempre escreve o valor explicito, e um
         // DEFAULT de banco em enum dispara o aviso de sentinela do EF (o CLR default 0 nao e

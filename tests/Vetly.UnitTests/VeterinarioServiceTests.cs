@@ -19,8 +19,11 @@ public class VeterinarioServiceTests
 {
     private readonly Mock<IVeterinarioRepository> _repoMock = new();
     private readonly Mock<ICrmvAdapter> _crmvAdapterMock = new();
+    private readonly Mock<ISenhaHasher> _hasherMock = new();
+    private readonly Mock<IGeradorDeSenhaTemporaria> _geradorDeSenhaMock = new();
 
-    private VeterinarioService CriarServico() => new(_repoMock.Object, _crmvAdapterMock.Object);
+    private VeterinarioService CriarServico() =>
+        new(_repoMock.Object, _crmvAdapterMock.Object, _hasherMock.Object, _geradorDeSenhaMock.Object);
 
     /// <summary>Configura a resposta do conselho para o proximo cadastro (RN-107).</summary>
     private void ConselhoResponde(ResultadoValidacaoCrmv resultado) =>
@@ -32,13 +35,20 @@ public class VeterinarioServiceTests
                 ConsultadoEm = DateTime.UtcNow
             });
 
-    public VeterinarioServiceTests() => ConselhoResponde(ResultadoValidacaoCrmv.Valido);
+    public VeterinarioServiceTests()
+    {
+        ConselhoResponde(ResultadoValidacaoCrmv.Valido);
+        _hasherMock.Setup(h => h.GerarHash(It.IsAny<string>())).Returns("hash-da-senha-temporaria");
+        _geradorDeSenhaMock.Setup(g => g.Gerar()).Returns("SenhaTemp123");
+        _repoMock.Setup(r => r.ObterPorEmailAsync(It.IsAny<string>())).ReturnsAsync((Veterinario?)null);
+    }
 
     private static CriarVeterinarioDto CriarDto(string crmv = "12345-SP") => new()
     {
         Nome = "Dr. Teste",
         Crmv = crmv,
         UfAtuacao = "SP",
+        Email = $"vet-{Guid.NewGuid():N}@exemplo.com",
         Persona = PersonaVeterinario.Autonomo,
         Plano = PlanoAssinatura.Profissional
     };
@@ -56,7 +66,7 @@ public class VeterinarioServiceTests
         _repoMock.Setup(r => r.AdicionarAsync(It.IsAny<Veterinario>())).Returns(Task.CompletedTask);
         _repoMock.Setup(r => r.SalvarAsync()).ReturnsAsync(1);
 
-        var resultado = await CriarServico().CriarAsync(CriarDto("11111-SP"));
+        var resultado = (await CriarServico().CriarAsync(CriarDto("11111-SP"))).Veterinario;
 
         Assert.Equal(StatusCrmv.Valido, resultado.CrmvStatus);
         Assert.True(resultado.Publicado);
@@ -75,7 +85,7 @@ public class VeterinarioServiceTests
         _repoMock.Setup(r => r.AdicionarAsync(It.IsAny<Veterinario>())).Returns(Task.CompletedTask);
         _repoMock.Setup(r => r.SalvarAsync()).ReturnsAsync(1);
 
-        var resultado = await CriarServico().CriarAsync(CriarDto("11111-SP"));
+        var resultado = (await CriarServico().CriarAsync(CriarDto("11111-SP"))).Veterinario;
 
         Assert.Equal(statusEsperado, resultado.CrmvStatus);
         // Indisponibilidade do conselho nao aprova por omissao (RN-107)
@@ -136,7 +146,7 @@ public class VeterinarioServiceTests
             Latitude = 99, Longitude = 99
         };
 
-        var resultado = await CriarServico().CriarAsync(dto);
+        var resultado = (await CriarServico().CriarAsync(dto)).Veterinario;
 
         Assert.NotNull(resultado.Endereco);
         Assert.Equal("01310-100", resultado.Endereco!.Cep);
@@ -265,7 +275,7 @@ public class VeterinarioServiceTests
         _repoMock.Setup(r => r.AdicionarAsync(It.IsAny<Veterinario>())).Returns(Task.CompletedTask);
         _repoMock.Setup(r => r.SalvarAsync()).ReturnsAsync(1);
 
-        var resultado = await CriarServico().CriarAsync(CriarDto("12345-SP"));
+        var resultado = (await CriarServico().CriarAsync(CriarDto("12345-SP"))).Veterinario;
 
         Assert.NotEqual(Guid.Empty, resultado.Id);
         Assert.Equal("12345-SP", resultado.Crmv);

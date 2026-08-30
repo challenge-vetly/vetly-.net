@@ -41,17 +41,25 @@ public class VeterinariosController : ControllerBase
     public async Task<IActionResult> ObterAgenda(Guid id) =>
         Ok(await _service.ObterAgendaAsync(id));
 
-    /// <summary>Cadastra um novo veterinario (RN-107: CRMV validado). Restrito a Admins.</summary>
+    /// <summary>
+    /// Cadastra um novo veterinario (RN-107: CRMV validado junto ao conselho).
+    /// Restrito a Admins.
+    /// </summary>
+    /// <remarks>
+    /// A resposta traz a SENHA TEMPORARIA de primeiro acesso do profissional. Ela
+    /// aparece uma unica vez, aqui — nao volta em nenhuma outra rota. O Admin repassa
+    /// ao veterinario, que a troca em POST /api/auth/trocar-senha (pendencia P-05).
+    /// </remarks>
     [HttpPost]
     [Authorize(Policy = "ApenasAdmin")]
-    [ProducesResponseType(typeof(VeterinarioDto), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(VeterinarioCriadoDto), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
     public async Task<IActionResult> Criar([FromBody] CriarVeterinarioDto dto)
     {
         var criado = await _service.CriarAsync(dto);
-        return CreatedAtAction(nameof(ObterPorId), new { id = criado.Id }, criado);
+        return CreatedAtAction(nameof(ObterPorId), new { id = criado.Veterinario.Id }, criado);
     }
 
     /// <summary>Atualiza dados de um veterinario existente.</summary>

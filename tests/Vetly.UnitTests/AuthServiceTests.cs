@@ -14,6 +14,7 @@ namespace Vetly.UnitTests;
 public class AuthServiceTests
 {
     private readonly Mock<ITutorRepository> _tutorRepo = new();
+    private readonly Mock<IVeterinarioRepository> _vetRepo = new();
     private readonly Mock<IRefreshTokenRepository> _refreshRepo = new();
     private readonly Mock<ISenhaHasher> _hasher = new();
     private readonly Mock<IGeradorDeTokenJwt> _gerador = new();
@@ -30,12 +31,13 @@ public class AuthServiceTests
 
         _refreshRepo.Setup(r => r.AdicionarAsync(It.IsAny<RefreshToken>())).Returns(Task.CompletedTask);
         _refreshRepo.Setup(r => r.SalvarAsync()).ReturnsAsync(1);
+        _vetRepo.Setup(r => r.ObterPorEmailAsync(It.IsAny<string>())).ReturnsAsync((Veterinario?)null);
         _tutorRepo.Setup(r => r.AdicionarAsync(It.IsAny<Tutor>())).Returns(Task.CompletedTask);
         _tutorRepo.Setup(r => r.SalvarAsync()).ReturnsAsync(1);
     }
 
     private AuthService CriarServico() =>
-        new(_tutorRepo.Object, _refreshRepo.Object, _hasher.Object, _gerador.Object);
+        new(_tutorRepo.Object, _vetRepo.Object, _refreshRepo.Object, _hasher.Object, _gerador.Object);
 
     private static Tutor TutorComCredencial()
     {
@@ -149,6 +151,102 @@ public class AuthServiceTests
             CriarServico().LoginAsync(new LoginDto { Email = "ana@exemplo.com", Senha = "senha-certa" }));
 
         Assert.Equal("AUTH-001", ex.Codigo);
+    }
+
+    // ── Login do veterinário (P-05) e offboarding (RN-022/RN-024) ────────────
+
+    private static Veterinario VetComCredencial(bool ativo = true)
+    {
+        var vet = new Veterinario("Dra. Marina", new Vetly.Domain.ValueObjects.Crmv("12345-SP"), "SP",
+            PersonaVeterinario.Autonomo, PlanoAssinatura.Profissional);
+        vet.DefinirEmail("marina@exemplo.com");
+        vet.DefinirSenhaHash("hash-da-senha", temporaria: true);
+
+        if (!ativo) vet.Desativar();
+        return vet;
+    }
+
+    [Fact]
+    public async Task LoginAsync_VeterinarioAtivo_RecebeRoleVeterinario()
+    {
+        _tutorRepo.Setup(r => r.ObterPorEmailAsync(It.IsAny<string>())).ReturnsAsync((Tutor?)null);
+        _vetRepo.Setup(r => r.ObterPorEmailAsync("marina@exemplo.com")).ReturnsAsync(VetComCredencial());
+        _hasher.Setup(h => h.Confere(It.IsAny<string>(), It.IsAny<string>())).Returns(true);
+
+        var resultado = await CriarServico().LoginAsync(new LoginDto
+        {
+            Email = "marina@exemplo.com", Senha = "SenhaTemp123"
+        });
+
+        Assert.Equal("Veterinario", resultado.Role);
+        Assert.NotNull(resultado.VeterinarioId);
+        Assert.True(resultado.SenhaTemporaria);
+    }
+
+    [Fact]
+    public async Task LoginAsync_VeterinarioDesativado_EntraComRoleReduzida()
+    {
+        _tutorRepo.Setup(r => r.ObterPorEmailAsync(It.IsAny<string>())).ReturnsAsync((Tutor?)null);
+        _vetRepo.Setup(r => r.ObterPorEmailAsync("marina@exemplo.com")).ReturnsAsync(VetComCredencial(ativo: false));
+        _hasher.Setup(h => h.Confere(It.IsAny<string>(), It.IsAny<string>())).Returns(true);
+
+        var resultado = await CriarServico().LoginAsync(new LoginDto
+        {
+            Email = "marina@exemplo.com", Senha = "SenhaTemp123"
+        });
+
+        // Ele nao e barrado no login: precisa entrar para pedir o extrato dos
+        // proprios atendimentos (RN-024). O que muda e a role.
+        Assert.Equal("VetDesativado", resultado.Role);
+    }
+
+    [Fact]
+    public async Task LoginAsync_VeterinarioSemCredencial_DaAMesmaRespostaDeSenhaErrada()
+    {
+        var semCredencial = new Veterinario("Dr. Antigo", new Vetly.Domain.ValueObjects.Crmv("99999-SP"), "SP",
+            PersonaVeterinario.Autonomo, PlanoAssinatura.Basico);
+
+        _tutorRepo.Setup(r => r.ObterPorEmailAsync(It.IsAny<string>())).ReturnsAsync((Tutor?)null);
+        _vetRepo.Setup(r => r.ObterPorEmailAsync(It.IsAny<string>())).ReturnsAsync(semCredencial);
+
+        var ex = await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            CriarServico().LoginAsync(new LoginDto { Email = "antigo@exemplo.com", Senha = "x" }));
+
+        Assert.Equal("AUTH-001", ex.Codigo);
+    }
+
+    [Fact]
+    public async Task TrocarSenhaAsync_DerrubaAsDemaisSessoes()
+    {
+        var tutor = TutorComCredencial();
+        _tutorRepo.Setup(r => r.ObterPorIdAsync(tutor.Id)).ReturnsAsync(tutor);
+        _tutorRepo.Setup(r => r.Atualizar(It.IsAny<Tutor>()));
+        _hasher.Setup(h => h.Confere("senha-atual", It.IsAny<string>())).Returns(true);
+        _refreshRepo.Setup(r => r.RevogarTodosDoUsuarioAsync(tutor.Id, It.IsAny<DateTime>())).ReturnsAsync(3);
+
+        await CriarServico().TrocarSenhaAsync(tutor.Id, new TrocarSenhaDto
+        {
+            SenhaAtual = "senha-atual", NovaSenha = "nova-senha-forte-123"
+        });
+
+        // Se a senha antiga vazou, o refresh emitido com ela nao pode continuar valendo
+        _refreshRepo.Verify(r => r.RevogarTodosDoUsuarioAsync(tutor.Id, It.IsAny<DateTime>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task TrocarSenhaAsync_SenhaAtualErrada_LancaAuth005()
+    {
+        var tutor = TutorComCredencial();
+        _tutorRepo.Setup(r => r.ObterPorIdAsync(tutor.Id)).ReturnsAsync(tutor);
+        _hasher.Setup(h => h.Confere(It.IsAny<string>(), It.IsAny<string>())).Returns(false);
+
+        var ex = await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            CriarServico().TrocarSenhaAsync(tutor.Id, new TrocarSenhaDto
+            {
+                SenhaAtual = "errada", NovaSenha = "nova-senha-forte-123"
+            }));
+
+        Assert.Equal("AUTH-005", ex.Codigo);
     }
 
     // ── Rotação do refresh token ─────────────────────────────────────────────
