@@ -22,17 +22,20 @@ public class VeterinarioService : IVeterinarioService
     private readonly ICrmvAdapter _crmvAdapter;
     private readonly ISenhaHasher _hasher;
     private readonly IGeradorDeSenhaTemporaria _geradorDeSenha;
+    private readonly IGeocodificacaoAdapter _geocodificacao;
 
     public VeterinarioService(
         IVeterinarioRepository repo,
         ICrmvAdapter crmvAdapter,
         ISenhaHasher hasher,
-        IGeradorDeSenhaTemporaria geradorDeSenha)
+        IGeradorDeSenhaTemporaria geradorDeSenha,
+        IGeocodificacaoAdapter geocodificacao)
     {
         _repo = repo;
         _crmvAdapter = crmvAdapter;
         _hasher = hasher;
         _geradorDeSenha = geradorDeSenha;
+        _geocodificacao = geocodificacao;
     }
 
     /// <inheritdoc/>
@@ -88,7 +91,7 @@ public class VeterinarioService : IVeterinarioService
         vet.DefinirSenhaHash(_hasher.GerarHash(senhaTemporaria), temporaria: true);
 
         if (dto.Endereco is not null)
-            vet.DefinirEndereco(MapearEndereco(dto.Endereco));
+            vet.DefinirEndereco(await MapearEnderecoGeocodificadoAsync(dto.Endereco));
 
         foreach (var esp in dto.Especialidades) vet.AdicionarEspecialidade(esp);
         foreach (var esp in dto.EspeciesAtendidas) vet.AdicionarEspecie(esp);
@@ -212,6 +215,22 @@ public class VeterinarioService : IVeterinarioService
     /// </summary>
     private static Endereco MapearEndereco(EnderecoDto dto) =>
         new(dto.Cep, dto.Logradouro, dto.Numero, dto.Bairro, dto.Cidade, dto.Uf, dto.Complemento);
+
+    /// <summary>
+    /// Monta o endereco e deriva a coordenada dele pela geocodificacao (RN-026).
+    /// Endereco que nao resolve fica sem coordenada — inventar posicao poria o
+    /// prestador no lugar errado do mapa, o que e pior que nao aparecer na busca.
+    /// </summary>
+    private async Task<Endereco> MapearEnderecoGeocodificadoAsync(EnderecoDto dto)
+    {
+        var endereco = MapearEndereco(dto);
+        var coordenada = await _geocodificacao.GeocodificarAsync(dto);
+
+        if (coordenada.Resolvida)
+            endereco.DefinirCoordenada(coordenada.Latitude!.Value, coordenada.Longitude!.Value, coordenada.Revisar);
+
+        return endereco;
+    }
 
     private static EnderecoDto? MapearEnderecoParaDto(Endereco? e) => e is null ? null : new EnderecoDto
     {
