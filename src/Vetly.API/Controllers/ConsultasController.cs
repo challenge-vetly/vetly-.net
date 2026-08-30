@@ -34,6 +34,30 @@ public class ConsultasController : ControllerBase
         [FromQuery] Paginacao paginacao) =>
         Ok(await _service.ObterTodosAsync(filtro, paginacao));
 
+    /// <summary>
+    /// Trava o horario por 10 minutos e cria a consulta em EmCheckout (RN-003/RN-035).
+    /// O agendamento so se confirma com o pagamento (RN-006).
+    /// </summary>
+    /// <remarks>
+    /// Convive com <c>POST /api/consultas</c>, que segue sendo o caminho da emergencia
+    /// presencial e do balcao, onde o pagamento e no ato (RN-040).
+    ///
+    /// Horario ja reservado por outra pessoa devolve 409: e so escolher outro.
+    /// </remarks>
+    [HttpPost("checkout")]
+    [ProducesResponseType(typeof(CheckoutCriadoDto), StatusCodes.Status201Created)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
+    public async Task<IActionResult> IniciarCheckout([FromBody] CheckoutDto dto)
+    {
+        var checkout = await _service.IniciarCheckoutAsync(dto);
+        return CreatedAtAction(nameof(ObterPorId), new { id = checkout.ConsultaId }, checkout);
+    }
+
     /// <summary>Retorna uma consulta pelo ID.</summary>
     [HttpGet("{id:guid}")]
     [ProducesResponseType(typeof(ConsultaDto), StatusCodes.Status200OK)]

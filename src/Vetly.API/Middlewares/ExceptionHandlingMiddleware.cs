@@ -55,6 +55,13 @@ public class ExceptionHandlingMiddleware
             await EscreverRespostaAsync(context, HttpStatusCode.Forbidden,
                 ex.Message, correlationId, ex.Codigo);
         }
+        catch (ConflitoDeEstadoException ex)
+        {
+            _logger.LogWarning("CorrelationId={CorrelationId} | Conflito [{Codigo}]: {Message}",
+                correlationId, ex.Codigo, ex.Message);
+            await EscreverRespostaAsync(context, HttpStatusCode.Conflict,
+                ex.Message, correlationId, ex.Codigo);
+        }
         catch (BusinessRuleException ex)
         {
             _logger.LogWarning("CorrelationId={CorrelationId} | BusinessRule [{Codigo}]: {Message}", correlationId, ex.Codigo, ex.Message);
@@ -85,6 +92,7 @@ public class ExceptionHandlingMiddleware
             {
                 HttpStatusCode.NotFound => "Recurso nao encontrado",
                 HttpStatusCode.Forbidden => "Acesso negado",
+                HttpStatusCode.Conflict => "Conflito de estado",
                 HttpStatusCode.UnprocessableEntity => "Regra de negocio violada",
                 _ => "Erro interno do servidor"
             },

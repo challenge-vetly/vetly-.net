@@ -15,6 +15,12 @@ public interface IConsultaService
     Task<ConsultaDto> AgendarAsync(CriarConsultaDto dto);
     Task AtualizarAsync(Guid id, CriarConsultaDto dto);
 
+    /// <summary>
+    /// Trava o horário por 10 minutos e cria a consulta em <c>EmCheckout</c>
+    /// (RN-003/RN-035). O agendamento só se confirma com o pagamento (RN-006).
+    /// </summary>
+    Task<CheckoutCriadoDto> IniciarCheckoutAsync(CheckoutDto dto);
+
     /// <summary>Cancela a consulta aplicando a Strategy de reembolso adequada (RN-014/RN-041/RN-042).</summary>
     Task<ResultadoCancelamentoDto> CancelarAsync(Guid id);
 

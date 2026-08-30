@@ -24,6 +24,7 @@ public class ConsultaService : IConsultaService
     private readonly IEmpresaRepository _empresaRepo;
     private readonly IEnumerable<ICancelamentoStrategy> _strategies;
     private readonly IUsuarioAtual _usuario;
+    private readonly IAgendaRepository _agendaRepo;
 
     public ConsultaService(
         IConsultaRepository repo,
@@ -33,7 +34,8 @@ public class ConsultaService : IConsultaService
         IVeterinarioRepository veterinarioRepo,
         IEmpresaRepository empresaRepo,
         IEnumerable<ICancelamentoStrategy> strategies,
-        IUsuarioAtual usuario)
+        IUsuarioAtual usuario,
+        IAgendaRepository agendaRepo)
     {
         _repo = repo;
         _pagamentoRepo = pagamentoRepo;
@@ -43,6 +45,91 @@ public class ConsultaService : IConsultaService
         _empresaRepo = empresaRepo;
         _strategies = strategies;
         _usuario = usuario;
+        _agendaRepo = agendaRepo;
+    }
+
+    /// <summary>
+    /// Trava o horario e cria a consulta em EmCheckout (RN-035).
+    ///
+    /// Esta e a trilha do app, e convive com POST /api/consultas, que continua sendo o
+    /// caminho da emergencia presencial e do balcao (RN-040) — resolucao do conflito
+    /// C-02 sem refatorar a rota existente.
+    /// </summary>
+    public async Task<CheckoutCriadoDto> IniciarCheckoutAsync(CheckoutDto dto)
+    {
+        var animal = await _animalRepo.ObterPorIdAsync(dto.AnimalId)
+            ?? throw new NotFoundException("Animal", dto.AnimalId);
+
+        if (_usuario.EhTutor && _usuario.TutorId != animal.TutorId)
+            throw new AcessoNegadoException("RN-105", "Este animal nao pertence ao seu escopo de acesso.");
+
+        var slot = await _agendaRepo.ObterSlotAsync(dto.SlotId)
+            ?? throw new NotFoundException("Horario", dto.SlotId);
+
+        var servico = await _agendaRepo.ObterServicoAsync(dto.ServicoId)
+            ?? throw new NotFoundException("Servico", dto.ServicoId);
+
+        if (!servico.Ativo)
+            throw new BusinessRuleException("RN-032", "Este servico nao esta mais disponivel.");
+
+        if (servico.PrestadorId != dto.PrestadorId)
+            throw new BusinessRuleException("RN-032", "O servico informado nao pertence a este prestador.");
+
+        var vet = await _veterinarioRepo.ObterPorIdAsync(slot.VeterinarioId)
+            ?? throw new NotFoundException("Veterinario", slot.VeterinarioId);
+
+        // RN-003: com clinica, quem atende e o profissional que ela designa — aqui, o dono
+        // do horario escolhido. So e preciso conferir que ele e mesmo da unidade.
+        Guid? empresaId = null;
+        if (dto.PrestadorId != vet.Id)
+        {
+            if (vet.EmpresaId != dto.PrestadorId)
+                throw new BusinessRuleException("RN-003", "O horario escolhido nao pertence a este prestador.");
+
+            empresaId = dto.PrestadorId;
+        }
+
+        if (slot.Inicio <= DateTime.UtcNow)
+            throw new BusinessRuleException("RN-034", "Este horario ja passou.");
+
+        var consulta = Consulta.ParaCheckout(
+            slot.Inicio, vet.Id, animal.Id, animal.TutorId, slot.Id, servico.Id, empresaId);
+
+        // Um unico ponto decide quem fica com o horario. Quem chega depois recebe 409 e
+        // escolhe outro — e o que impede overbooking sem gateway real (RN-035).
+        if (!slot.TravarParaCheckout(consulta.Id, DateTime.UtcNow))
+            throw new ConflitoDeEstadoException("RN-035", "Este horario acabou de ser reservado por outra pessoa.");
+
+        _agendaRepo.AtualizarSlot(slot);
+        await _agendaRepo.SalvarAsync();
+
+        await _repo.AdicionarAsync(consulta);
+        await _repo.SalvarAsync();
+
+        return new CheckoutCriadoDto
+        {
+            ConsultaId = consulta.Id,
+            Status = consulta.Status,
+            LockExpiraEm = slot.LockAte!.Value,
+            Resumo = new ResumoDoCheckoutDto
+            {
+                Prestador = empresaId is null ? vet.Nome : await NomeDaEmpresaAsync(empresaId.Value, vet.Nome),
+                Servico = servico.Tipo,
+                DataHora = slot.Inicio,
+                Valor = servico.Valor,
+                Modalidade = consulta.Modalidade,
+                PoliticaReembolso = new PoliticaDeReembolsoDto
+                {
+                    PercentualRetencaoParcial = await ObterPercentualRetencaoAsync(vet.Id)
+                }
+            }
+        };
+    }
+
+    private async Task<string> NomeDaEmpresaAsync(Guid empresaId, string nomeDoVet)
+    {
+        var empresa = await _empresaRepo.ObterPorIdAsync(empresaId);
+        return empresa is null ? nomeDoVet : empresa.Nome;
     }
 
     public async Task<ResultadoPaginado<ConsultaDto>> ObterTodosAsync(

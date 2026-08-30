@@ -24,11 +24,12 @@ public class ConsultaServiceTests
     private readonly Mock<IVeterinarioRepository> _vetRepoMock = new();
     private readonly Mock<IEmpresaRepository> _empresaRepoMock = new();
     private readonly Mock<IUsuarioAtual> _usuarioMock = new();
+    private readonly Mock<IAgendaRepository> _agendaRepoMock = new();
 
     private ConsultaService CriarServico(params ICancelamentoStrategy[] strategies) =>
         new(_repoMock.Object, _pagamentoRepoMock.Object, _documentoRepoMock.Object,
             _animalRepoMock.Object, _vetRepoMock.Object, _empresaRepoMock.Object,
-            strategies, _usuarioMock.Object);
+            strategies, _usuarioMock.Object, _agendaRepoMock.Object);
 
     /// <summary>Por padrao os testes rodam como Admin, que enxerga todo o escopo.</summary>
     public ConsultaServiceTests() => _usuarioMock.SetupGet(u => u.EhAdmin).Returns(true);
@@ -164,6 +165,195 @@ public class ConsultaServiceTests
 
         Assert.Equal("Reembolso Integral", resultado.EstrategiaAplicada);
         Assert.Equal(200m, resultado.ValorReembolso);
+    }
+
+    // ── Checkout com lock (RN-035, C-02) ─────────────────────────────────────
+
+    /// <summary>Monta o cenario feliz do checkout e devolve os ids envolvidos.</summary>
+    private (Animal Animal, Veterinario Vet, Slot Slot, Servico Servico) PrepararCheckout(
+        PersonaVeterinario persona = PersonaVeterinario.Autonomo, Guid? empresaId = null)
+    {
+        var animal = new Animal("Thor", "Canino", "SRD", DateTime.UtcNow.AddYears(-3), Guid.NewGuid());
+
+        var vet = new Veterinario("Dra. Marina", new Crmv("12345-SP"), "SP", persona, PlanoAssinatura.Profissional);
+        if (empresaId is { } id) vet.VincularEmpresa(id);
+
+        var slot = new Slot(vet.Id, DateTime.UtcNow.AddDays(2), DateTime.UtcNow.AddDays(2).AddMinutes(30));
+        var prestadorId = empresaId ?? vet.Id;
+        var servico = new Servico(prestadorId, TipoServico.ConsultaRotina, 200m, 30);
+
+        _animalRepoMock.Setup(r => r.ObterPorIdAsync(animal.Id)).ReturnsAsync(animal);
+        _vetRepoMock.Setup(r => r.ObterPorIdAsync(vet.Id)).ReturnsAsync(vet);
+        _agendaRepoMock.Setup(r => r.ObterSlotAsync(slot.Id)).ReturnsAsync(slot);
+        _agendaRepoMock.Setup(r => r.ObterServicoAsync(servico.Id)).ReturnsAsync(servico);
+        _agendaRepoMock.Setup(r => r.AtualizarSlot(It.IsAny<Slot>()));
+        _agendaRepoMock.Setup(r => r.SalvarAsync()).ReturnsAsync(1);
+        _repoMock.Setup(r => r.AdicionarAsync(It.IsAny<Consulta>())).Returns(Task.CompletedTask);
+        _repoMock.Setup(r => r.SalvarAsync()).ReturnsAsync(1);
+
+        return (animal, vet, slot, servico);
+    }
+
+    private static CheckoutDto CheckoutDe(Animal animal, Guid prestadorId, Slot slot, Servico servico) => new()
+    {
+        AnimalId = animal.Id,
+        PrestadorId = prestadorId,
+        SlotId = slot.Id,
+        ServicoId = servico.Id
+    };
+
+    [Fact]
+    public async Task Checkout_TravaOHorarioECriaAConsultaEmCheckout()
+    {
+        var (animal, vet, slot, servico) = PrepararCheckout();
+
+        var resultado = await CriarServico().IniciarCheckoutAsync(CheckoutDe(animal, vet.Id, slot, servico));
+
+        Assert.Equal(StatusConsulta.EmCheckout, resultado.Status);
+        Assert.Equal(EstadoSlot.EmCheckout, slot.Estado);
+        Assert.Equal(slot.Inicio, resultado.Resumo.DataHora);
+        Assert.Equal(200m, resultado.Resumo.Valor);
+    }
+
+    [Fact]
+    public async Task Checkout_DevolveOInstanteEmQueOLockExpira()
+    {
+        var (animal, vet, slot, servico) = PrepararCheckout();
+
+        var antes = DateTime.UtcNow;
+        var resultado = await CriarServico().IniciarCheckoutAsync(CheckoutDe(animal, vet.Id, slot, servico));
+
+        // O Responsavel precisa saber quanto tempo tem para pagar (RN-035)
+        Assert.InRange(resultado.LockExpiraEm, antes.AddMinutes(9), antes.AddMinutes(11));
+    }
+
+    [Fact]
+    public async Task Checkout_ExibeAPoliticaDeReembolsoAntesDeCobrar()
+    {
+        var (animal, vet, slot, servico) = PrepararCheckout();
+
+        var resultado = await CriarServico().IniciarCheckoutAsync(CheckoutDe(animal, vet.Id, slot, servico));
+        var politica = resultado.Resumo.PoliticaReembolso;
+
+        // Transparencia no momento do agendamento, nao depois (RN-042)
+        Assert.Equal(24, politica.IntegralAcimaDeHoras);
+        Assert.Equal(2, politica.SemReembolsoAbaixoDeHoras);
+        Assert.Equal(30m, politica.PercentualRetencaoParcial);
+    }
+
+    [Fact]
+    public async Task Checkout_HorarioJaReservado_Retorna409()
+    {
+        var (animal, vet, slot, servico) = PrepararCheckout();
+        slot.TravarParaCheckout(Guid.NewGuid(), DateTime.UtcNow);
+
+        var ex = await Assert.ThrowsAsync<ConflitoDeEstadoException>(
+            () => CriarServico().IniciarCheckoutAsync(CheckoutDe(animal, vet.Id, slot, servico)));
+
+        // 409 e nao 422: tentar de novo com outro horario resolve
+        Assert.Equal("RN-035", ex.Codigo);
+    }
+
+    [Fact]
+    public async Task Checkout_HorarioNoPassado_NaoEAceito()
+    {
+        var (animal, vet, _, servico) = PrepararCheckout();
+        var passado = new Slot(vet.Id, DateTime.UtcNow.AddDays(-1), DateTime.UtcNow.AddDays(-1).AddMinutes(30));
+        _agendaRepoMock.Setup(r => r.ObterSlotAsync(passado.Id)).ReturnsAsync(passado);
+
+        var ex = await Assert.ThrowsAsync<BusinessRuleException>(
+            () => CriarServico().IniciarCheckoutAsync(CheckoutDe(animal, vet.Id, passado, servico)));
+
+        Assert.Equal("RN-034", ex.Codigo);
+    }
+
+    [Fact]
+    public async Task Checkout_ServicoDeOutroPrestador_NaoEAceito()
+    {
+        var (animal, vet, slot, _) = PrepararCheckout();
+        var deOutro = new Servico(Guid.NewGuid(), TipoServico.ConsultaRotina, 200m, 30);
+        _agendaRepoMock.Setup(r => r.ObterServicoAsync(deOutro.Id)).ReturnsAsync(deOutro);
+
+        var ex = await Assert.ThrowsAsync<BusinessRuleException>(
+            () => CriarServico().IniciarCheckoutAsync(CheckoutDe(animal, vet.Id, slot, deOutro)));
+
+        Assert.Equal("RN-032", ex.Codigo);
+    }
+
+    [Fact]
+    public async Task Checkout_ServicoDesativado_NaoEAceito()
+    {
+        var (animal, vet, slot, servico) = PrepararCheckout();
+        servico.Desativar();
+
+        var ex = await Assert.ThrowsAsync<BusinessRuleException>(
+            () => CriarServico().IniciarCheckoutAsync(CheckoutDe(animal, vet.Id, slot, servico)));
+
+        Assert.Equal("RN-032", ex.Codigo);
+    }
+
+    [Fact]
+    public async Task Checkout_ComClinica_AtribuiAoDonoDoHorario()
+    {
+        var empresaId = Guid.NewGuid();
+        var (animal, vet, slot, servico) = PrepararCheckout(PersonaVeterinario.Vinculado, empresaId);
+
+        var empresa = new Empresa("Clinica Vida Pet", "Clinica", Guid.NewGuid());
+        _empresaRepoMock.Setup(r => r.ObterPorIdAsync(empresaId)).ReturnsAsync(empresa);
+
+        Consulta? criada = null;
+        _repoMock.Setup(r => r.AdicionarAsync(It.IsAny<Consulta>()))
+            .Callback<Consulta>(c => criada = c).Returns(Task.CompletedTask);
+
+        var resultado = await CriarServico().IniciarCheckoutAsync(CheckoutDe(animal, empresaId, slot, servico));
+
+        // RN-003: com clinica, quem atende e o profissional dono do horario escolhido
+        Assert.NotNull(criada);
+        Assert.Equal(vet.Id, criada!.VeterinarioId);
+        Assert.Equal(empresaId, criada.EmpresaId);
+        Assert.Equal("Clinica Vida Pet", resultado.Resumo.Prestador);
+    }
+
+    [Fact]
+    public async Task Checkout_HorarioDeVetForaDaClinicaInformada_NaoEAceito()
+    {
+        var (animal, _, slot, servico) = PrepararCheckout();
+
+        var ex = await Assert.ThrowsAsync<BusinessRuleException>(
+            () => CriarServico().IniciarCheckoutAsync(CheckoutDe(animal, Guid.NewGuid(), slot, servico)));
+
+        Assert.Equal("RN-032", ex.Codigo);
+    }
+
+    [Fact]
+    public async Task Checkout_ComAnimalDeOutroResponsavel_ERecusado()
+    {
+        var (animal, vet, slot, servico) = PrepararCheckout();
+        _usuarioMock.SetupGet(u => u.EhAdmin).Returns(false);
+        _usuarioMock.SetupGet(u => u.EhTutor).Returns(true);
+        _usuarioMock.SetupGet(u => u.TutorId).Returns(Guid.NewGuid());
+
+        var ex = await Assert.ThrowsAsync<AcessoNegadoException>(
+            () => CriarServico().IniciarCheckoutAsync(CheckoutDe(animal, vet.Id, slot, servico)));
+
+        Assert.Equal("RN-105", ex.Codigo);
+    }
+
+    [Fact]
+    public async Task Checkout_MarcaAOrigemComoCheckout()
+    {
+        var (animal, vet, slot, servico) = PrepararCheckout();
+
+        Consulta? criada = null;
+        _repoMock.Setup(r => r.AdicionarAsync(It.IsAny<Consulta>()))
+            .Callback<Consulta>(c => criada = c).Returns(Task.CompletedTask);
+
+        await CriarServico().IniciarCheckoutAsync(CheckoutDe(animal, vet.Id, slot, servico));
+
+        // Distingue do POST /api/consultas, que e emergencia/balcao (RN-040)
+        Assert.Equal(OrigemConsulta.Checkout, criada!.Origem);
+        Assert.Equal(slot.Id, criada.SlotId);
+        Assert.Equal(servico.Id, criada.ServicoId);
     }
 
     // ── Máquina de estados da consulta (RN-035/RN-038) ───────────────────────
