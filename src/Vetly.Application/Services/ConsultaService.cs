@@ -258,6 +258,7 @@ public class ConsultaService : IConsultaService
         Id = c.Id, DataHora = c.DataHora, Modalidade = c.Modalidade,
         VeterinarioId = c.VeterinarioId, AnimalId = c.AnimalId, TutorId = c.TutorId,
         DiagnosticoValidado = c.DiagnosticoValidado, ProtocoloValidado = c.ProtocoloValidado,
-        StatusPagamento = c.StatusPagamento, Cancelada = c.Cancelada, Finalizada = c.Finalizada
+        StatusPagamento = c.StatusPagamento, Status = c.Status,
+        Cancelada = c.Cancelada, Finalizada = c.Finalizada
     };
 }

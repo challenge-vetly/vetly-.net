@@ -57,6 +57,16 @@ public class ConsultaConfiguration : IEntityTypeConfiguration<Consulta>
             .HasColumnName("STATUS_PAGAMENTO")
             .IsRequired();
 
+        // Estado da consulta na maquina de estados (RN-035/RN-038).
+        // Fonte de verdade; CANCELADA e FINALIZADA seguem por dupla escrita.
+        builder.Property(c => c.Status)
+            .HasConversion<int>()
+            .HasColumnName("STATUS")
+            .IsRequired();
+
+        // Consultas por estado sao a leitura mais comum da agenda e do dashboard
+        builder.HasIndex(c => c.Status).HasDatabaseName("IX_CONSULTA_STATUS");
+
         builder.Property(c => c.Cancelada)
             .HasColumnType("NUMBER(1)")
             .HasColumnName("CANCELADA");
