@@ -12,6 +12,7 @@ using Vetly.Application.Strategies.Split;
 using Vetly.Infrastructure.Adapters;
 using Vetly.Infrastructure.Data;
 using Vetly.Infrastructure.Repositories;
+using Vetly.Infrastructure.Security;
 using Vetly.API.Middlewares;
 using Vetly.API.HealthChecks;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
@@ -68,6 +69,13 @@ builder.Services.AddAuthorization(options =>
 {
     options.AddPolicy("ApenasAdmin", policy => policy.RequireRole("Admin"));
     options.AddPolicy("VeterinarioOuAdmin", policy => policy.RequireRole("Admin", "Veterinario"));
+
+    // Rotas do app do Responsavel (RN-060 em diante)
+    options.AddPolicy("ApenasTutor", policy => policy.RequireRole("Tutor"));
+
+    // Rotas em que o Responsavel opera os proprios dados e o Admin opera os de todos.
+    // A posse por linha e conferida no serviço, com a claim tutorId (RN-105/RN-106).
+    options.AddPolicy("TutorOuAdmin", policy => policy.RequireRole("Tutor", "Admin"));
 });
 
 // ── Repositórios ─────────────────────────────────────────────────────────────
@@ -81,6 +89,12 @@ builder.Services.AddScoped<IDocumentoRepository, DocumentoRepository>();
 builder.Services.AddScoped<IPagamentoRepository, PagamentoRepository>();
 builder.Services.AddScoped<IEmpresaRepository, EmpresaRepository>();
 builder.Services.AddScoped<ILembreteRepository, LembreteRepository>();
+builder.Services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
+
+// ── Segurança: hash de senha e emissão de token ──────────────────────────────
+// PBKDF2-HMAC-SHA256 com os parâmetros do OWASP; ver Pbkdf2SenhaHasher.
+builder.Services.AddSingleton<ISenhaHasher, Pbkdf2SenhaHasher>();
+builder.Services.AddSingleton<IGeradorDeTokenJwt, GeradorDeTokenJwt>();
 
 // ── Adaptadores de dependência externa (C2) ──────────────────────────────────
 // Trocar de fornecedor = trocar o registro aqui, sem tocar em serviço nenhum (§5).
@@ -107,6 +121,7 @@ builder.Services.AddScoped<IExameService, ExameService>();
 builder.Services.AddScoped<IPagamentoService, PagamentoService>();
 builder.Services.AddScoped<IEmpresaService, EmpresaService>();
 builder.Services.AddScoped<ILembreteService, LembreteService>();
+builder.Services.AddScoped<IAuthService, AuthService>();
 
 // ── Factories (IEnumerable<IDocumentoFactory> — resolvidas pelo DI) ──────────
 builder.Services.AddScoped<IDocumentoFactory, ProntuarioFactory>();
