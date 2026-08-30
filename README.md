@@ -96,16 +96,32 @@ dotnet test
 
 ## Como autenticar
 
-Todos os endpoints exigem JWT, exceto `POST /api/auth/token`.
+Todos os endpoints exigem JWT, exceto as rotas públicas de `api/auth` e os health checks.
+
+**Responsável (app)** — cadastro e login com e-mail e senha:
 
 ```bash
-curl -X POST https://localhost:7262/api/auth/token \
-  -H "Content-Type: application/json" \
-  -d '{"usuario":"admin-teste","role":"Admin"}'
+# 1. Cadastro — devolve token, refreshToken e consentimentoPendente
+curl -X POST https://localhost:7262/api/auth/registro/tutor -H "Content-Type: application/json" -d '{"nome":"Ana","email":"ana@exemplo.com","telefone":"11999998888","senha":"senha-forte-123"}'
+
+# 2. Login nas próximas vezes
+curl -X POST https://localhost:7262/api/auth/login -H "Content-Type: application/json" -d '{"email":"ana@exemplo.com","senha":"senha-forte-123"}'
+
+# 3. Renovação — o refresh token rotaciona a cada uso
+curl -X POST https://localhost:7262/api/auth/refresh -H "Content-Type: application/json" -d '{"refreshToken":"..."}'
 ```
 
-Roles disponíveis: `Admin` e `Veterinario`. Endpoints de criação e desativação de veterinários exigem role `Admin` (policy `ApenasAdmin`). Use o token retornado com `Authorization: Bearer {token}` nas demais chamadas.
+O token de acesso vale 8 horas; o refresh token, 30 dias, e é **rotativo**: cada renovação revoga o anterior. Reapresentar um token já usado derruba todas as sessões daquele usuário — é o sinal de que ele vazou.
 
+**Admin e veterinário (desenvolvimento)** — enquanto a credencial do vet não entra, a rota obsoleta segue disponível apenas em `Development`:
+
+```bash
+curl -X POST https://localhost:7262/api/auth/token -H "Content-Type: application/json" -d '{"usuario":"admin-teste","role":"Admin"}'
+```
+
+Roles: `Tutor`, `Veterinario` e `Admin`. Policies: `ApenasAdmin`, `VeterinarioOuAdmin`, `ApenasTutor` e `TutorOuAdmin`. Use o token com `Authorization: Bearer {token}`.
+
+As senhas são guardadas com PBKDF2-HMAC-SHA256, 210.000 iterações e salt aleatório por senha, no formato autodescritivo `pbkdf2$sha256$iteracoes$salt$hash` — aumentar o custo no futuro não invalida as senhas já cadastradas.
 ---
 
 ## Endpoints
