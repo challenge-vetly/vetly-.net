@@ -20,6 +20,12 @@ public class VetlyDbContext : DbContext
     public DbSet<Empresa> Empresas => Set<Empresa>();
     public DbSet<LembreteAgendado> Lembretes => Set<LembreteAgendado>();
 
+    /// <summary>Refresh tokens rotativos emitidos no login (§2.2).</summary>
+    public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
+
+    /// <summary>Dispositivos do Responsável registrados para push (RN-007/RN-092).</summary>
+    public DbSet<Dispositivo> Dispositivos => Set<Dispositivo>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(VetlyDbContext).Assembly);
