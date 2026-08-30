@@ -70,6 +70,21 @@ public class AgendaRepository : IAgendaRepository
     }
 
     /// <inheritdoc/>
+    public async Task<Dictionary<Guid, DateTime>> ObterProximoHorarioLivreAsync(
+        IEnumerable<Guid> veterinarioIds, DateTime agora)
+    {
+        var ids = veterinarioIds.ToList();
+
+        var proximos = await _context.Slots
+            .Where(s => ids.Contains(s.VeterinarioId) && s.Inicio > agora && s.Estado == EstadoSlot.Livre)
+            .GroupBy(s => s.VeterinarioId)
+            .Select(g => new { VeterinarioId = g.Key, Inicio = g.Min(s => s.Inicio) })
+            .ToListAsync();
+
+        return proximos.ToDictionary(p => p.VeterinarioId, p => p.Inicio);
+    }
+
+    /// <inheritdoc/>
     public async Task<IEnumerable<Servico>> ObterServicosAsync(Guid prestadorId) =>
         await _context.Servicos
             .Where(s => s.PrestadorId == prestadorId && s.Ativo)

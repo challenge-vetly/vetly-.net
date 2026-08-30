@@ -12,7 +12,7 @@ O Vetly é uma API REST para gestão de clínicas veterinárias, cobrindo todo o
 | Autenticação | JWT Bearer |
 | Documentação | Scalar (tema DeepSpace) em `/scalar/v1` |
 | IA | Ollama local (modelo `llama3.1`) |
-| Testes | xUnit + Moq (257 testes verdes) |
+| Testes | xUnit + Moq (278 testes verdes) |
 
 ## Padrões aplicados
 
@@ -266,6 +266,16 @@ curl http://localhost:5099/health/ready
 | POST | `/api/lembretes/{id}/tentativa` | Registrar tentativa de contato — após 3 sem resposta, alerta à clínica (RN-095) |
 | POST | `/api/lembretes/{id}/resposta` | Registrar resposta do tutor — encerra régua (RN-094) |
 
+### Busca e matching
+
+| Método | Rota | Descrição |
+|---|---|---|
+| GET | `/api/busca` | Clínicas e vets autônomos por proximidade e necessidade, ordenados pelo score (RN-001 a RN-033) |
+
+Parâmetros: `animalId` (obrigatório), `necessidade`, `lat`/`lng` **ou** `cep`, `raioKm` (1–25, padrão 10), `especialidade`, `valorMinimo`, `valorMaximo`, `atendeHoje`, `pagina`, `tamanho`.
+
+O score combina **distância 40%, avaliação 30% e disponibilidade 30%** (RN-030). Prestador sem as 3 avaliações mínimas (RN-057) é ordenado só por distância e disponibilidade, com os pesos renormalizados em 57/43 — sem boost artificial e sem nota inventada (RN-033, P-09). Cada item traz a composição do score, para o app poder explicar a ordem.
+
 ### IA (Ollama)
 | Método | Rota | Descrição |
 |---|---|---|
@@ -301,6 +311,11 @@ Sem parâmetros valem página 1 e 20 itens. O tamanho é limitado a 100 por pág
 | RN-026 | Endereço persistido no próprio registro, com latitude/longitude **derivadas dele** pela geocodificação — o payload do cliente é ignorado | `Endereco` + `IGeocodificacaoAdapter` |
 | RN-033/RN-057 | Nota só é pública a partir de 3 avaliações; `PUBLICADO_EM` ancora o selo "Novo na Vetly" por 30 dias | `Veterinario.TemNotaPublica` + `PublicarNoMatching` |
 | RN-105/RN-106 | Escopo por linha: o Responsável só alcança os próprios dados, o veterinário só os animais que atende, e o escopo vem do token — não de parâmetro do cliente | `IUsuarioAtual` + guardas em `AnimalService`, `ConsultaService`, `PagamentoService`, `TutorService` |
+| RN-001/RN-002 | Busca lista clínicas e vets autônomos por proximidade e necessidade, ordenados por score | `BuscaService` |
+| RN-027 | Distância entre a posição do Responsável e a coordenada do prestador; CEP é o fallback quando a localização é negada | `BuscaService.ResolverPosicaoAsync` |
+| RN-028 | Raio de 10 km por padrão, expansível até 25 km | `BuscaService` |
+| RN-029 | Espécie atendida é filtro **eliminatório** — matching clinicamente inválido não aparece | `BuscaService.Elegivel` |
+| RN-030/RN-031 | Score 40/30/30 e desempate por nota → distância → disponibilidade em 48h | `BuscaService.CalcularScore` |
 | RN-042 | Percentual de retenção do cancelamento parcial é configurado pela clínica no onboarding (padrão 30%) e lido no cancelamento | `Empresa.DefinirPoliticaRetencao` |
 | RN-072 | Faixa Enterprise recalculada automaticamente ao cruzar o limite de vets vinculados | `Empresa.RecalcularFaixaEnterprise` |
 | RN-034 | Agenda configurável (dias, horário, duração, intervalo) materializada em horários por 60 dias | `AgendaConfig` + `AgendaService` |
