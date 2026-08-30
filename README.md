@@ -12,7 +12,7 @@ O Vetly é uma API REST para gestão de clínicas veterinárias, cobrindo todo o
 | Autenticação | JWT Bearer |
 | Documentação | Scalar (tema DeepSpace) em `/scalar/v1` |
 | IA | Ollama local (modelo `llama3.1`) |
-| Testes | xUnit + Moq (135 testes verdes) |
+| Testes | xUnit + Moq (137 testes verdes) |
 
 ## Padrões aplicados
 
@@ -159,7 +159,7 @@ curl http://localhost:5099/health/ready
 ### Tutores
 | Método | Rota | Descrição |
 |---|---|---|
-| GET | `/api/tutores` | Lista todos ativos |
+| GET | `/api/tutores` | Lista todos ativos — requer role Admin (RN-069/RN-106) |
 | GET | `/api/tutores/{id}` | Detalhe |
 | GET | `/api/tutores/{id}/animais` | Animais do tutor |
 | POST | `/api/tutores` | Cadastrar |

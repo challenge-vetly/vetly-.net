@@ -15,9 +15,15 @@ public class TutoresController : ControllerBase
 
     public TutoresController(ITutorService service) => _service = service;
 
-    /// <summary>Retorna todos os tutores ativos.</summary>
+    /// <summary>
+    /// Retorna todos os tutores ativos. Restrito a Admins (RN-069/RN-106): a lista
+    /// completa de Responsaveis e dado pessoal, nao pode sair para qualquer autenticado.
+    /// </summary>
     [HttpGet]
+    [Authorize(Policy = "ApenasAdmin")]
     [ProducesResponseType(typeof(IEnumerable<TutorDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> ObterTodos() =>
         Ok(await _service.ObterTodosAsync());
 

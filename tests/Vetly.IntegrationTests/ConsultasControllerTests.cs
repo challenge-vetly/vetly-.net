@@ -132,6 +132,30 @@ public class ConsultasControllerTests : IClassFixture<VetlyWebApplicationFactory
         Assert.Contains("\"plano\":\"Enterprise\"", corpo);
     }
 
+    // ── Escopo de acesso (C-07 parcial, RN-069/RN-106) ───────────────────────
+
+    [Fact]
+    public async Task GetTutores_ComTokenSemRoleAdmin_Retorna403()
+    {
+        // A lista completa de Responsaveis e dado pessoal: nao sai para qualquer autenticado
+        var token = GerarTokenJwt(role: "Veterinario");
+        _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        var response = await _client.GetAsync("/api/tutores");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetTutores_SemToken_Retorna401()
+    {
+        var client = _factory.CreateClient();
+
+        var response = await client.GetAsync("/api/tutores");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
     // ── Helper ───────────────────────────────────────────────────────────────
 
     private static string GerarTokenJwt(string role = "Admin")
