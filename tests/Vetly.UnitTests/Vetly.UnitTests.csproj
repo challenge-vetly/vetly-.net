@@ -24,9 +24,6 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Vetly.Application\Vetly.Application.csproj" />
     <ProjectReference Include="..\..\src\Vetly.Domain\Vetly.Domain.csproj" />
-    <!-- Adaptadores simulados (C2) vivem na Infrastructure e sao testaveis como unidade:
-         nao tocam rede nem banco, so implementam a porta declarada na Application. -->
-    <ProjectReference Include="..\..\src\Vetly.Infrastructure\Vetly.Infrastructure.csproj" />
   </ItemGroup>
 
 </Project>

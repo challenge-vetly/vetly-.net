@@ -2,10 +2,12 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Vetly.Application.DTOs.Veterinario;
 using Vetly.Infrastructure.Adapters;
 
-namespace Vetly.UnitTests;
+namespace Vetly.IntegrationTests;
 
 /// <summary>
 /// Testes do adaptador simulado de validacao de CRMV (RN-107, camada C2).
+/// Fica neste projeto porque o adaptador vive na Infrastructure — referencia-la a partir
+/// do projeto de unitarios criava conflito de versao do Microsoft.EntityFrameworkCore.
 /// O contrato exige as quatro respostas — inclusive Indisponivel, que e o que
 /// impede a plataforma de aprovar um registro por omissao.
 /// </summary>
