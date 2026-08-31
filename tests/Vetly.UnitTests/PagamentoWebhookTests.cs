@@ -24,6 +24,7 @@ public class PagamentoWebhookTests
     private readonly Mock<IEmpresaRepository> _empresaRepo = new();
     private readonly Mock<IPagamentoAdapter> _adaptador = new();
     private readonly Mock<IAgendaRepository> _agendaRepo = new();
+    private readonly Mock<IFilaDeJobs> _fila = new();
     private readonly Mock<IUsuarioAtual> _usuario = new();
 
     private const string Referencia = "sim_referencia-de-teste";
@@ -46,7 +47,7 @@ public class PagamentoWebhookTests
 
     private PagamentoService CriarServico() =>
         new(_repo.Object, _vetRepo.Object, _consultaRepo.Object, _empresaRepo.Object,
-            _adaptador.Object, _agendaRepo.Object,
+            _adaptador.Object, _agendaRepo.Object, _fila.Object,
             [new SplitBasicoStrategy(), new SplitProfissionalStrategy(), new SplitEnterpriseStrategy()],
             _usuario.Object);
 

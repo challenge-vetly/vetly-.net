@@ -44,6 +44,9 @@ public class VetlyDbContext : DbContext
     /// <summary>Respostas guardadas das requisições idempotentes (§2.5).</summary>
     public DbSet<RegistroIdempotencia> RegistrosDeIdempotencia => Set<RegistroIdempotencia>();
 
+    /// <summary>Fila de trabalhos de negócio executados fora da requisição (§11).</summary>
+    public DbSet<Job> Jobs => Set<Job>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(VetlyDbContext).Assembly);

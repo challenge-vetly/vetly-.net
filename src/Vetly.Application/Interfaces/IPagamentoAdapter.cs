@@ -14,8 +14,16 @@ public readonly record struct CriarCobrancaRequest(
 /// <param name="ReferenciaExterna">Identificador da cobrança no provedor.</param>
 /// <param name="Instrucoes">Como pagar — código Pix, link, o que o provedor devolver.</param>
 /// <param name="Status">Situação inicial. Nunca é confirmada aqui: quem confirma é o webhook.</param>
+/// <param name="EventoSimulado">
+/// Payload que o provedor enviaria ao webhook, e o atraso com que enviaria. Só o
+/// adaptador simulado preenche isto — é assim que ele entrega o evento sem ninguém
+/// precisar chamar a rota interna na mão. O adaptador real devolve nulo: quem manda
+/// o evento é o provedor.
+/// </param>
+/// <param name="AtrasoDoEvento">Atraso até o envio do evento simulado.</param>
 public readonly record struct CobrancaCriadaDto(
-    string ReferenciaExterna, string Instrucoes, StatusPagamento Status);
+    string ReferenciaExterna, string Instrucoes, StatusPagamento Status,
+    string? EventoSimulado = null, TimeSpan? AtrasoDoEvento = null);
 
 /// <summary>Pedido de estorno.</summary>
 /// <param name="ChaveIdempotencia">Chave do estorno: reenviar a mesma não estorna duas vezes.</param>
