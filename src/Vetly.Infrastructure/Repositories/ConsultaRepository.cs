@@ -76,4 +76,13 @@ public class ConsultaRepository : RepositoryBase<Consulta>, IConsultaRepository
 
         return new ResultadoPaginado<Consulta>(itens, total, paginacao);
     }
+
+    /// <inheritdoc/>
+    public async Task<IEnumerable<Consulta>> ObterNoPeriodoAsync(DateTime inicio, DateTime fim) =>
+        // Sem paginacao de proposito: agregacao precisa do conjunto inteiro, e uma
+        // pagina daria um funil que muda conforme o tamanho da pagina (RN-106).
+        await _dbSet
+            .AsNoTracking()
+            .Where(c => c.DataHora >= inicio && c.DataHora <= fim)
+            .ToListAsync();
 }

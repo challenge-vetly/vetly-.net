@@ -21,4 +21,10 @@ public interface IConsultaRepository : IRepositoryBase<Consulta>
     /// A contagem total é feita sobre o filtro, antes do recorte da página.
     /// </summary>
     Task<ResultadoPaginado<Consulta>> ObterComFiltrosAsync(FiltroConsultaDto filtro, Paginacao paginacao);
+
+    /// <summary>
+    /// Consultas de um período, sem paginação. É a base do funil de atendimento
+    /// (RN-106) — agregação precisa do conjunto inteiro, não de uma página.
+    /// </summary>
+    Task<IEnumerable<Consulta>> ObterNoPeriodoAsync(DateTime inicio, DateTime fim);
 }

@@ -16,5 +16,11 @@ public interface IAuditoriaIaRepository
     /// <summary>Decisões de uma consulta, da mais recente à mais antiga.</summary>
     Task<IEnumerable<LogAuditoriaIa>> ObterDaConsultaAsync(Guid consultaId);
 
+    /// <summary>
+    /// Decisões registradas num período, em toda a base. É o que responde se a IA
+    /// está ajudando ou dando trabalho (RN-106).
+    /// </summary>
+    Task<IEnumerable<LogAuditoriaIa>> ObterNoPeriodoAsync(DateTime inicio, DateTime fim);
+
     Task<int> SalvarAsync();
 }
