@@ -27,5 +27,11 @@ public enum TipoJob
     /// Entrega a transcrição do motor simulado pelo mesmo callback que o fluxo real
     /// usaria — assim o caminho assíncrono é exercitado de verdade (§5.3).
     /// </summary>
-    TranscreverSegmentoSimulado = 4
+    TranscreverSegmentoSimulado = 4,
+
+    /// <summary>
+    /// Estrutura a transcrição da consulta em prontuário pela IA (RN-080).
+    /// Enfileirado quando todos os trechos tiveram desfecho e a janela já fechou.
+    /// </summary>
+    EstruturarConsulta = 5
 }

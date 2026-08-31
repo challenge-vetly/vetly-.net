@@ -68,5 +68,17 @@ public class CapturaRepository : ICapturaRepository
         await _context.Transcricoes.AddAsync(transcricao);
 
     /// <inheritdoc/>
+    public async Task<RascunhoIa?> ObterRascunhoDaSessaoAsync(Guid sessaoId) =>
+        await _context.RascunhosDeIa.FirstOrDefaultAsync(r => r.SessaoCapturaId == sessaoId);
+
+    /// <inheritdoc/>
+    public async Task<RascunhoIa?> ObterRascunhoDaConsultaAsync(Guid consultaId) =>
+        await _context.RascunhosDeIa.FirstOrDefaultAsync(r => r.ConsultaId == consultaId);
+
+    /// <inheritdoc/>
+    public async Task AdicionarRascunhoAsync(RascunhoIa rascunho) =>
+        await _context.RascunhosDeIa.AddAsync(rascunho);
+
+    /// <inheritdoc/>
     public async Task<int> SalvarAsync() => await _context.SaveChangesAsync();
 }

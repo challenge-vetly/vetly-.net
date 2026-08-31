@@ -19,4 +19,13 @@ public interface IOllamaService
 
     /// <summary>Realiza triagem de sintomas e retorna nível de urgência e recomendações.</summary>
     Task<TriagemResultadoDto> RealizarTriagemAsync(SintomasDto sintomas);
+
+    /// <summary>
+    /// Estrutura a transcrição de uma consulta em prontuário (RN-080).
+    ///
+    /// Sai daqui, e não de um adaptador paralelo, porque é o mesmo motor e o mesmo
+    /// contrato de sugestão: o que a IA produz é rascunho até o veterinário decidir
+    /// (RN-082).
+    /// </summary>
+    Task<ConsultaEstruturadaDto> EstruturarConsultaAsync(ContextoDaEstruturacaoDto contexto);
 }

@@ -207,6 +207,41 @@ public class TranscricaoTests : IClassFixture<VetlyWebApplicationFactory>
             new Job(TipoJob.TranscreverSegmentoSimulado, null), CancellationToken.None));
     }
 
+    // ── Estruturacao pela IA (RN-080) ────────────────────────────────────────
+
+    [Fact]
+    public async Task Estruturacao_ChamaAGeracaoDoRascunhoDaSessao()
+    {
+        var sessaoId = Guid.NewGuid();
+        var rascunhos = new Mock<IRascunhoService>();
+
+        var handler = new EstruturarConsultaHandler(
+            rascunhos.Object, NullLogger<EstruturarConsultaHandler>.Instance);
+
+        await handler.ExecutarAsync(
+            new Job(TipoJob.EstruturarConsulta, sessaoId.ToString()), CancellationToken.None);
+
+        rascunhos.Verify(r => r.GerarAsync(sessaoId), Times.Once);
+    }
+
+    [Fact]
+    public async Task Estruturacao_PayloadInvalido_Falha()
+    {
+        var handler = new EstruturarConsultaHandler(
+            Mock.Of<IRascunhoService>(), NullLogger<EstruturarConsultaHandler>.Instance);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => handler.ExecutarAsync(
+            new Job(TipoJob.EstruturarConsulta, "nao-e-guid"), CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Rascunho_SemToken_NaoEAlcancavel()
+    {
+        var resposta = await _client.GetAsync($"/api/consultas/{Guid.NewGuid()}/rascunho");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, resposta.StatusCode);
+    }
+
     // ── Fluxo Node-RED (§5.3) ────────────────────────────────────────────────
 
     private static SttAdapterNodeRed NodeRed(HttpStatusCode status, out RespostaFixa fixa)

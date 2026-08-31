@@ -107,6 +107,53 @@ public class OllamaService : IOllamaService
         };
     }
 
+    /// <inheritdoc/>
+    public async Task<ConsultaEstruturadaDto> EstruturarConsultaAsync(ContextoDaEstruturacaoDto contexto)
+    {
+        if (string.IsNullOrWhiteSpace(contexto.Transcricao))
+            throw new BusinessRuleException("RN-080",
+                "Nao ha transcricao para estruturar. A consulta segue pelo prontuario manual.");
+
+        var peso = contexto.PesoKg is { } kg && kg > 0
+            ? $"{kg} kg"
+            : "nao informado";
+
+        var conhecido = new List<string>();
+        if (contexto.Alergias.Count > 0)
+            conhecido.Add($"Alergias conhecidas: {string.Join(", ", contexto.Alergias)}.");
+        if (contexto.CondicoesPreexistentes.Count > 0)
+            conhecido.Add($"Condicoes preexistentes: {string.Join(", ", contexto.CondicoesPreexistentes)}.");
+
+        // Transcricao incompleta precisa ser dita: sem isso o modelo preenche a lacuna
+        // por conta propria, e o veterinario nao tem como distinguir o que foi falado
+        // do que foi inventado (§7.3).
+        var ressalva = contexto.TranscricaoParcial
+            ? "ATENCAO: a transcricao esta INCOMPLETA. Nao complete lacunas nem infira o que nao foi dito; " +
+              "deixe o campo vazio quando o trecho correspondente nao aparecer na transcricao. "
+            : string.Empty;
+
+        var prompt =
+            $"Voce e um assistente veterinario. Estruture a transcricao de uma consulta em prontuario, " +
+            $"usando SOMENTE o que foi dito. Nao invente sintomas, medicamentos, doses nem achados. " +
+            $"{ressalva}" +
+            $"Responda APENAS com um objeto JSON com os campos: anamnese, exameFisico, " +
+            $"hipotesesDiagnosticas (array de strings, da mais provavel a menos), conduta e orientacoes. " +
+            $"Campo sem informacao na transcricao deve vir como string vazia ou array vazio.\n\n" +
+            $"Especie: {contexto.Especie}. Raca: {contexto.Raca}. Idade: {contexto.IdadeAnos} anos. " +
+            $"Peso: {peso}. {string.Join(" ", conhecido)}\n\n" +
+            $"Transcricao da consulta:\n{contexto.Transcricao}";
+
+        var resposta = await EnviarAsync(prompt);
+
+        return ParsearOuPadrao<ConsultaEstruturadaDto>(resposta) ?? new ConsultaEstruturadaDto
+        {
+            // Sem JSON valido nao se inventa estrutura: o texto bruto vai para a
+            // anamnese e o veterinario corrige, em vez de receber campos plausiveis
+            // que a IA nao produziu de verdade.
+            Anamnese = resposta
+        };
+    }
+
     // Envia um prompt ao Ollama e retorna a resposta em texto
     private async Task<string> EnviarAsync(string prompt)
     {

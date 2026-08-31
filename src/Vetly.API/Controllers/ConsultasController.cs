@@ -21,11 +21,14 @@ public class ConsultasController : ControllerBase
 {
     private readonly IConsultaService _service;
     private readonly ICapturaService _captura;
+    private readonly IRascunhoService _rascunhos;
 
-    public ConsultasController(IConsultaService service, ICapturaService captura)
+    public ConsultasController(
+        IConsultaService service, ICapturaService captura, IRascunhoService rascunhos)
     {
         _service = service;
         _captura = captura;
+        _rascunhos = rascunhos;
     }
 
     /// <summary>
@@ -203,4 +206,25 @@ public class ConsultasController : ControllerBase
     [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
     public async Task<IActionResult> Encerrar(Guid id) =>
         Ok(await _captura.EncerrarAsync(id));
+
+    /// <summary>
+    /// Rascunho de prontuario estruturado pela IA a partir da consulta (RN-080).
+    /// </summary>
+    /// <remarks>
+    /// E rascunho, e a palavra e literal: nada aqui vira documento sem a decisao
+    /// explicita do veterinario (RN-082). A resposta traz a transcricao de origem
+    /// junto, para que a decisao seja informada — e os avisos que pesam nela, como
+    /// <c>TranscricaoParcial</c> e <c>PesoAusente</c> (RN-081).
+    ///
+    /// 404 enquanto a estruturacao nao terminou, ou quando ela nao produziu nada e a
+    /// consulta seguiu pelo prontuario manual (RN-085) — <c>GET
+    /// /api/consultas/{id}/captura</c> mostra em que ponto do ciclo a sessao esta.
+    /// </remarks>
+    [HttpGet("{id:guid}/rascunho")]
+    [ProducesResponseType(typeof(RascunhoIaDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ObterRascunho(Guid id) =>
+        Ok(await _rascunhos.ObterDaConsultaAsync(id));
 }
