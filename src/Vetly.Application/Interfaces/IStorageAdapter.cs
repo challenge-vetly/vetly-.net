@@ -26,6 +26,15 @@ public interface IStorageAdapter
     /// </summary>
     Task<UrlAssinadaDto> GerarUrlDeLeituraAsync(string chave, TimeSpan validade);
 
+    /// <summary>
+    /// Grava bytes produzidos pela propria API — hoje, o PDF do documento clinico.
+    ///
+    /// Nao contradiz a regra de nao proxiar bytes: ali quem tem o arquivo e o app, e
+    /// mandar o binario passar pela API seria trabalho inutil. Aqui quem produz o
+    /// arquivo e o servidor, e nao ha para quem delegar o envio.
+    /// </summary>
+    Task GravarAsync(string chave, byte[] conteudo, string contentType);
+
     /// <summary>Indica se o objeto já foi enviado.</summary>
     Task<bool> ExisteAsync(string chave);
 

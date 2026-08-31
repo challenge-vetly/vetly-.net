@@ -1,8 +1,8 @@
 using System.Reflection;
+using System.Text.Json;
 using Moq;
-using Vetly.Application.DTOs.Animal;
-using Vetly.Application.DTOs.Consulta;
-using Vetly.Application.DTOs.Veterinario;
+using Vetly.Application.DTOs.Captura;
+using Vetly.Application.DTOs.Documento;
 using Vetly.Application.Exceptions;
 using Vetly.Application.Factories;
 using Vetly.Application.Interfaces;
@@ -15,7 +15,8 @@ namespace Vetly.UnitTests;
 
 /// <summary>
 /// Testes unitarios do DocumentoService.
-/// Verifica que a factory correta e selecionada via IEnumerable e que RN-082 e aplicada.
+/// Verifica que a factory correta e selecionada via IEnumerable, que RN-082 e aplicada
+/// e que o conteudo sai do estado final aprovado pelo veterinario (RN-083).
 /// </summary>
 public class DocumentoServiceTests
 {
@@ -23,10 +24,29 @@ public class DocumentoServiceTests
     private readonly Mock<IConsultaRepository> _consultaRepoMock = new();
     private readonly Mock<IVeterinarioRepository> _vetRepoMock = new();
     private readonly Mock<IAnimalRepository> _animalRepoMock = new();
+    private readonly Mock<ITutorRepository> _tutorRepoMock = new();
+    private readonly Mock<IPagamentoRepository> _pagamentoRepoMock = new();
+    private readonly Mock<IAuditoriaIaRepository> _auditoriaMock = new();
+    private readonly Mock<IMidiaRepository> _midiaRepoMock = new();
+    private readonly Mock<IStorageAdapter> _storageMock = new();
+    private readonly Mock<IGeradorDePdf> _pdfMock = new();
+    private readonly Mock<IUsuarioAtual> _usuarioMock = new();
+
+    public DocumentoServiceTests()
+    {
+        _docRepoMock.Setup(r => r.AdicionarAsync(It.IsAny<Documento>())).Returns(Task.CompletedTask);
+        _docRepoMock.Setup(r => r.SalvarAsync()).ReturnsAsync(1);
+        _midiaRepoMock.Setup(r => r.AdicionarAsync(It.IsAny<Midia>())).Returns(Task.CompletedTask);
+        _midiaRepoMock.Setup(r => r.SalvarAsync()).ReturnsAsync(1);
+        _pdfMock.Setup(p => p.Renderizar(It.IsAny<string>(), It.IsAny<string>())).Returns([1, 2, 3]);
+        _usuarioMock.SetupGet(u => u.EhAdmin).Returns(true);
+    }
 
     private DocumentoService CriarServico(params IDocumentoFactory[] factories) =>
-        new(_docRepoMock.Object, _consultaRepoMock.Object,
-            _vetRepoMock.Object, _animalRepoMock.Object, factories);
+        new(_docRepoMock.Object, _consultaRepoMock.Object, _vetRepoMock.Object,
+            _animalRepoMock.Object, _tutorRepoMock.Object, _pagamentoRepoMock.Object,
+            _auditoriaMock.Object, _midiaRepoMock.Object, _storageMock.Object,
+            _pdfMock.Object, _usuarioMock.Object, factories);
 
     private static Consulta CriarConsultaValidada()
     {
@@ -37,6 +57,47 @@ public class DocumentoServiceTests
         consulta.ConfirmarPagamento();
         consulta.ValidarDiagnostico();
         return consulta;
+    }
+
+    /// <summary>
+    /// O conteudo aprovado vive na trilha de auditoria: e o registro do que o
+    /// veterinario de fato aceitou (RN-082/RN-083).
+    /// </summary>
+    private void ConteudoAprovado(Guid consultaId, ConteudoDoProntuarioDto? conteudo = null)
+    {
+        var json = JsonSerializer.Serialize(
+            conteudo ?? new ConteudoDoProntuarioDto
+            {
+                Anamnese = "Vomito ha 24h.",
+                ExameFisico = "Abdome sensivel.",
+                HipotesesDiagnosticas = ["Gastrite aguda"],
+                Conduta = "Jejum de 12h e antiemetico.",
+                Orientacoes = "Retornar se persistir."
+            },
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+
+        _auditoriaMock.Setup(a => a.ObterDaConsultaAsync(consultaId)).ReturnsAsync(
+            [new LogAuditoriaIa(consultaId, null, null, Guid.NewGuid(),
+                DecisaoSobreRascunho.Aprovado, json, null, false, "ollama/llama3.1")]);
+    }
+
+    /// <summary>Vet, animal e Responsavel do cenario padrao.</summary>
+    private void CenarioCompleto(Consulta consulta)
+    {
+        _consultaRepoMock.Setup(r => r.ObterPorIdAsync(consulta.Id)).ReturnsAsync(consulta);
+
+        var vet = new Veterinario("Dr. Vet", new Crmv("12345-SP"), "SP",
+            PersonaVeterinario.Autonomo, PlanoAssinatura.Profissional);
+        _vetRepoMock.Setup(r => r.ObterPorIdAsync(It.IsAny<Guid>())).ReturnsAsync(vet);
+
+        var animal = new Animal("Rex", "Canino", "Labrador", new DateTime(2020, 1, 1), Guid.NewGuid());
+        animal.RegistrarPeso(28m);
+        _animalRepoMock.Setup(r => r.ObterPorIdAsync(It.IsAny<Guid>())).ReturnsAsync(animal);
+
+        _tutorRepoMock.Setup(r => r.ObterPorIdAsync(It.IsAny<Guid>()))
+            .ReturnsAsync(new Tutor("Ana Souza", "ana@exemplo.com", "11999998888"));
+
+        ConteudoAprovado(consulta.Id);
     }
 
     // ── Conteúdo, assinatura e publicação (RN-083, RN-087, RN-090) ──────────
@@ -121,41 +182,112 @@ public class DocumentoServiceTests
     public async Task Gerar_SelecionaFactoryCorreta_PorTipoDocumento()
     {
         // Arrange — duas factories registradas; deve escolher a de Prontuario
+        var documento = new Documento(TipoDocumento.Prontuario, "12345-SP", Guid.NewGuid());
+        documento.RegistrarConteudo("conteudo formatado");
+
         var factoryProntuario = new Mock<IDocumentoFactory>();
         factoryProntuario.Setup(f => f.TipoSuportado).Returns(TipoDocumento.Prontuario);
         factoryProntuario
-            .Setup(f => f.Criar(It.IsAny<ConsultaDto>(), It.IsAny<VeterinarioDto>(), It.IsAny<AnimalDto>()))
-            .Returns(new Documento(TipoDocumento.Prontuario, "12345-SP", Guid.NewGuid()));
+            .Setup(f => f.Criar(It.IsAny<ContextoDoDocumentoDto>()))
+            .Returns(documento);
 
         var factoryReceita = new Mock<IDocumentoFactory>();
         factoryReceita.Setup(f => f.TipoSuportado).Returns(TipoDocumento.ReceitaVeterinaria);
 
         var consulta = CriarConsultaValidada();
-        var consultaId = consulta.Id;
-
-        _consultaRepoMock
-            .Setup(r => r.ObterPorIdAsync(consultaId))
-            .ReturnsAsync(consulta);
-
-        var crmv = new Crmv("12345-SP");
-        var vet = new Veterinario("Dr. Vet", crmv, "SP", PersonaVeterinario.Autonomo, PlanoAssinatura.Profissional);
-        _vetRepoMock.Setup(r => r.ObterPorIdAsync(It.IsAny<Guid>())).ReturnsAsync(vet);
-
-        var animal = new Animal("Rex", "Canino", "Labrador", new DateTime(2020, 1, 1), Guid.NewGuid());
-        _animalRepoMock.Setup(r => r.ObterPorIdAsync(It.IsAny<Guid>())).ReturnsAsync(animal);
-
-        _docRepoMock.Setup(r => r.AdicionarAsync(It.IsAny<Documento>())).Returns(Task.CompletedTask);
-        _docRepoMock.Setup(r => r.SalvarAsync()).ReturnsAsync(1);
+        CenarioCompleto(consulta);
 
         var service = CriarServico(factoryProntuario.Object, factoryReceita.Object);
 
         // Act
-        var resultado = await service.GerarAsync(consultaId, TipoDocumento.Prontuario);
+        var resultado = await service.GerarAsync(consulta.Id, TipoDocumento.Prontuario);
 
         // Assert — a factory de Prontuario foi chamada; a de Receita nao
-        factoryProntuario.Verify(f => f.Criar(It.IsAny<ConsultaDto>(), It.IsAny<VeterinarioDto>(), It.IsAny<AnimalDto>()), Times.Once);
-        factoryReceita.Verify(f => f.Criar(It.IsAny<ConsultaDto>(), It.IsAny<VeterinarioDto>(), It.IsAny<AnimalDto>()), Times.Never);
+        factoryProntuario.Verify(f => f.Criar(It.IsAny<ContextoDoDocumentoDto>()), Times.Once);
+        factoryReceita.Verify(f => f.Criar(It.IsAny<ContextoDoDocumentoDto>()), Times.Never);
         Assert.Equal(TipoDocumento.Prontuario, resultado.TipoDocumento);
+    }
+
+    [Fact]
+    public async Task Gerar_EntregaAFactoryOConteudoAprovadoPeloVeterinario()
+    {
+        ContextoDoDocumentoDto? contexto = null;
+
+        var factory = new Mock<IDocumentoFactory>();
+        factory.Setup(f => f.TipoSuportado).Returns(TipoDocumento.Prontuario);
+        factory.Setup(f => f.Criar(It.IsAny<ContextoDoDocumentoDto>()))
+            .Callback<ContextoDoDocumentoDto>(c => contexto = c)
+            .Returns(() =>
+            {
+                var doc = new Documento(TipoDocumento.Prontuario, "12345-SP", Guid.NewGuid());
+                doc.RegistrarConteudo("x");
+                return doc;
+            });
+
+        var consulta = CriarConsultaValidada();
+        CenarioCompleto(consulta);
+
+        await CriarServico(factory.Object).GerarAsync(consulta.Id, TipoDocumento.Prontuario);
+
+        // RN-083: o que vai ao documento e o estado final aprovado, e nao o rascunho
+        Assert.Equal("Vomito ha 24h.", contexto!.Conteudo.Anamnese);
+        Assert.Equal("Gastrite aguda", contexto.Conteudo.HipotesesDiagnosticas[0]);
+
+        // Dados que so o documento carrega: quem assina, de quem e o animal
+        Assert.Equal("12345-SP", contexto.Crmv);
+        Assert.Equal("Ana Souza", contexto.TutorNome);
+        Assert.Equal(28m, contexto.PesoKg);
+    }
+
+    [Fact]
+    public async Task Gerar_SemConteudoAprovado_NaoEmiteDocumento()
+    {
+        var factory = new Mock<IDocumentoFactory>();
+        factory.Setup(f => f.TipoSuportado).Returns(TipoDocumento.Prontuario);
+
+        var consulta = CriarConsultaValidada();
+        CenarioCompleto(consulta);
+
+        // A recusa grava conteudo vazio de proposito: nao houve conteudo aceito
+        _auditoriaMock.Setup(a => a.ObterDaConsultaAsync(consulta.Id)).ReturnsAsync(
+            [new LogAuditoriaIa(consulta.Id, null, null, Guid.NewGuid(),
+                DecisaoSobreRascunho.NaoAprovado, string.Empty, "nao corresponde", true, null)]);
+
+        var ex = await Assert.ThrowsAsync<BusinessRuleException>(
+            () => CriarServico(factory.Object).GerarAsync(consulta.Id, TipoDocumento.Prontuario));
+
+        Assert.Equal("RN-083", ex.Codigo);
+        factory.Verify(f => f.Criar(It.IsAny<ContextoDoDocumentoDto>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Gerar_AnexaOPdfRenderizadoAoDocumento()
+    {
+        var factory = new Mock<IDocumentoFactory>();
+        factory.Setup(f => f.TipoSuportado).Returns(TipoDocumento.Prontuario);
+        factory.Setup(f => f.Criar(It.IsAny<ContextoDoDocumentoDto>())).Returns(() =>
+        {
+            var doc = new Documento(TipoDocumento.Prontuario, "12345-SP", Guid.NewGuid());
+            doc.RegistrarConteudo("PRONTUARIO VETERINARIO");
+            return doc;
+        });
+
+        var consulta = CriarConsultaValidada();
+        CenarioCompleto(consulta);
+
+        Midia? midia = null;
+        _midiaRepoMock.Setup(r => r.AdicionarAsync(It.IsAny<Midia>()))
+            .Callback<Midia>(m => midia = m).Returns(Task.CompletedTask);
+
+        var resultado = await CriarServico(factory.Object).GerarAsync(consulta.Id, TipoDocumento.Prontuario);
+
+        // O PDF e o que o Responsavel leva para fora do app (RN-090)
+        Assert.NotNull(resultado.PdfMidiaId);
+        Assert.Equal(midia!.Id, resultado.PdfMidiaId);
+        Assert.Equal(TipoMidia.DocumentoPdf, midia.Tipo);
+
+        // Entra pelo mesmo registro de midia dos outros arquivos: URL sempre temporaria
+        _storageMock.Verify(s => s.GravarAsync(midia.ChaveStorage, It.IsAny<byte[]>(), "application/pdf"), Times.Once);
     }
 
     [Fact]
@@ -258,5 +390,140 @@ public class DocumentoServiceTests
 
         await Assert.ThrowsAsync<InvalidOperationException>(
             () => service.GerarAsync(consulta.Id, TipoDocumento.Atestado));
+    }
+
+    // ── Publicação no board do pet (RN-011/RN-090) ───────────────────────────
+
+    private Documento DocumentoPublicavel(TipoDocumento tipo = TipoDocumento.Prontuario)
+    {
+        var doc = new Documento(tipo, "12345-SP", consultaId: Guid.NewGuid());
+        doc.RegistrarConteudo("PRONTUARIO VETERINARIO");
+
+        _docRepoMock.Setup(r => r.ObterPorIdAsync(doc.Id)).ReturnsAsync(doc);
+
+        return doc;
+    }
+
+    [Fact]
+    public async Task Publicar_ColocaODocumentoNoBoardDoPet()
+    {
+        var doc = DocumentoPublicavel();
+
+        var resultado = await CriarServico().PublicarAsync(doc.Id);
+
+        Assert.NotNull(resultado.PublicadoEm);
+    }
+
+    [Fact]
+    public async Task Publicar_DocumentoSemConteudo_NaoVaiAoBoard()
+    {
+        var doc = new Documento(TipoDocumento.Prontuario, "12345-SP", consultaId: Guid.NewGuid());
+        _docRepoMock.Setup(r => r.ObterPorIdAsync(doc.Id)).ReturnsAsync(doc);
+
+        var ex = await Assert.ThrowsAsync<BusinessRuleException>(() => CriarServico().PublicarAsync(doc.Id));
+
+        Assert.Equal("RN-090", ex.Codigo);
+    }
+
+    [Fact]
+    public async Task Publicar_ReceitaSemAssinatura_NaoVaiAoBoard()
+    {
+        var receita = DocumentoPublicavel(TipoDocumento.ReceitaVeterinaria);
+
+        // No board ela pareceria valida sem ser (RN-087)
+        var ex = await Assert.ThrowsAsync<BusinessRuleException>(
+            () => CriarServico().PublicarAsync(receita.Id));
+
+        Assert.Equal("RN-087", ex.Codigo);
+    }
+
+    [Fact]
+    public async Task Publicar_ReceitaAssinada_VaiAoBoard()
+    {
+        var receita = DocumentoPublicavel(TipoDocumento.ReceitaVeterinaria);
+        receita.RegistrarAssinatura("NomeDigitado", "Assinado por Dra. Marina — CRMV 12345-SP");
+
+        var resultado = await CriarServico().PublicarAsync(receita.Id);
+
+        Assert.NotNull(resultado.PublicadoEm);
+    }
+
+    [Fact]
+    public async Task MarcarComoLido_DocumentoNaoPublicado_NaoEAceito()
+    {
+        var doc = DocumentoPublicavel();
+
+        var ex = await Assert.ThrowsAsync<BusinessRuleException>(
+            () => CriarServico().MarcarComoLidoAsync(doc.Id));
+
+        Assert.Equal("RN-090", ex.Codigo);
+    }
+
+    [Fact]
+    public async Task MarcarComoLido_DepoisDePublicado_RegistraALeitura()
+    {
+        var doc = DocumentoPublicavel();
+        var servico = CriarServico();
+
+        await servico.PublicarAsync(doc.Id);
+        var resultado = await servico.MarcarComoLidoAsync(doc.Id);
+
+        // E o dado que diz se a orientacao chegou a quem cuida do animal
+        Assert.NotNull(resultado.LidoEm);
+    }
+
+    [Fact]
+    public async Task Board_DoAnimalDeOutroResponsavel_ERecusado()
+    {
+        var animal = new Animal("Rex", "Canino", "SRD", new DateTime(2021, 5, 1), Guid.NewGuid());
+        _animalRepoMock.Setup(r => r.ObterPorIdAsync(animal.Id)).ReturnsAsync(animal);
+
+        _usuarioMock.SetupGet(u => u.EhAdmin).Returns(false);
+        _usuarioMock.SetupGet(u => u.EhTutor).Returns(true);
+        _usuarioMock.SetupGet(u => u.TutorId).Returns(Guid.NewGuid());
+
+        // RN-105: o escopo vem do token, nunca do parametro da rota
+        var ex = await Assert.ThrowsAsync<AcessoNegadoException>(
+            () => CriarServico().ObterDoBoardDoPetAsync(animal.Id));
+
+        Assert.Equal("RN-105", ex.Codigo);
+    }
+
+    [Fact]
+    public async Task Board_DoProprioAnimal_TrazOsDocumentosPublicados()
+    {
+        var tutorId = Guid.NewGuid();
+        var animal = new Animal("Rex", "Canino", "SRD", new DateTime(2021, 5, 1), tutorId);
+        _animalRepoMock.Setup(r => r.ObterPorIdAsync(animal.Id)).ReturnsAsync(animal);
+
+        _usuarioMock.SetupGet(u => u.EhAdmin).Returns(false);
+        _usuarioMock.SetupGet(u => u.EhTutor).Returns(true);
+        _usuarioMock.SetupGet(u => u.TutorId).Returns(tutorId);
+
+        var publicado = new Documento(TipoDocumento.Prontuario, "12345-SP", consultaId: Guid.NewGuid());
+        publicado.RegistrarConteudo("x");
+        publicado.Publicar(DateTime.UtcNow);
+
+        _docRepoMock.Setup(r => r.ObterPublicadosPorAnimalAsync(animal.Id)).ReturnsAsync([publicado]);
+
+        var board = await CriarServico().ObterDoBoardDoPetAsync(animal.Id);
+
+        Assert.Single(board);
+    }
+
+    [Fact]
+    public async Task Board_DoAnimalQueOVeterinarioNaoAtende_ERecusado()
+    {
+        var animal = new Animal("Rex", "Canino", "SRD", new DateTime(2021, 5, 1), Guid.NewGuid());
+        _animalRepoMock.Setup(r => r.ObterPorIdAsync(animal.Id)).ReturnsAsync(animal);
+
+        var vetId = Guid.NewGuid();
+        _usuarioMock.SetupGet(u => u.EhAdmin).Returns(false);
+        _usuarioMock.SetupGet(u => u.EhVeterinario).Returns(true);
+        _usuarioMock.SetupGet(u => u.VeterinarioId).Returns(vetId);
+        _animalRepoMock.Setup(r => r.VeterinarioAtendeAnimalAsync(vetId, animal.Id)).ReturnsAsync(false);
+
+        await Assert.ThrowsAsync<AcessoNegadoException>(
+            () => CriarServico().ObterDoBoardDoPetAsync(animal.Id));
     }
 }

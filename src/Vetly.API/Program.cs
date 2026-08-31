@@ -118,6 +118,7 @@ builder.Services.AddScoped<IFilaDeJobs, FilaDeJobs>();
 builder.Services.AddScoped<IMidiaRepository, MidiaRepository>();
 builder.Services.AddScoped<ICapturaRepository, CapturaRepository>();
 builder.Services.AddScoped<IAuditoriaIaRepository, AuditoriaIaRepository>();
+builder.Services.AddSingleton<IGeradorDePdf, GeradorDePdfSimples>();
 
 // ── Escopo do usuário da requisição (RN-105/RN-106) ──────────────────────────
 // Os serviços leem identidade e escopo daqui, nunca de parametro vindo do cliente.
