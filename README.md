@@ -12,7 +12,7 @@ O Vetly é uma API REST para gestão de clínicas veterinárias, cobrindo todo o
 | Autenticação | JWT Bearer |
 | Documentação | Scalar (tema DeepSpace) em `/scalar/v1` |
 | IA | Ollama local (modelo `llama3.1`) |
-| Testes | xUnit + Moq (535 testes verdes) |
+| Testes | xUnit + Moq (555 testes verdes) |
 
 ## Padrões aplicados
 
@@ -320,6 +320,22 @@ A API **nunca proxia os bytes**: registra a mídia e o app fala direto com o sto
 
 Áudio de consulta é a única mídia com prazo: 30 dias para reprocessamento e depois some (P-06). Conteúdo clínico não expira, por guarda regulatória.
 
+### Obrigações do pet
+
+| Método | Rota | Descrição |
+|---|---|---|
+| GET | `/api/obrigacoes/animal/{id}` | Board de obrigações — vencidas primeiro (RN-045) |
+| POST | `/api/obrigacoes/animal/{id}` | Cria obrigação recorrente de cuidado (RN-045) |
+| POST | `/api/obrigacoes/{id}/cumprir` | Registra o cumprimento e empurra o próximo vencimento |
+| DELETE | `/api/obrigacoes/{id}` | Arquiva — sai do board, fica no histórico |
+| POST | `/api/obrigacoes/animal/{id}/derivar-da-carteira` | Cria obrigações a partir da carteira de vacinação (RN-046) |
+
+**A obrigação guarda a periodicidade, não uma data solta.** Cumprir empurra o próximo vencimento sozinho — sem isso, cada cumprimento exigiria alguém lembrar de reagendar o seguinte, que é exatamente o que falha. E o próximo vencimento conta a partir do **cumprimento**, não do vencimento anterior: quem vacinou com dois meses de atraso não deve receber o próximo aviso dois meses adiantado.
+
+`Vencendo` é uma situação separada de `EmDia`, com janela de 30 dias, porque avisar só no vencimento é avisar tarde: agendar consulta leva dias. O board ordena por urgência e traz a contagem por situação junto da lista — a primeira pergunta do Responsável não é "quais são", é "tem alguma coisa atrasada?".
+
+Obrigação de uma vez só (`periodicidadeEmDias = 0`, um retorno pontual) se arquiva ao ser cumprida, em vez de ficar eternamente vencida no board. A derivação da carteira é idempotente e conta a partir da dose mais recente de cada tipo — doses antigas do mesmo tipo são histórico, não obrigações separadas.
+
 ### Colmeia — histórico entre clínicas
 
 | Método | Rota | Descrição |
@@ -401,6 +417,8 @@ Sem parâmetros valem página 1 e 20 itens. O tamanho é limitado a 100 por pág
 | RN-037 | Vaga liberada é oferecida ao primeiro da fila com prioridade de 15 min; vencida, passa ao próximo | `ItemListaEspera` + `PromoverProximoAsync` |
 | RN-026 | Endereço persistido no próprio registro, com latitude/longitude **derivadas dele** pela geocodificação — o payload do cliente é ignorado | `Endereco` + `IGeocodificacaoAdapter` |
 | RN-033/RN-057 | Nota só é pública a partir de 3 avaliações; `PUBLICADO_EM` ancora o selo "Novo na Vetly" por 30 dias | `Veterinario.TemNotaPublica` + `PublicarNoMatching` |
+| RN-045 | Obrigação de cuidado guarda periodicidade e se reagenda sozinha ao ser cumprida, contando a partir do cumprimento; `Vencendo` avisa 30 dias antes | `ObrigacaoPet` + `ObrigacaoService` |
+| RN-046 | Obrigações derivadas da carteira de vacinação, uma por tipo, a partir da dose mais recente; derivar de novo não duplica | `ObrigacaoService.DerivarDaCarteiraAsync` |
 | RN-090 | Colmeia: o Responsável (e só ele) autoriza um veterinário de fora a alcançar o histórico do animal, com escopo e prazo; concessão vigente duplicada devolve 409 | `AcessoColmeia` + `ColmeiaService` |
 | RN-090 | Todo acesso pela colmeia — permitido ou negado — vai para uma trilha append-only que o Responsável consulta; revogar não apaga o que já foi acessado | `LogAcessoColmeia` + `ColmeiaRepository` |
 | RN-105/RN-106 | Escopo por linha: o Responsável só alcança os próprios dados, o veterinário só os animais que atende, e o escopo vem do token — não de parâmetro do cliente | `IUsuarioAtual` + guardas em `AnimalService`, `ConsultaService`, `PagamentoService`, `TutorService` |

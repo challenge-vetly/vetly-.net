@@ -65,6 +65,9 @@ public class VetlyDbContext : DbContext
     /// <summary>Trilha append-only das decisões sobre conteúdo de IA (RN-082).</summary>
     public DbSet<LogAuditoriaIa> LogsDeAuditoriaIa => Set<LogAuditoriaIa>();
 
+    /// <summary>Obrigações recorrentes de cuidado do animal (RN-045/RN-046).</summary>
+    public DbSet<ObrigacaoPet> ObrigacoesDoPet => Set<ObrigacaoPet>();
+
     /// <summary>Autorizações do Responsável na colmeia (RN-090).</summary>
     public DbSet<AcessoColmeia> AcessosDaColmeia => Set<AcessoColmeia>();
 
