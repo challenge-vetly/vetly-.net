@@ -12,7 +12,7 @@ O Vetly é uma API REST para gestão de clínicas veterinárias, cobrindo todo o
 | Autenticação | JWT Bearer |
 | Documentação | Scalar (tema DeepSpace) em `/scalar/v1` |
 | IA | Ollama local (modelo `llama3.1`) |
-| Testes | xUnit + Moq (725 testes verdes) |
+| Testes | xUnit + Moq (738 testes verdes) |
 
 ## Padrões aplicados
 
@@ -25,7 +25,7 @@ O Vetly é uma API REST para gestão de clínicas veterinárias, cobrindo todo o
 | DIP | Todos os serviços dependem de interfaces — zero acoplamento concreto |
 | Soft Delete | `Veterinario`, `Animal` e `Tutor` são desativados, nunca deletados |
 | Value Object | `Crmv` — imutável, valida regex `^\d{4,6}-[A-Z]{2}$` |
-| ProblemDetails | `ExceptionHandlingMiddleware` retorna RFC 7807 em todos os erros |
+| ProblemDetails | `ExceptionHandlingMiddleware` retorna RFC 7807 em todos os erros, incluindo **503** para dependência externa fora do ar — 422 diria ao app que a culpa é dele |
 | Enums como string | `JsonStringEnumConverter` — o JSON trafega `"Presencial"`, não `1` (entrada e saída) |
 | Worker de negócio | `VetlyBackgroundService` + `TB_JOB`: rotinas periódicas (expirar locks, limpar idempotência) e jobs pontuais (promover lista de espera, webhook simulado) |
 | Idempotência | `IdempotencyFilter` + `TB_IDEMPOTENCIA`: rotas marcadas com `[Idempotente]` exigem `Idempotency-Key` e reaproveitam a resposta por 24h |
@@ -182,6 +182,9 @@ curl http://localhost:5099/health/ready
 |---|---|---|
 | GET | `/api/animais` | Lista todos ativos |
 | GET | `/api/animais/{id}` | Detalhe |
+| GET | `/api/animais/{id}/board` | Board do pet: obrigações, agendamentos, documentos, avatar (RN-011/RN-020) |
+| GET | `/api/animais/{id}/obrigacoes` | Calendário de obrigações, pela navegação do pet (RN-045) |
+| GET | `/api/animais/{id}/acessos` | Quem leu o histórico do animal (RN-067) |
 | GET | `/api/animais/{id}/prontuarios` | Histórico longitudinal de prontuários |
 | GET | `/api/animais/{id}/exames` | Exames do animal |
 | POST | `/api/animais` | Cadastrar — exige `pesoKg`; aceita sexo, castrado, alergias, condições pré-existentes e carteira de vacinação |
@@ -198,6 +201,7 @@ curl http://localhost:5099/health/ready
 | PUT | `/api/tutores/{id}` | Atualizar |
 | GET | `/api/tutores/{id}/consentimentos` | Estado das 5 finalidades, com datas de concessão e revogação (RN-061) |
 | PUT | `/api/tutores/{id}/consentimentos` | Concede ou revoga finalidades — não revoga por omissão (RN-061/RN-062) |
+| GET | `/api/tutores/{id}/carteira` | Pagamentos, descontos e reembolsos (RN-041/RN-071) |
 | GET | `/api/tutores/{id}/dispositivos` | Dispositivos ativos para push (RN-007/RN-092) |
 | POST | `/api/tutores/{id}/dispositivos` | Registra dispositivo — idempotente por push token |
 | DELETE | `/api/tutores/{id}/dispositivos/{dispositivoId}` | Remove dispositivo (remoção lógica) |
@@ -496,6 +500,7 @@ O score combina **distância 40%, avaliação 30% e disponibilidade 30%** (RN-03
 |---|---|---|
 | POST | `/api/ia/diagnostico` | Sugerir hipóteses diagnósticas |
 | POST | `/api/ia/protocolo` | Sugerir protocolo de tratamento |
+| POST | `/api/ia/estruturar` | Estrutura uma transcrição em prontuário (RN-080) |
 | POST | `/api/ia/triagem` | Triar sintomas por urgência |
 | POST | `/api/ia/orientacoes` | Orientações pós-atendimento para o tutor |
 
