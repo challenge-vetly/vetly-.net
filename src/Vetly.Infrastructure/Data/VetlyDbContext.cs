@@ -62,6 +62,9 @@ public class VetlyDbContext : DbContext
     /// <summary>Prontuários estruturados pela IA, ainda sem decisão do vet (RN-080).</summary>
     public DbSet<RascunhoIa> RascunhosDeIa => Set<RascunhoIa>();
 
+    /// <summary>Trilha append-only das decisões sobre conteúdo de IA (RN-082).</summary>
+    public DbSet<LogAuditoriaIa> LogsDeAuditoriaIa => Set<LogAuditoriaIa>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(VetlyDbContext).Assembly);

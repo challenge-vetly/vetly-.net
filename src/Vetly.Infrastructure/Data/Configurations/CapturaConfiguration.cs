@@ -168,6 +168,11 @@ public class RascunhoIaConfiguration : IEntityTypeConfiguration<RascunhoIa>
         builder.Property(r => r.Parcial)
             .HasColumnType("NUMBER(1)").HasColumnName("PARCIAL").IsRequired();
 
+        builder.Property(r => r.Decisao)
+            .HasConversion<int>().HasColumnName("DECISAO").IsRequired();
+
+        builder.Property(r => r.DecididoEm).HasColumnName("DECIDIDO_EM");
+
         builder.Property(r => r.GeradoEm).HasColumnName("GERADO_EM").IsRequired();
 
         builder.Property(r => r.DuracaoMs)
@@ -187,4 +192,57 @@ public class RascunhoIaConfiguration : IEntityTypeConfiguration<RascunhoIa>
         (a, b) => a != null && b != null && a.SequenceEqual(b),
         v => v.Aggregate(0, (hash, item) => HashCode.Combine(hash, item.GetHashCode())),
         v => v.ToList());
+}
+
+/// <summary>
+/// Configuração EF Core para <see cref="LogAuditoriaIa"/> (TB_LOG_AUDITORIA_IA).
+///
+/// Tabela append-only: nada aqui é atualizado nem removido pela aplicação.
+/// </summary>
+public class LogAuditoriaIaConfiguration : IEntityTypeConfiguration<LogAuditoriaIa>
+{
+    public void Configure(EntityTypeBuilder<LogAuditoriaIa> builder)
+    {
+        builder.ToTable("TB_LOG_AUDITORIA_IA");
+
+        builder.HasKey(l => l.Id);
+        builder.Property(l => l.Id).HasColumnType("CHAR(36)").HasColumnName("ID");
+
+        builder.Property(l => l.ConsultaId)
+            .HasColumnType("CHAR(36)").HasColumnName("CONSULTA_ID").IsRequired();
+
+        builder.Property(l => l.SessaoCapturaId)
+            .HasColumnType("CHAR(36)").HasColumnName("SESSAO_CAPTURA_ID");
+
+        builder.Property(l => l.RascunhoIaId)
+            .HasColumnType("CHAR(36)").HasColumnName("RASCUNHO_IA_ID");
+
+        builder.Property(l => l.VeterinarioId)
+            .HasColumnType("CHAR(36)").HasColumnName("VETERINARIO_ID");
+
+        builder.Property(l => l.Decisao)
+            .HasConversion<int>().HasColumnName("DECISAO").IsRequired();
+
+        // O conteúdo final inteiro, e não um diff: reconstruir o que foi aceito a
+        // partir de diferenças é frágil justamente quando mais importa
+        builder.Property(l => l.ConteudoFinal)
+            .HasColumnType("CLOB").HasColumnName("CONTEUDO_FINAL").IsRequired();
+
+        builder.Property(l => l.Justificativa)
+            .HasColumnType("CLOB").HasColumnName("JUSTIFICATIVA");
+
+        builder.Property(l => l.AlterouSugestao)
+            .HasColumnType("NUMBER(1)").HasColumnName("ALTEROU_SUGESTAO").IsRequired();
+
+        builder.Property(l => l.Modelo)
+            .HasColumnType("VARCHAR2(100)").HasColumnName("MODELO");
+
+        builder.Property(l => l.RegistradoEm).HasColumnName("REGISTRADO_EM").IsRequired();
+
+        // Não é único: a mesma consulta pode acumular decisões — recusa do rascunho e,
+        // depois, o prontuário manual que a sucede
+        builder.HasIndex(l => l.ConsultaId).HasDatabaseName("IX_AUDITORIA_IA_CONSULTA");
+
+        builder.HasIndex(l => l.RegistradoEm).HasDatabaseName("IX_AUDITORIA_IA_REGISTRADO_EM");
+    }
 }

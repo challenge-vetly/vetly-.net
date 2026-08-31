@@ -22,13 +22,18 @@ public class ConsultasController : ControllerBase
     private readonly IConsultaService _service;
     private readonly ICapturaService _captura;
     private readonly IRascunhoService _rascunhos;
+    private readonly IProntuarioService _prontuarios;
 
     public ConsultasController(
-        IConsultaService service, ICapturaService captura, IRascunhoService rascunhos)
+        IConsultaService service,
+        ICapturaService captura,
+        IRascunhoService rascunhos,
+        IProntuarioService prontuarios)
     {
         _service = service;
         _captura = captura;
         _rascunhos = rascunhos;
+        _prontuarios = prontuarios;
     }
 
     /// <summary>
@@ -129,16 +134,70 @@ public class ConsultasController : ControllerBase
     public async Task<IActionResult> ObterBriefing(Guid id) =>
         Ok(await _service.ObterBriefingAsync(id));
 
-    /// <summary>Registra a validacao manual do diagnostico pelo veterinario (RN-082).</summary>
+    /// <summary>
+    /// Decisao do veterinario sobre o rascunho da IA (RN-082).
+    /// </summary>
+    /// <remarks>
+    /// Sao tres caminhos, e a escolha e explicita — nao ha aprovacao por omissao:
+    ///
+    /// - <c>Aprovado</c>: o rascunho vira conteudo clinico como veio;
+    /// - <c>Corrigido</c>: exige o conteudo corrigido, porque corrigir sem dizer o que
+    ///   mudou nao e corrigir;
+    /// - <c>NaoAprovado</c>: exige justificativa, o ciclo encerra sem documentos e o
+    ///   diagnostico NAO fica validado — sem validacao nao se gera documento.
+    ///
+    /// Toda decisao vira registro append-only na trilha de auditoria: e o que sustenta
+    /// a afirmacao de que nenhuma sugestao chegou ao prontuario sem decisao humana.
+    /// </remarks>
     [HttpPut("{id:guid}/validar-diagnostico")]
-    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(DecisaoRegistradaDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
     [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
-    public async Task<IActionResult> ValidarDiagnostico(Guid id)
-    {
-        await _service.ValidarDiagnosticoAsync(id);
-        return NoContent();
-    }
+    public async Task<IActionResult> ValidarDiagnostico(Guid id, [FromBody] DecisaoDoProntuarioDto dto) =>
+        Ok(await _prontuarios.DecidirAsync(id, dto));
+
+    /// <summary>
+    /// Prontuario escrito a mao pelo veterinario, sem IA no caminho (RN-085).
+    /// </summary>
+    /// <remarks>
+    /// E o caminho quando nao houve captura: plano Basico, falha da transcricao ou
+    /// rascunho recusado. O atendimento aconteceu e precisa virar prontuario de algum
+    /// jeito.
+    ///
+    /// Havendo rascunho ainda pendente, devolve 409: a decisao sobre ele vem primeiro,
+    /// senao ficariam dois prontuarios concorrentes sobre o mesmo atendimento.
+    /// </remarks>
+    [HttpPost("{id:guid}/prontuario-manual")]
+    [ProducesResponseType(typeof(DecisaoRegistradaDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
+    public async Task<IActionResult> RegistrarProntuarioManual(
+        Guid id, [FromBody] ProntuarioManualDto dto) =>
+        Ok(await _prontuarios.RegistrarManualAsync(id, dto));
+
+    /// <summary>
+    /// Trilha de auditoria das decisoes sobre conteudo de IA da consulta (RN-082).
+    /// </summary>
+    /// <remarks>
+    /// Append-only: os registros nao sao alterados nem removidos. A mesma consulta
+    /// pode acumular decisoes — a recusa do rascunho e, depois, o prontuario manual
+    /// que a sucede.
+    /// </remarks>
+    [HttpGet("{id:guid}/auditoria-ia")]
+    [ProducesResponseType(typeof(List<LogAuditoriaIaDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ObterAuditoriaIa(Guid id) =>
+        Ok(await _prontuarios.ObterAuditoriaAsync(id));
 
     // ── Captura de audio da consulta (RN-008/RN-009/RN-079/RN-085) ───────────
 
