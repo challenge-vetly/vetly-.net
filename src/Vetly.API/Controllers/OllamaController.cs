@@ -39,6 +39,33 @@ public class OllamaController : ControllerBase
     public async Task<IActionResult> SugerirProtocolo([FromBody] ProtocoloRequest request) =>
         Ok(await _service.SugerirProtocoloAsync(request.Diagnostico, request.Especie, request.PesoKg));
 
+    /// <summary>
+    /// Estrutura uma transcricao em prontuario (RN-080).
+    /// </summary>
+    /// <remarks>
+    /// E o coracao do fluxo 2, e normalmente roda dentro do job de estruturacao,
+    /// disparado quando o ultimo segmento de audio volta transcrito. Esta rota expoe a
+    /// mesma operacao para o caso em que o veterinario tem o texto e quer estrutura-lo
+    /// sem passar pela captura — ditado por fora, anotacao ja digitada.
+    ///
+    /// O que sai e <b>rascunho</b>: nada vira documento sem a decisao explicita do
+    /// veterinario (RN-082). E a IA nao amplia o acesso de ninguem — o contexto e
+    /// montado pela API a partir do que aquele profissional ja enxerga (RN-078).
+    ///
+    /// Sem peso do animal, nao ha sugestao de dose (RN-081).
+    ///
+    /// Motor fora do ar devolve 503, e nao 422: nao ha regra violada nem nada que o
+    /// cliente possa corrigir no payload.
+    /// </remarks>
+    [HttpPost("estruturar")]
+    [ProducesResponseType(typeof(ConsultaEstruturadaDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
+    [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
+    public async Task<IActionResult> Estruturar([FromBody] ContextoDaEstruturacaoDto contexto) =>
+        Ok(await _service.EstruturarConsultaAsync(contexto));
+
     /// <summary>Realiza triagem de sintomas e retorna nivel de urgencia e recomendacoes.</summary>
     [HttpPost("triagem")]
     [ProducesResponseType(typeof(TriagemResultadoDto), StatusCodes.Status200OK)]

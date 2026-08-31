@@ -68,6 +68,17 @@ public class ExceptionHandlingMiddleware
             await EscreverRespostaAsync(context, HttpStatusCode.UnprocessableEntity,
                 ex.Message, correlationId, ex.Codigo);
         }
+        catch (DependenciaIndisponivelException ex)
+        {
+            // 503 e nao 422: nao ha regra violada nem nada que o cliente possa
+            // corrigir no payload. A resposta certa e "tente de novo" (§2.4).
+            _logger.LogWarning(
+                "CorrelationId={CorrelationId} | DependenciaIndisponivel [{Dependencia}]: {Message}",
+                correlationId, ex.Dependencia, ex.Message);
+
+            await EscreverRespostaAsync(context, HttpStatusCode.ServiceUnavailable,
+                ex.Message, correlationId, ex.Codigo);
+        }
         catch (InvalidOperationException ex)
         {
             _logger.LogWarning("CorrelationId={CorrelationId} | InvalidOperation: {Message}", correlationId, ex.Message);
@@ -94,6 +105,7 @@ public class ExceptionHandlingMiddleware
                 HttpStatusCode.Forbidden => "Acesso negado",
                 HttpStatusCode.Conflict => "Conflito de estado",
                 HttpStatusCode.UnprocessableEntity => "Regra de negocio violada",
+                HttpStatusCode.ServiceUnavailable => "Dependencia indisponivel",
                 _ => "Erro interno do servidor"
             },
             Detail = detalhe,

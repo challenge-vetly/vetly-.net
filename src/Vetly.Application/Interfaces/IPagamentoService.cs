@@ -23,5 +23,10 @@ public interface IPagamentoService
     /// Confirma ou expira a consulta e ocupa ou libera o horário (RN-006/RN-035).
     /// </summary>
     Task<ResultadoDoWebhookDto> ProcessarWebhookAsync(string payloadBruto, string? tokenDeServico);
+    /// <summary>
+    /// Carteira do Responsável: pagamentos, descontos e reembolsos (RN-041/RN-071).
+    /// </summary>
+    Task<CarteiraDoTutorDto> ObterCarteiraAsync(Guid tutorId);
+
     Task<PagamentoDto> ProcessarSplitAsync(Guid id);
 }

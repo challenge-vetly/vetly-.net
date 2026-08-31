@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Vetly.Application.Interfaces;
 using Vetly.Domain.Entities;
+using Vetly.Domain.Enums;
 using Vetly.Infrastructure.Data;
 
 namespace Vetly.Infrastructure.Repositories;
@@ -43,6 +44,18 @@ public class AnimalRepository : RepositoryBase<Animal>, IAnimalRepository
         await _dbSet
             .Where(a => a.Ativo && _context.Consultas
                 .Any(c => c.VeterinarioId == veterinarioId && c.AnimalId == a.Id))
+            .ToListAsync();
+
+    /// <inheritdoc/>
+    public async Task<IEnumerable<Consulta>> ObterConsultasFuturasAsync(Guid animalId, DateTime agora) =>
+        // O board mostra o que vai acontecer: cancelada e expirada ficam de fora
+        await _context.Consultas
+            .AsNoTracking()
+            .Where(c => c.AnimalId == animalId
+                        && c.DataHora >= agora
+                        && c.Status != StatusConsulta.Cancelada
+                        && c.Status != StatusConsulta.Expirada)
+            .OrderBy(c => c.DataHora)
             .ToListAsync();
 
     /// <inheritdoc/>

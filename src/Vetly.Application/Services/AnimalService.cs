@@ -1,3 +1,5 @@
+using Vetly.Application.DTOs.Documento;
+using Vetly.Application.DTOs.Obrigacao;
 using Vetly.Application.DTOs.Animal;
 using Vetly.Application.DTOs.Exame;
 using Vetly.Application.DTOs.Prontuario;
@@ -14,12 +16,24 @@ public class AnimalService : IAnimalService
 {
     private readonly IAnimalRepository _repo;
     private readonly IColmeiaService _colmeia;
+    private readonly IObrigacaoService _obrigacoes;
+    private readonly IDocumentoRepository _documentos;
+    private readonly IVeterinarioRepository _vetRepo;
     private readonly IUsuarioAtual _usuario;
 
-    public AnimalService(IAnimalRepository repo, IColmeiaService colmeia, IUsuarioAtual usuario)
+    public AnimalService(
+        IAnimalRepository repo,
+        IColmeiaService colmeia,
+        IObrigacaoService obrigacoes,
+        IDocumentoRepository documentos,
+        IVeterinarioRepository vetRepo,
+        IUsuarioAtual usuario)
     {
         _repo = repo;
         _colmeia = colmeia;
+        _obrigacoes = obrigacoes;
+        _documentos = documentos;
+        _vetRepo = vetRepo;
         _usuario = usuario;
     }
 
@@ -90,6 +104,97 @@ public class AnimalService : IAnimalService
         }
 
         throw new AcessoNegadoException("RN-105", "Este animal nao pertence ao seu escopo de acesso.");
+    }
+
+    /// <inheritdoc/>
+    public async Task<BoardDoPetDto> ObterBoardAsync(Guid animalId)
+    {
+        var animal = await _repo.ObterPorIdAsync(animalId)
+            ?? throw new NotFoundException("Animal", animalId);
+
+        await GarantirAcessoAoAnimalAsync(animal);
+
+        var agora = DateTime.UtcNow;
+
+        var board = await _obrigacoes.ObterBoardAsync(animalId);
+        var consultas = await _repo.ObterConsultasFuturasAsync(animalId, agora);
+        var documentos = await _documentos.ObterPublicadosPorAnimalAsync(animalId);
+
+        var proximos = new List<AgendamentoDoBoardDto>();
+
+        foreach (var consulta in consultas.OrderBy(c => c.DataHora).Take(5))
+        {
+            var vet = await _vetRepo.ObterPorIdAsync(consulta.VeterinarioId);
+
+            proximos.Add(new AgendamentoDoBoardDto
+            {
+                ConsultaId = consulta.Id,
+                DataHora = consulta.DataHora,
+                VeterinarioId = consulta.VeterinarioId,
+                VeterinarioNome = vet?.Nome ?? "Profissional nao encontrado",
+                Status = consulta.Status,
+                Modalidade = consulta.Modalidade
+            });
+        }
+
+        return new BoardDoPetDto
+        {
+            AnimalId = animal.Id,
+            Nome = animal.Nome,
+            Especie = animal.Especie,
+            Raca = animal.Raca,
+            IdadeAnos = Math.Max(0, (int)((agora - animal.DataNascimento).TotalDays / 365.25)),
+            PesoKg = animal.PesoKg,
+            FotoMidiaId = animal.FotoMidiaId,
+            AvatarEstado = DeduzirAvatar(board),
+            Obrigacoes = board.Obrigacoes,
+            TemPendencia = board.TemPendencia,
+            ProximosAgendamentos = proximos,
+
+            // Recentes, e nao todos: o board e tela de entrada, nao arquivo
+            DocumentosRecentes = [.. documentos.Take(5).Select(d => new DocumentoDto
+            {
+                Id = d.Id,
+                ConsultaId = d.ConsultaId,
+                TipoDocumento = d.TipoDocumento,
+                Versao = d.Versao,
+                DataGeracao = d.DataGeracao,
+                CrmvSignatario = d.CrmvSignatario,
+                AssinadoDigitalmente = d.AssinadoDigitalmente,
+                Subtipo = d.Subtipo,
+                PdfMidiaId = d.PdfMidiaId,
+                PublicadoEm = d.PublicadoEm,
+                LidoEm = d.LidoEm
+            })],
+
+            // RN-068: alerta de seguranca nunca e ocultavel, e por isso vem sempre
+            AlertasDeSeguranca = [.. animal.AlertasAtivos, .. animal.Alergias]
+        };
+    }
+
+    /// <summary>
+    /// Deriva o estado do avatar das obrigacoes vencidas (RN-020/RN-096/RN-097).
+    ///
+    /// Vacina tem precedencia sobre higiene: antirrabica atrasada e questao sanitaria,
+    /// banho atrasado e desconforto. Quando as duas estao vencidas, o avatar mostra a
+    /// que importa mais.
+    ///
+    /// E o unico dado do avatar que a API produz — o sprite e a animacao sao assets do
+    /// app (C3).
+    /// </summary>
+    private static EstadoDoAvatar DeduzirAvatar(BoardDeObrigacoesDto board)
+    {
+        var vencidas = board.Obrigacoes
+            .Where(o => o.Situacao == SituacaoObrigacao.Vencida)
+            .ToList();
+
+        if (vencidas.Any(o => o.Tipo == TipoObrigacaoPet.Vacina))
+            return EstadoDoAvatar.VacinaAtrasada;
+
+        if (vencidas.Count > 0)
+            return EstadoDoAvatar.HigieneAtrasada;
+
+        return EstadoDoAvatar.Saudavel;
     }
 
     public async Task<IEnumerable<ProntuarioDto>> ObterHistoricoAsync(Guid animalId)
