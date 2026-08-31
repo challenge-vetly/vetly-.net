@@ -30,5 +30,13 @@ public interface ICapturaRepository
 
     Task AdicionarTranscricaoAsync(Transcricao transcricao);
 
+    /// <summary>Rascunho de uma sessão. Há no máximo um por sessão.</summary>
+    Task<RascunhoIa?> ObterRascunhoDaSessaoAsync(Guid sessaoId);
+
+    /// <summary>Rascunho de uma consulta, para a tela de revisão do veterinário.</summary>
+    Task<RascunhoIa?> ObterRascunhoDaConsultaAsync(Guid consultaId);
+
+    Task AdicionarRascunhoAsync(RascunhoIa rascunho);
+
     Task<int> SalvarAsync();
 }

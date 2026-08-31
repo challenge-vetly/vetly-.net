@@ -12,7 +12,7 @@ O Vetly é uma API REST para gestão de clínicas veterinárias, cobrindo todo o
 | Autenticação | JWT Bearer |
 | Documentação | Scalar (tema DeepSpace) em `/scalar/v1` |
 | IA | Ollama local (modelo `llama3.1`) |
-| Testes | xUnit + Moq (406 testes verdes) |
+| Testes | xUnit + Moq (425 testes verdes) |
 
 ## Padrões aplicados
 
@@ -216,6 +216,7 @@ curl http://localhost:5099/health/ready
 | POST | `/api/consultas/{id}/captura/segmentos` | Recebe um trecho de áudio e enfileira a transcrição — 202 (RN-009) |
 | GET | `/api/consultas/{id}/captura` | Situação da captura, com o texto já transcrito (RN-009) |
 | POST | `/api/consultas/{id}/encerrar` | Fecha a janela e marca a consulta como `Realizada` (RN-008/RN-038) |
+| GET | `/api/consultas/{id}/rascunho` | Prontuário estruturado pela IA — rascunho até o vet decidir (RN-080/RN-082) |
 | PUT | `/api/consultas/{id}/validar-diagnostico` | Registra validação manual do diagnóstico (RN-082) |
 | POST | `/api/consultas/{id}/finalizar` | Finalizar — exige receita assinada (RN-087) |
 | DELETE | `/api/consultas/{id}` | Cancelar + Strategy de reembolso (RN-014/RN-041/RN-042) |
@@ -223,6 +224,10 @@ curl http://localhost:5099/health/ready
 **A janela de captura é explícita.** `iniciar` abre, `encerrar` fecha, e fora dela a IA não captura áudio nem produz conteúdo clínico (RN-079) — trecho enviado com a janela fechada devolve 409. O áudio vai em segmentos curtos, cada um com sua sequência: assim a transcrição acontece durante o atendimento e a falha de um trecho não derruba a consulta inteira. Reenvio da mesma sequência devolve 409, porque duplicaria o texto.
 
 O despacho ao motor sai da requisição pelo worker: o veterinário não espera a transcrição para continuar atendendo. O motor devolve o texto em `POST /api/internos/stt/callback`, e **o contrato desse callback é da Vetly, não do motor** — trocar de fornecedor é mexer dentro do fluxo Node-RED, sem refazer o caminho de volta. Em desenvolvimento, `Adaptadores:Stt = "Simulado"` percorre o mesmo caminho assíncrono com texto sintético marcado como tal.
+
+Encerrada a janela e transcritos os trechos, a IA estrutura o texto em prontuário (RN-080) — também fora da requisição, porque é lenta e o veterinário já saiu do atendimento. O rascunho guarda **a transcrição que o originou**: sem ela não há como conferir depois se a IA produziu algo que não foi dito, e sugestão que chega ao prontuário precisa ser auditável. Transcrição parcial gera rascunho parcial, com aviso e com a instrução explícita ao modelo de não preencher lacunas — perder a consulta inteira porque um trecho falhou seria pior. IA fora do ar ou rascunho sem conteúdo clínico caem no caminho manual em vez de travar a consulta: o atendimento aconteceu e precisa virar prontuário de algum jeito (RN-085).
+
+A estruturação usa o `IOllamaService` que já servia diagnóstico, protocolo e triagem — `EstruturarConsultaAsync`, não um adaptador paralelo: é o mesmo motor e o mesmo contrato de sugestão.
 
 No plano Básico a consulta inicia normalmente, **sem captura** (RN-085): o prontuário é preenchido à mão. `iniciar` também devolve os avisos que o veterinário precisa ver antes de começar — `PesoAusente` é o mais importante, porque sem peso não há sugestão de dose (RN-081) e descobrir isso no fim do atendimento seria tarde.
 
@@ -384,6 +389,7 @@ Sem parâmetros valem página 1 e 20 itens. O tamanho é limitado a 100 por pág
 | RN-009 | Áudio capturado em segmentos sequenciais, transcritos fora da requisição; reenvio da mesma sequência devolve 409, e falha em parte dos trechos gera rascunho parcial em vez de perder a consulta | `SegmentoAudio` + `TranscreverSegmentoHandler` |
 | RN-079 | Fora da janela de captura a IA não captura áudio nem produz conteúdo clínico — trecho enviado com a janela fechada devolve 409 | `SessaoCaptura.JanelaAberta` |
 | RN-085 | Captura e IA na consulta existem nos planos Profissional e Enterprise; no Básico a consulta inicia sem captura e o prontuário é manual | `CapturaService.PlanoTemCapturaAsync` |
+| RN-080 | A IA estrutura a transcrição em prontuário fora da requisição; o rascunho guarda o texto de origem e o modelo, e transcrição parcial vira rascunho parcial com aviso | `OllamaService.EstruturarConsultaAsync` + `RascunhoService` |
 | RN-082 | Documentos só podem ser gerados após `consulta.DiagnosticoValidado = true` E pagamento confirmado | `DocumentoService.GerarAsync` |
 | RN-087 | Finalizar consulta exige documento `ReceitaVeterinaria` assinado digitalmente | `ConsultaService.FinalizarAsync` |
 | RN-088 | Correção cria nova versão do documento (original preservado com `VersaoOriginalId`) | `DocumentoService.CorrigirAsync` |

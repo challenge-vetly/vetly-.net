@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Vetly.Domain.Entities;
 
@@ -111,4 +112,79 @@ public class TranscricaoConfiguration : IEntityTypeConfiguration<Transcricao>
         // Um segmento tem uma transcricao: callback reentregue nao pode duplicar texto
         builder.HasIndex(t => t.SegmentoAudioId).HasDatabaseName("IX_TRANSCRICAO_SEGMENTO").IsUnique();
     }
+}
+
+/// <summary>Configuração EF Core para <see cref="RascunhoIa"/> (TB_RASCUNHO_IA).</summary>
+public class RascunhoIaConfiguration : IEntityTypeConfiguration<RascunhoIa>
+{
+    public void Configure(EntityTypeBuilder<RascunhoIa> builder)
+    {
+        builder.ToTable("TB_RASCUNHO_IA");
+
+        builder.HasKey(r => r.Id);
+        builder.Property(r => r.Id).HasColumnType("CHAR(36)").HasColumnName("ID");
+
+        builder.Property(r => r.SessaoCapturaId)
+            .HasColumnType("CHAR(36)").HasColumnName("SESSAO_CAPTURA_ID").IsRequired();
+
+        builder.Property(r => r.ConsultaId)
+            .HasColumnType("CHAR(36)").HasColumnName("CONSULTA_ID").IsRequired();
+
+        // CLOB em todo campo clínico: prontuário de consulta não cabe em VARCHAR2
+        builder.Property(r => r.Anamnese)
+            .HasColumnType("CLOB").HasColumnName("ANAMNESE").IsRequired();
+
+        builder.Property(r => r.ExameFisico)
+            .HasColumnType("CLOB").HasColumnName("EXAME_FISICO").IsRequired();
+
+        builder.Property(r => r.Conduta)
+            .HasColumnType("CLOB").HasColumnName("CONDUTA").IsRequired();
+
+        builder.Property(r => r.Orientacoes)
+            .HasColumnType("CLOB").HasColumnName("ORIENTACOES").IsRequired();
+
+        // O texto de origem fica junto do rascunho: é o que permite auditar depois
+        builder.Property(r => r.TextoOrigem)
+            .HasColumnType("CLOB").HasColumnName("TEXTO_ORIGEM").IsRequired();
+
+        // ";" explícito porque Oracle leria string vazia como NULL
+        builder.Property(r => r.HipotesesDiagnosticas)
+            .HasConversion(
+                v => v.Count == 0 ? ";" : string.Join(';', v),
+                v => v.Split(';', StringSplitOptions.RemoveEmptyEntries).ToList(),
+                ComparadorDeListaDeTexto)
+            .HasColumnType("VARCHAR2(2000)").HasColumnName("HIPOTESES_DIAGNOSTICAS").IsRequired();
+
+        builder.Property(r => r.Avisos)
+            .HasConversion(
+                v => v.Count == 0 ? ";" : string.Join(';', v),
+                v => v.Split(';', StringSplitOptions.RemoveEmptyEntries).ToList(),
+                ComparadorDeListaDeTexto)
+            .HasColumnType("VARCHAR2(500)").HasColumnName("AVISOS").IsRequired();
+
+        builder.Property(r => r.Modelo)
+            .HasColumnType("VARCHAR2(100)").HasColumnName("MODELO");
+
+        builder.Property(r => r.Parcial)
+            .HasColumnType("NUMBER(1)").HasColumnName("PARCIAL").IsRequired();
+
+        builder.Property(r => r.GeradoEm).HasColumnName("GERADO_EM").IsRequired();
+
+        builder.Property(r => r.DuracaoMs)
+            .HasColumnType("NUMBER(10)").HasColumnName("DURACAO_MS").IsRequired();
+
+        // Uma sessão gera um rascunho: job reentregue não pode produzir um segundo
+        builder.HasIndex(r => r.SessaoCapturaId).HasDatabaseName("IX_RASCUNHO_SESSAO").IsUnique();
+
+        builder.HasIndex(r => r.ConsultaId).HasDatabaseName("IX_RASCUNHO_CONSULTA").IsUnique();
+    }
+
+    /// <summary>
+    /// Sem comparador o EF compara a lista por referência e a mutação in-place nunca
+    /// é persistida.
+    /// </summary>
+    private static readonly ValueComparer<List<string>> ComparadorDeListaDeTexto = new(
+        (a, b) => a != null && b != null && a.SequenceEqual(b),
+        v => v.Aggregate(0, (hash, item) => HashCode.Combine(hash, item.GetHashCode())),
+        v => v.ToList());
 }

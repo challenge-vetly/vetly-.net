@@ -151,3 +151,38 @@ public class TranscreverSegmentoSimuladoHandler : IJobHandler
             "Transcricao simulada entregue para o segmento {SegmentoId}.", callback.SegmentoId);
     }
 }
+
+/// <summary>
+/// Estrutura a transcrição da consulta em prontuário pela IA (RN-080, §7.3).
+///
+/// Roda fora da requisição porque a estruturação é lenta e o veterinário já encerrou
+/// o atendimento. Falha da IA não trava a consulta: a sessão cai no caminho manual e
+/// o job é retentado — se nem assim der certo, o prontuário é preenchido à mão
+/// (RN-085).
+/// </summary>
+public class EstruturarConsultaHandler : IJobHandler
+{
+    private readonly IRascunhoService _rascunhos;
+    private readonly ILogger<EstruturarConsultaHandler> _logger;
+
+    public EstruturarConsultaHandler(
+        IRascunhoService rascunhos, ILogger<EstruturarConsultaHandler> logger)
+    {
+        _rascunhos = rascunhos;
+        _logger = logger;
+    }
+
+    /// <inheritdoc/>
+    public TipoJob Tipo => TipoJob.EstruturarConsulta;
+
+    /// <inheritdoc/>
+    public async Task ExecutarAsync(Job job, CancellationToken cancellationToken)
+    {
+        if (!Guid.TryParse(job.Payload, out var sessaoId))
+            throw new InvalidOperationException("Payload do job nao contem um id de sessao valido.");
+
+        await _rascunhos.GerarAsync(sessaoId);
+
+        _logger.LogInformation("Estruturacao concluida para a sessao {SessaoId}.", sessaoId);
+    }
+}

@@ -401,6 +401,26 @@ public class CapturaTests
     }
 
     [Fact]
+    public async Task Transcricao_ComDesfecho_EnfileiraAEstruturacao()
+    {
+        var sessao = SessaoAberta();
+        sessao.Encerrar(segmentosRecebidos: 1);
+
+        var midia = AudioNoStorage();
+        var segmento = new SegmentoAudio(sessao.Id, 0, midia.Id, 30000, 0);
+        _repo.Setup(r => r.ObterSegmentoAsync(segmento.Id)).ReturnsAsync(segmento);
+        _repo.Setup(r => r.ObterSegmentosAsync(sessao.Id)).ReturnsAsync([segmento]);
+
+        await CriarServico().RegistrarCallbackAsync(new CallbackDeTranscricaoDto
+        {
+            SegmentoId = segmento.Id, Status = "Ok", Texto = "texto"
+        });
+
+        // RN-080: a estruturacao segue fora da requisicao
+        _fila.Verify(f => f.EnfileirarAsync(TipoJob.EstruturarConsulta, sessao.Id.ToString(), null), Times.Once);
+    }
+
+    [Fact]
     public void Transcricao_ParteDosTrechosFalhou_SegueParcial()
     {
         var sessao = new SessaoCaptura(Guid.NewGuid(), capturaAtiva: true);

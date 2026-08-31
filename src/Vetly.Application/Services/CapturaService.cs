@@ -259,6 +259,11 @@ public class CapturaService : ICapturaService
 
         _repo.AtualizarSessao(sessao);
         await _repo.SalvarAsync();
+
+        // Ha texto: a estruturacao segue fora da requisicao (RN-080). Transcricao
+        // parcial tambem segue — o rascunho sai com o que ha, e com aviso.
+        if (sessao.Estado is EstadoSessaoCaptura.GerandoRascunho or EstadoSessaoCaptura.TranscricaoParcial)
+            await _fila.EnfileirarAsync(TipoJob.EstruturarConsulta, sessao.Id.ToString());
     }
 
     /// <summary>

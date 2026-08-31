@@ -221,6 +221,7 @@ builder.Services.AddScoped<IAgendaService, AgendaService>();
 builder.Services.AddScoped<IBuscaService, BuscaService>();
 builder.Services.AddScoped<IMidiaService, MidiaService>();
 builder.Services.AddScoped<ICapturaService, CapturaService>();
+builder.Services.AddScoped<IRascunhoService, RascunhoService>();
 builder.Services.AddScoped<IListaEsperaService, ListaEsperaService>();
 
 // ── Factories (IEnumerable<IDocumentoFactory> — resolvidas pelo DI) ──────────
@@ -256,6 +257,7 @@ builder.Services.AddScoped<IJobHandler, PromoverListaEsperaHandler>();
 builder.Services.AddScoped<IJobHandler, ConfirmarPagamentoSimuladoHandler>();
 builder.Services.AddScoped<IJobHandler, TranscreverSegmentoHandler>();
 builder.Services.AddScoped<IJobHandler, TranscreverSegmentoSimuladoHandler>();
+builder.Services.AddScoped<IJobHandler, EstruturarConsultaHandler>();
 
 builder.Services.AddScoped<IRotinaPeriodica, ExpirarLocksDeCheckout>();
 builder.Services.AddScoped<IRotinaPeriodica, LimparIdempotenciaVencida>();

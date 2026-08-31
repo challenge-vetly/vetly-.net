@@ -59,6 +59,9 @@ public class VetlyDbContext : DbContext
     /// <summary>Texto produzido pelo motor de transcrição (RN-009).</summary>
     public DbSet<Transcricao> Transcricoes => Set<Transcricao>();
 
+    /// <summary>Prontuários estruturados pela IA, ainda sem decisão do vet (RN-080).</summary>
+    public DbSet<RascunhoIa> RascunhosDeIa => Set<RascunhoIa>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(VetlyDbContext).Assembly);
