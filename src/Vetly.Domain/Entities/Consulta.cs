@@ -84,6 +84,18 @@ public class Consulta
     /// <summary>Como a consulta entrou na plataforma (RN-035/RN-040).</summary>
     public OrigemConsulta Origem { get; private set; }
 
+    /// <summary>
+    /// Quando o veterinário acionou "iniciar consulta". Abre a janela de captura da
+    /// IA (RN-008/RN-079).
+    /// </summary>
+    public DateTime? IniciadaEm { get; private set; }
+
+    /// <summary>
+    /// Quando acionou "encerrar consulta". Fecha a janela e dispara os processos
+    /// pós-consulta (RN-008).
+    /// </summary>
+    public DateTime? EncerradaEm { get; private set; }
+
     /// <summary>Construtor privado reservado ao EF Core para materialização de entidades.</summary>
     private Consulta() { }
 
@@ -167,6 +179,12 @@ public class Consulta
 
     /// <summary>Expira a consulta cujo lock de checkout venceu sem pagamento (RN-035).</summary>
     public void Expirar() => Status = StatusConsulta.Expirada;
+
+    /// <summary>Registra o início do atendimento pelo veterinário (RN-008).</summary>
+    public void RegistrarInicio(DateTime quando) => IniciadaEm = quando;
+
+    /// <summary>Registra o encerramento do atendimento pelo veterinário (RN-008).</summary>
+    public void RegistrarEncerramento(DateTime quando) => EncerradaEm = quando;
 
     /// <summary>Reagenda a consulta para uma nova data e hora.</summary>
     public void Reagendar(DateTime novaDataHora) => DataHora = novaDataHora;

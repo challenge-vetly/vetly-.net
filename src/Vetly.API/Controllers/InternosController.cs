@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Vetly.API.Filters;
+using Vetly.Application.DTOs.Captura;
 using Vetly.Application.DTOs.Pagamento;
 using Vetly.Application.Interfaces;
 
@@ -23,13 +24,16 @@ public class InternosController : ControllerBase
     public const string HeaderDoToken = "X-Vetly-Service-Token";
 
     private readonly IPagamentoService _pagamentos;
+    private readonly ICapturaService _captura;
     private readonly IConfiguration _config;
     private readonly ILogger<InternosController> _logger;
 
     public InternosController(
-        IPagamentoService pagamentos, IConfiguration config, ILogger<InternosController> logger)
+        IPagamentoService pagamentos, ICapturaService captura,
+        IConfiguration config, ILogger<InternosController> logger)
     {
         _pagamentos = pagamentos;
+        _captura = captura;
         _config = config;
         _logger = logger;
     }
@@ -69,6 +73,33 @@ public class InternosController : ControllerBase
         var resultado = await _pagamentos.ProcessarWebhookAsync(payload, token);
 
         return Ok(resultado);
+    }
+
+    /// <summary>
+    /// Texto devolvido pelo motor de transcricao (RN-009, §5.3).
+    /// </summary>
+    /// <remarks>
+    /// O contrato deste callback e da VETLY, nao do motor: e o que permite trocar de
+    /// fornecedor mexendo so dentro do fluxo, sem refazer o caminho de volta.
+    ///
+    /// Reentrega de um segmento que ja teve desfecho responde 200 sem efeito — nao
+    /// duplica texto nem reabre o ciclo.
+    /// </remarks>
+    [HttpPost("stt/callback")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> CallbackDeTranscricao([FromBody] CallbackDeTranscricaoDto dto)
+    {
+        if (!TokenDeServicoConfere())
+        {
+            _logger.LogWarning("Callback de transcricao recusado: token de servico invalido ou ausente.");
+            return Unauthorized();
+        }
+
+        await _captura.RegistrarCallbackAsync(dto);
+        return NoContent();
     }
 
     /// <summary>

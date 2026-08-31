@@ -1,0 +1,452 @@
+using Moq;
+using Vetly.Application.DTOs.Captura;
+using Vetly.Application.Exceptions;
+using Vetly.Application.Interfaces;
+using Vetly.Application.Services;
+using Vetly.Domain.Entities;
+using Vetly.Domain.Enums;
+using Vetly.Domain.ValueObjects;
+
+namespace Vetly.UnitTests;
+
+/// <summary>
+/// Captura de audio da consulta (RN-008/RN-009/RN-079/RN-085).
+///
+/// A janela e aberta e fechada pelo veterinario; fora dela nada e capturado.
+/// </summary>
+public class CapturaTests
+{
+    private readonly Mock<ICapturaRepository> _repo = new();
+    private readonly Mock<IConsultaRepository> _consultaRepo = new();
+    private readonly Mock<IVeterinarioRepository> _vetRepo = new();
+    private readonly Mock<IEmpresaRepository> _empresaRepo = new();
+    private readonly Mock<IAnimalRepository> _animalRepo = new();
+    private readonly Mock<IMidiaRepository> _midiaRepo = new();
+    private readonly Mock<IFilaDeJobs> _fila = new();
+    private readonly Mock<IUsuarioAtual> _usuario = new();
+
+    private readonly Veterinario _vet;
+    private readonly Animal _animal;
+    private readonly Consulta _consulta;
+
+    public CapturaTests()
+    {
+        _vet = new Veterinario("Dra. Marina", new Crmv("12345-SP"), "SP",
+            PersonaVeterinario.Autonomo, PlanoAssinatura.Profissional);
+
+        _animal = new Animal("Thor", "Canino", "SRD", DateTime.UtcNow.AddYears(-3), Guid.NewGuid());
+        _animal.RegistrarPeso(31.5m);
+
+        _consulta = Consulta.ParaCheckout(
+            DateTime.UtcNow.AddHours(1), _vet.Id, _animal.Id, _animal.TutorId, Guid.NewGuid(), Guid.NewGuid());
+        _consulta.ConfirmarPagamento();
+
+        _usuario.SetupGet(u => u.EhAdmin).Returns(true);
+        _consultaRepo.Setup(r => r.ObterPorIdAsync(_consulta.Id)).ReturnsAsync(_consulta);
+        _consultaRepo.Setup(r => r.Atualizar(It.IsAny<Consulta>()));
+        _consultaRepo.Setup(r => r.SalvarAsync()).ReturnsAsync(1);
+        _vetRepo.Setup(r => r.ObterPorIdAsync(_vet.Id)).ReturnsAsync(_vet);
+        _animalRepo.Setup(r => r.ObterPorIdAsync(_animal.Id)).ReturnsAsync(_animal);
+        _repo.Setup(r => r.AdicionarSessaoAsync(It.IsAny<SessaoCaptura>())).Returns(Task.CompletedTask);
+        _repo.Setup(r => r.AdicionarSegmentoAsync(It.IsAny<SegmentoAudio>())).Returns(Task.CompletedTask);
+        _repo.Setup(r => r.AdicionarTranscricaoAsync(It.IsAny<Transcricao>())).Returns(Task.CompletedTask);
+        _repo.Setup(r => r.SalvarAsync()).ReturnsAsync(1);
+        _repo.Setup(r => r.ObterSessaoDaConsultaAsync(_consulta.Id)).ReturnsAsync((SessaoCaptura?)null);
+        _repo.Setup(r => r.ObterSegmentosAsync(It.IsAny<Guid>())).ReturnsAsync([]);
+        _repo.Setup(r => r.ObterTranscricoesAsync(It.IsAny<Guid>())).ReturnsAsync([]);
+        _repo.Setup(r => r.ObterSegmentoPorSequenciaAsync(It.IsAny<Guid>(), It.IsAny<int>()))
+            .ReturnsAsync((SegmentoAudio?)null);
+    }
+
+    private CapturaService CriarServico() =>
+        new(_repo.Object, _consultaRepo.Object, _vetRepo.Object, _empresaRepo.Object,
+            _animalRepo.Object, _midiaRepo.Object, _fila.Object, _usuario.Object);
+
+    private SessaoCaptura SessaoAberta(bool capturaAtiva = true)
+    {
+        var sessao = new SessaoCaptura(_consulta.Id, capturaAtiva);
+        _repo.Setup(r => r.ObterSessaoDaConsultaAsync(_consulta.Id)).ReturnsAsync(sessao);
+        _repo.Setup(r => r.ObterSessaoAsync(sessao.Id)).ReturnsAsync(sessao);
+        return sessao;
+    }
+
+    private Midia AudioNoStorage()
+    {
+        var midia = new Midia(TipoMidia.AudioConsulta, "audio/webm", consultaId: _consulta.Id);
+        _midiaRepo.Setup(r => r.ObterPorIdAsync(midia.Id)).ReturnsAsync(midia);
+        return midia;
+    }
+
+    private static EnviarSegmentoDto Segmento(Guid midiaId, int sequencia = 0) => new()
+    {
+        Sequencia = sequencia,
+        MidiaId = midiaId,
+        DuracaoMs = 30000,
+        InicioRelativoMs = sequencia * 30000
+    };
+
+    // ── Início da consulta (RN-008/RN-085) ───────────────────────────────────
+
+    [Fact]
+    public async Task Iniciar_AbreAJanelaEMarcaOInicioNaConsulta()
+    {
+        var resultado = await CriarServico().IniciarAsync(_consulta.Id);
+
+        Assert.True(resultado.CapturaAtiva);
+        Assert.NotNull(resultado.Gravacao);
+        Assert.NotNull(_consulta.IniciadaEm);
+    }
+
+    [Fact]
+    public async Task Iniciar_ConsultaNaoConfirmada_NaoEPermitido()
+    {
+        var emCheckout = Consulta.ParaCheckout(
+            DateTime.UtcNow.AddHours(1), _vet.Id, _animal.Id, _animal.TutorId, Guid.NewGuid(), Guid.NewGuid());
+        _consultaRepo.Setup(r => r.ObterPorIdAsync(emCheckout.Id)).ReturnsAsync(emCheckout);
+        _repo.Setup(r => r.ObterSessaoDaConsultaAsync(emCheckout.Id)).ReturnsAsync((SessaoCaptura?)null);
+
+        var ex = await Assert.ThrowsAsync<BusinessRuleException>(
+            () => CriarServico().IniciarAsync(emCheckout.Id));
+
+        Assert.Equal("RN-008", ex.Codigo);
+    }
+
+    [Fact]
+    public async Task Iniciar_DuasVezes_Retorna409()
+    {
+        SessaoAberta();
+
+        var ex = await Assert.ThrowsAsync<ConflitoDeEstadoException>(
+            () => CriarServico().IniciarAsync(_consulta.Id));
+
+        // Iniciar duas vezes seria abrir duas janelas de gravacao sobre o mesmo atendimento
+        Assert.Equal("RN-008", ex.Codigo);
+    }
+
+    [Fact]
+    public async Task Iniciar_NoPlanoBasico_ConsultaComecaSemCaptura()
+    {
+        var basico = new Veterinario("Dr. Basico", new Crmv("54321-SP"), "SP",
+            PersonaVeterinario.Autonomo, PlanoAssinatura.Basico);
+
+        var consulta = Consulta.ParaCheckout(
+            DateTime.UtcNow.AddHours(1), basico.Id, _animal.Id, _animal.TutorId, Guid.NewGuid(), Guid.NewGuid());
+        consulta.ConfirmarPagamento();
+
+        _consultaRepo.Setup(r => r.ObterPorIdAsync(consulta.Id)).ReturnsAsync(consulta);
+        _vetRepo.Setup(r => r.ObterPorIdAsync(basico.Id)).ReturnsAsync(basico);
+        _repo.Setup(r => r.ObterSessaoDaConsultaAsync(consulta.Id)).ReturnsAsync((SessaoCaptura?)null);
+
+        var resultado = await CriarServico().IniciarAsync(consulta.Id);
+
+        // RN-085: a consulta acontece, o que nao existe e a IA na consulta
+        Assert.False(resultado.CapturaAtiva);
+        Assert.Null(resultado.Gravacao);
+        Assert.Contains("CapturaIndisponivelNoPlanoBasico", resultado.Avisos);
+    }
+
+    [Fact]
+    public async Task Iniciar_ComPesoAusente_AvisaAntesDeComecar()
+    {
+        var semPeso = new Animal("Rex", "Canino", "SRD", DateTime.UtcNow.AddYears(-2), Guid.NewGuid());
+        _animalRepo.Setup(r => r.ObterPorIdAsync(_animal.Id)).ReturnsAsync(semPeso);
+
+        var resultado = await CriarServico().IniciarAsync(_consulta.Id);
+
+        // Descobrir que falta peso so no fim do atendimento seria tarde (RN-081)
+        Assert.Contains("PesoAusente", resultado.Avisos);
+    }
+
+    [Fact]
+    public async Task Iniciar_ConsultaDeOutroVeterinario_ERecusado()
+    {
+        _usuario.SetupGet(u => u.EhAdmin).Returns(false);
+        _usuario.SetupGet(u => u.VeterinarioId).Returns(Guid.NewGuid());
+
+        var ex = await Assert.ThrowsAsync<AcessoNegadoException>(
+            () => CriarServico().IniciarAsync(_consulta.Id));
+
+        Assert.Equal("RN-105", ex.Codigo);
+    }
+
+    // ── Recebimento de segmentos (RN-009/RN-079) ─────────────────────────────
+
+    [Fact]
+    public async Task ReceberSegmento_ComJanelaAberta_EnfileiraATranscricao()
+    {
+        SessaoAberta();
+        var midia = AudioNoStorage();
+
+        var resultado = await CriarServico().ReceberSegmentoAsync(_consulta.Id, Segmento(midia.Id));
+
+        Assert.Equal(EstadoSegmentoAudio.Recebido, resultado.Estado);
+
+        // O despacho ao motor sai da requisicao: o vet nao espera a transcricao
+        _fila.Verify(f => f.EnfileirarAsync(TipoJob.TranscreverSegmento, It.IsAny<string>(), null), Times.Once);
+    }
+
+    [Fact]
+    public async Task ReceberSegmento_ForaDaJanela_Retorna409()
+    {
+        var sessao = SessaoAberta();
+        sessao.Encerrar(segmentosRecebidos: 1);
+        var midia = AudioNoStorage();
+
+        var ex = await Assert.ThrowsAsync<ConflitoDeEstadoException>(
+            () => CriarServico().ReceberSegmentoAsync(_consulta.Id, Segmento(midia.Id)));
+
+        // RN-079: fora da janela a IA nao captura audio
+        Assert.Equal("RN-079", ex.Codigo);
+    }
+
+    [Fact]
+    public async Task ReceberSegmento_SemConsultaIniciada_NaoEAceito()
+    {
+        var midia = AudioNoStorage();
+
+        var ex = await Assert.ThrowsAsync<BusinessRuleException>(
+            () => CriarServico().ReceberSegmentoAsync(_consulta.Id, Segmento(midia.Id)));
+
+        Assert.Equal("RN-008", ex.Codigo);
+    }
+
+    [Fact]
+    public async Task ReceberSegmento_ComMidiaQueNaoEAudio_NaoEAceito()
+    {
+        SessaoAberta();
+        var foto = new Midia(TipoMidia.FotoPet, "image/jpeg");
+        _midiaRepo.Setup(r => r.ObterPorIdAsync(foto.Id)).ReturnsAsync(foto);
+
+        await Assert.ThrowsAsync<ValidationException>(
+            () => CriarServico().ReceberSegmentoAsync(_consulta.Id, Segmento(foto.Id)));
+    }
+
+    [Fact]
+    public async Task ReceberSegmento_SequenciaRepetida_Retorna409()
+    {
+        var sessao = SessaoAberta();
+        var midia = AudioNoStorage();
+
+        var jaRecebido = new SegmentoAudio(sessao.Id, 0, midia.Id, 30000, 0);
+        _repo.Setup(r => r.ObterSegmentoPorSequenciaAsync(sessao.Id, 0)).ReturnsAsync(jaRecebido);
+
+        var ex = await Assert.ThrowsAsync<ConflitoDeEstadoException>(
+            () => CriarServico().ReceberSegmentoAsync(_consulta.Id, Segmento(midia.Id)));
+
+        // Reenvio do mesmo trecho duplicaria o texto na transcricao final
+        Assert.Equal("RN-009", ex.Codigo);
+    }
+
+    // ── Encerramento (RN-008/RN-038) ─────────────────────────────────────────
+
+    [Fact]
+    public async Task Encerrar_MarcaAConsultaComoRealizada()
+    {
+        var sessao = SessaoAberta();
+        var midia = AudioNoStorage();
+        var segmento = new SegmentoAudio(sessao.Id, 0, midia.Id, 30000, 0);
+        segmento.RegistrarTranscricao();
+        _repo.Setup(r => r.ObterSegmentosAsync(sessao.Id)).ReturnsAsync([segmento]);
+
+        var resultado = await CriarServico().EncerrarAsync(_consulta.Id);
+
+        // RN-038: encerrar e o que marca a consulta como realizada
+        Assert.Equal(StatusConsulta.Realizada, resultado.StatusConsulta);
+        Assert.NotNull(_consulta.EncerradaEm);
+    }
+
+    [Fact]
+    public async Task Encerrar_SemNenhumSegmento_CaiNoCaminhoManual()
+    {
+        SessaoAberta();
+
+        var resultado = await CriarServico().EncerrarAsync(_consulta.Id);
+
+        // Sem audio nao ha o que transcrever: o prontuario e manual (RN-085)
+        Assert.Equal(EstadoSessaoCaptura.SemTranscricao, resultado.EstadoDaSessao);
+    }
+
+    [Fact]
+    public async Task Encerrar_ComSegmentoPendente_AguardaATranscricao()
+    {
+        var sessao = SessaoAberta();
+        var midia = AudioNoStorage();
+        var pendente = new SegmentoAudio(sessao.Id, 0, midia.Id, 30000, 0);
+        _repo.Setup(r => r.ObterSegmentosAsync(sessao.Id)).ReturnsAsync([pendente]);
+
+        var resultado = await CriarServico().EncerrarAsync(_consulta.Id);
+
+        Assert.Equal(EstadoSessaoCaptura.AguardandoTranscricao, resultado.EstadoDaSessao);
+        Assert.Equal(1, resultado.SegmentosPendentes);
+    }
+
+    [Fact]
+    public async Task Encerrar_DuasVezes_Retorna409()
+    {
+        var sessao = SessaoAberta();
+        sessao.Encerrar(0);
+
+        await Assert.ThrowsAsync<ConflitoDeEstadoException>(() => CriarServico().EncerrarAsync(_consulta.Id));
+    }
+
+    // ── Callback do motor (§5.3) ─────────────────────────────────────────────
+
+    [Fact]
+    public async Task Callback_ComTexto_RegistraATranscricao()
+    {
+        var sessao = SessaoAberta();
+        var midia = AudioNoStorage();
+        var segmento = new SegmentoAudio(sessao.Id, 0, midia.Id, 30000, 0);
+        _repo.Setup(r => r.ObterSegmentoAsync(segmento.Id)).ReturnsAsync(segmento);
+        _repo.Setup(r => r.ObterSegmentosAsync(sessao.Id)).ReturnsAsync([segmento]);
+
+        Transcricao? persistida = null;
+        _repo.Setup(r => r.AdicionarTranscricaoAsync(It.IsAny<Transcricao>()))
+            .Callback<Transcricao>(t => persistida = t).Returns(Task.CompletedTask);
+
+        await CriarServico().RegistrarCallbackAsync(new CallbackDeTranscricaoDto
+        {
+            SegmentoId = segmento.Id,
+            Status = "Ok",
+            Texto = "Paciente apresenta vomito ha um dia.",
+            Confianca = 0.91m,
+            Motor = new MotorDeTranscricaoDto { Nome = "stt-flow", Versao = "1.3.0" }
+        });
+
+        Assert.Equal(EstadoSegmentoAudio.Transcrito, segmento.Estado);
+        Assert.Contains("vomito", persistida!.Texto);
+        Assert.Equal("stt-flow 1.3.0", persistida.Motor);
+    }
+
+    [Fact]
+    public async Task Callback_Reentregue_NaoDuplicaOTexto()
+    {
+        var sessao = SessaoAberta();
+        var midia = AudioNoStorage();
+        var segmento = new SegmentoAudio(sessao.Id, 0, midia.Id, 30000, 0);
+        segmento.RegistrarTranscricao();
+        _repo.Setup(r => r.ObterSegmentoAsync(segmento.Id)).ReturnsAsync(segmento);
+
+        await CriarServico().RegistrarCallbackAsync(new CallbackDeTranscricaoDto
+        {
+            SegmentoId = segmento.Id, Status = "Ok", Texto = "texto repetido"
+        });
+
+        // Callback e entregue mais de uma vez por natureza
+        _repo.Verify(r => r.AdicionarTranscricaoAsync(It.IsAny<Transcricao>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Callback_ComFalha_DevolveOSegmentoParaAFila()
+    {
+        var sessao = SessaoAberta();
+        var midia = AudioNoStorage();
+        var segmento = new SegmentoAudio(sessao.Id, 0, midia.Id, 30000, 0);
+        segmento.RegistrarDespacho("hash");
+        _repo.Setup(r => r.ObterSegmentoAsync(segmento.Id)).ReturnsAsync(segmento);
+        _repo.Setup(r => r.ObterSegmentosAsync(sessao.Id)).ReturnsAsync([segmento]);
+
+        await CriarServico().RegistrarCallbackAsync(new CallbackDeTranscricaoDto
+        {
+            SegmentoId = segmento.Id, Status = "Falha", Motivo = MotivoFalhaTranscricao.MotorIndisponivel
+        });
+
+        // Ainda ha tentativa: volta para a fila em vez de perder o trecho
+        Assert.Equal(EstadoSegmentoAudio.Recebido, segmento.Estado);
+        _fila.Verify(f => f.EnfileirarAsync(
+            TipoJob.TranscreverSegmento, segmento.Id.ToString(), It.IsAny<TimeSpan?>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Callback_FalhaDepoisDeTresTentativas_DaOTrechoComoPerdido()
+    {
+        var sessao = SessaoAberta();
+        var midia = AudioNoStorage();
+        var segmento = new SegmentoAudio(sessao.Id, 0, midia.Id, 30000, 0);
+
+        for (var i = 0; i < SegmentoAudio.MaximoDeTentativas; i++)
+            segmento.RegistrarDespacho("hash");
+
+        _repo.Setup(r => r.ObterSegmentoAsync(segmento.Id)).ReturnsAsync(segmento);
+        _repo.Setup(r => r.ObterSegmentosAsync(sessao.Id)).ReturnsAsync([segmento]);
+
+        await CriarServico().RegistrarCallbackAsync(new CallbackDeTranscricaoDto
+        {
+            SegmentoId = segmento.Id, Status = "Falha", Motivo = MotivoFalhaTranscricao.AudioIlegivel
+        });
+
+        Assert.Equal(EstadoSegmentoAudio.Falha, segmento.Estado);
+        Assert.Equal(MotivoFalhaTranscricao.AudioIlegivel, segmento.FalhaMotivo);
+    }
+
+    // ── Desfecho da transcrição (§7.3) ───────────────────────────────────────
+
+    [Fact]
+    public async Task Transcricao_TodosOsTrechosOk_SegueParaAEstruturacao()
+    {
+        var sessao = SessaoAberta();
+        sessao.Encerrar(segmentosRecebidos: 1);
+
+        var midia = AudioNoStorage();
+        var segmento = new SegmentoAudio(sessao.Id, 0, midia.Id, 30000, 0);
+        _repo.Setup(r => r.ObterSegmentoAsync(segmento.Id)).ReturnsAsync(segmento);
+        _repo.Setup(r => r.ObterSegmentosAsync(sessao.Id)).ReturnsAsync([segmento]);
+
+        await CriarServico().RegistrarCallbackAsync(new CallbackDeTranscricaoDto
+        {
+            SegmentoId = segmento.Id, Status = "Ok", Texto = "texto"
+        });
+
+        Assert.Equal(EstadoSessaoCaptura.GerandoRascunho, sessao.Estado);
+    }
+
+    [Fact]
+    public void Transcricao_ParteDosTrechosFalhou_SegueParcial()
+    {
+        var sessao = new SessaoCaptura(Guid.NewGuid(), capturaAtiva: true);
+        sessao.Encerrar(segmentosRecebidos: 3);
+
+        sessao.RegistrarDesfechoDaTranscricao(transcritos: 2, falhados: 1);
+
+        // Perder a consulta inteira porque um trecho falhou seria pior que um
+        // rascunho parcial com aviso (§4.2)
+        Assert.Equal(EstadoSessaoCaptura.TranscricaoParcial, sessao.Estado);
+    }
+
+    [Fact]
+    public void Transcricao_NenhumTrechoTranscrito_CaiNoCaminhoManual()
+    {
+        var sessao = new SessaoCaptura(Guid.NewGuid(), capturaAtiva: true);
+        sessao.Encerrar(segmentosRecebidos: 2);
+
+        sessao.RegistrarDesfechoDaTranscricao(transcritos: 0, falhados: 2);
+
+        Assert.Equal(EstadoSessaoCaptura.SemTranscricao, sessao.Estado);
+    }
+
+    [Fact]
+    public async Task Estado_TrazOTextoParcialNaOrdemDosTrechos()
+    {
+        var sessao = SessaoAberta();
+        var midia = AudioNoStorage();
+
+        var primeiro = new SegmentoAudio(sessao.Id, 0, midia.Id, 30000, 0);
+        var segundo = new SegmentoAudio(sessao.Id, 1, midia.Id, 30000, 30000);
+        primeiro.RegistrarTranscricao();
+        segundo.RegistrarTranscricao();
+
+        _repo.Setup(r => r.ObterSegmentosAsync(sessao.Id)).ReturnsAsync([segundo, primeiro]);
+        _repo.Setup(r => r.ObterTranscricoesAsync(sessao.Id)).ReturnsAsync(
+        [
+            new Transcricao(segundo.Id, "segunda parte", null, null, null),
+            new Transcricao(primeiro.Id, "primeira parte", null, null, null)
+        ]);
+
+        var estado = await CriarServico().ObterEstadoAsync(_consulta.Id);
+
+        // A ordem do texto e a dos trechos, nao a de chegada dos callbacks
+        Assert.StartsWith("primeira parte", estado.TextoParcial);
+        Assert.EndsWith("segunda parte", estado.TextoParcial);
+        Assert.Equal(2, estado.SegmentosTranscritos);
+    }
+}

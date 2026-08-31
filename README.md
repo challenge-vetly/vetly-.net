@@ -12,7 +12,7 @@ O Vetly é uma API REST para gestão de clínicas veterinárias, cobrindo todo o
 | Autenticação | JWT Bearer |
 | Documentação | Scalar (tema DeepSpace) em `/scalar/v1` |
 | IA | Ollama local (modelo `llama3.1`) |
-| Testes | xUnit + Moq (371 testes verdes) |
+| Testes | xUnit + Moq (406 testes verdes) |
 
 ## Padrões aplicados
 
@@ -212,9 +212,19 @@ curl http://localhost:5099/health/ready
 | GET | `/api/consultas/{id}/briefing` | Pré-consulta: animal, histórico (últimas 5) e exames recentes (últimos 3) |
 | POST | `/api/consultas/checkout` | Trava o horário por 10 min e cria a consulta em `EmCheckout` (RN-003/RN-035) |
 | POST | `/api/consultas` | Agendar no ato — emergência presencial e balcão (RN-040) |
+| POST | `/api/consultas/{id}/iniciar` | Abre a janela de captura — a consulta começa aqui (RN-008) |
+| POST | `/api/consultas/{id}/captura/segmentos` | Recebe um trecho de áudio e enfileira a transcrição — 202 (RN-009) |
+| GET | `/api/consultas/{id}/captura` | Situação da captura, com o texto já transcrito (RN-009) |
+| POST | `/api/consultas/{id}/encerrar` | Fecha a janela e marca a consulta como `Realizada` (RN-008/RN-038) |
 | PUT | `/api/consultas/{id}/validar-diagnostico` | Registra validação manual do diagnóstico (RN-082) |
 | POST | `/api/consultas/{id}/finalizar` | Finalizar — exige receita assinada (RN-087) |
 | DELETE | `/api/consultas/{id}` | Cancelar + Strategy de reembolso (RN-014/RN-041/RN-042) |
+
+**A janela de captura é explícita.** `iniciar` abre, `encerrar` fecha, e fora dela a IA não captura áudio nem produz conteúdo clínico (RN-079) — trecho enviado com a janela fechada devolve 409. O áudio vai em segmentos curtos, cada um com sua sequência: assim a transcrição acontece durante o atendimento e a falha de um trecho não derruba a consulta inteira. Reenvio da mesma sequência devolve 409, porque duplicaria o texto.
+
+O despacho ao motor sai da requisição pelo worker: o veterinário não espera a transcrição para continuar atendendo. O motor devolve o texto em `POST /api/internos/stt/callback`, e **o contrato desse callback é da Vetly, não do motor** — trocar de fornecedor é mexer dentro do fluxo Node-RED, sem refazer o caminho de volta. Em desenvolvimento, `Adaptadores:Stt = "Simulado"` percorre o mesmo caminho assíncrono com texto sintético marcado como tal.
+
+No plano Básico a consulta inicia normalmente, **sem captura** (RN-085): o prontuário é preenchido à mão. `iniciar` também devolve os avisos que o veterinário precisa ver antes de começar — `PesoAusente` é o mais importante, porque sem peso não há sugestão de dose (RN-081) e descobrir isso no fim do atendimento seria tarde.
 
 ### Internações
 | Método | Rota | Descrição |
@@ -286,6 +296,7 @@ A API **nunca proxia os bytes**: registra a mídia e o app fala direto com o sto
 | Método | Rota | Descrição |
 |---|---|---|
 | POST | `/api/internos/pagamentos/webhook` | Evento de status do pagamento — **estado autoritativo** da transação |
+| POST | `/api/internos/stt/callback` | Texto devolvido pelo motor de transcrição (RN-009) |
 
 Autenticadas por `X-Vetly-Service-Token`, não por JWT de usuário: quem chama é um provedor, não uma pessoa. Sem token configurado a rota fica indisponível.
 
@@ -369,6 +380,10 @@ Sem parâmetros valem página 1 e 20 itens. O tamanho é limitado a 100 por pág
 | RN-070 | Take rate por plano: Básico 15%, Profissional 12%, Enterprise 10% — a maior comissão pertence ao menor plano | `SplitBasicoStrategy`, `SplitProfissionalStrategy`, `SplitEnterpriseStrategy` |
 | RN-072 | Repasse único: ao vet autônomo ou à clínica. Vet vinculado usa o plano da unidade, e a remuneração interna fica fora do escopo | `PagamentoService.ResolverPlanoEDestinatarioAsync` |
 | RN-081 | Sugestão de dose exige peso do animal — `POST /api/ia/protocolo` com peso ausente/zero devolve 422, e o cadastro do pet passa a exigir `pesoKg` | `OllamaService.SugerirProtocoloAsync` + `AnimalService` |
+| RN-008 | A consulta tem uma janela explícita: `iniciar` abre, `encerrar` fecha e marca a consulta como `Realizada`; iniciar ou encerrar duas vezes devolve 409 | `SessaoCaptura` + `CapturaService` |
+| RN-009 | Áudio capturado em segmentos sequenciais, transcritos fora da requisição; reenvio da mesma sequência devolve 409, e falha em parte dos trechos gera rascunho parcial em vez de perder a consulta | `SegmentoAudio` + `TranscreverSegmentoHandler` |
+| RN-079 | Fora da janela de captura a IA não captura áudio nem produz conteúdo clínico — trecho enviado com a janela fechada devolve 409 | `SessaoCaptura.JanelaAberta` |
+| RN-085 | Captura e IA na consulta existem nos planos Profissional e Enterprise; no Básico a consulta inicia sem captura e o prontuário é manual | `CapturaService.PlanoTemCapturaAsync` |
 | RN-082 | Documentos só podem ser gerados após `consulta.DiagnosticoValidado = true` E pagamento confirmado | `DocumentoService.GerarAsync` |
 | RN-087 | Finalizar consulta exige documento `ReceitaVeterinaria` assinado digitalmente | `ConsultaService.FinalizarAsync` |
 | RN-088 | Correção cria nova versão do documento (original preservado com `VersaoOriginalId`) | `DocumentoService.CorrigirAsync` |

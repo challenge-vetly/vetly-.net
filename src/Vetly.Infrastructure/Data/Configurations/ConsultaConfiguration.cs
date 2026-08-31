@@ -67,6 +67,9 @@ public class ConsultaConfiguration : IEntityTypeConfiguration<Consulta>
         builder.Property(c => c.EmpresaId)
             .HasColumnType("CHAR(36)").HasColumnName("EMPRESA_ID");
 
+        builder.Property(c => c.IniciadaEm).HasColumnName("INICIADA_EM");
+        builder.Property(c => c.EncerradaEm).HasColumnName("ENCERRADA_EM");
+
         builder.Property(c => c.Origem)
             .HasConversion<int>().HasColumnName("ORIGEM").IsRequired();
 

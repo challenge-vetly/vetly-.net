@@ -50,6 +50,15 @@ public class VetlyDbContext : DbContext
     /// <summary>Arquivos guardados no storage de objetos (§2.6).</summary>
     public DbSet<Midia> Midias => Set<Midia>();
 
+    /// <summary>Janelas de captura das consultas (RN-008/RN-079).</summary>
+    public DbSet<SessaoCaptura> SessoesDeCaptura => Set<SessaoCaptura>();
+
+    /// <summary>Segmentos de áudio capturados (RN-009).</summary>
+    public DbSet<SegmentoAudio> SegmentosDeAudio => Set<SegmentoAudio>();
+
+    /// <summary>Texto produzido pelo motor de transcrição (RN-009).</summary>
+    public DbSet<Transcricao> Transcricoes => Set<Transcricao>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(VetlyDbContext).Assembly);
