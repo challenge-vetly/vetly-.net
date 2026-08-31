@@ -12,7 +12,7 @@ O Vetly é uma API REST para gestão de clínicas veterinárias, cobrindo todo o
 | Autenticação | JWT Bearer |
 | Documentação | Scalar (tema DeepSpace) em `/scalar/v1` |
 | IA | Ollama local (modelo `llama3.1`) |
-| Testes | xUnit + Moq (577 testes verdes) |
+| Testes | xUnit + Moq (594 testes verdes) |
 
 ## Padrões aplicados
 
@@ -320,6 +320,21 @@ A API **nunca proxia os bytes**: registra a mídia e o app fala direto com o sto
 
 Áudio de consulta é a única mídia com prazo: 30 dias para reprocessamento e depois some (P-06). Conteúdo clínico não expira, por guarda regulatória.
 
+### Avaliações
+
+| Método | Rota | Descrição |
+|---|---|---|
+| POST | `/api/avaliacoes/consulta/{id}` | Avalia um atendimento realizado (RN-055) |
+| GET | `/api/avaliacoes/veterinario/{id}` | Reputação, com distribuição das notas (RN-057) |
+| POST | `/api/avaliacoes/{id}/resposta` | Resposta pública do veterinário — uma só |
+| POST | `/api/avaliacoes/{id}/moderar` | Esconde o comentário; a nota continua contando |
+
+**Só avalia quem foi atendido, e só uma vez por consulta.** É o que separa reputação de campanha: sem o vínculo com um atendimento realizado, a nota vira número que qualquer um pode empurrar. O prazo é de 30 dias — avaliação muito posterior mede memória, não atendimento — e a nota não é editável depois de enviada, porque corrigir avaliação abriria a porta para pressão sobre quem avaliou. O índice único em `CONSULTA_ID` é a invariante: sem ele, duas requisições simultâneas passariam pela verificação e gravariam as duas.
+
+A **moderação esconde o comentário e preserva a nota**. O contrário transformaria a moderação em ferramenta para apagar crítica, e há um teste que fixa isso. Moderar exige motivo: moderação sem motivo não se audita.
+
+A reputação em `TB_VETERINARIO` é **recalculada** a partir das avaliações, não incrementada — média acumulada em campo diverge do que está gravado assim que uma avaliação é moderada ou corrigida. Abaixo de 3 avaliações a nota não é pública nem entra no score (RN-057): uma nota 5 vinda de uma única avaliação não diz nada sobre o profissional, e o matching usa o selo "Novo na Vetly" nesse intervalo (RN-033).
+
 ### Fidelidade
 
 | Método | Rota | Descrição |
@@ -434,6 +449,8 @@ Sem parâmetros valem página 1 e 20 itens. O tamanho é limitado a 100 por pág
 | RN-037 | Vaga liberada é oferecida ao primeiro da fila com prioridade de 15 min; vencida, passa ao próximo | `ItemListaEspera` + `PromoverProximoAsync` |
 | RN-026 | Endereço persistido no próprio registro, com latitude/longitude **derivadas dele** pela geocodificação — o payload do cliente é ignorado | `Endereco` + `IGeocodificacaoAdapter` |
 | RN-033/RN-057 | Nota só é pública a partir de 3 avaliações; `PUBLICADO_EM` ancora o selo "Novo na Vetly" por 30 dias | `Veterinario.TemNotaPublica` + `PublicarNoMatching` |
+| RN-055 | Só o Responsável atendido avalia, uma vez por consulta e em até 30 dias; índice único garante a invariante sob concorrência | `Avaliacao` + `AvaliacaoService` |
+| RN-057 | Reputação recalculada a partir das avaliações; abaixo de 3 a nota não é pública nem entra no score, e comentário moderado não tira a nota da média | `AvaliacaoService.RecalcularReputacaoAsync` + `Veterinario.TemNotaPublica` |
 | RN-051 | O desconto do resgate sai da comissão da plataforma, não do repasse: o bruto e o repasse não mudam, e o resgate é limitado à comissão daquela cobrança | `Pagamento.AplicarDesconto` + `PagamentoService.AplicarResgateAsync` |
 | RN-052 | Consulta realizada e paga rende 1 ponto por real; o saldo é a soma de um extrato append-only, e o crédito expira em um ano com lançamento de baixa | `MovimentoDePontos` + `FidelidadeService` |
 | RN-045 | Obrigação de cuidado guarda periodicidade e se reagenda sozinha ao ser cumprida, contando a partir do cumprimento; `Vencendo` avisa 30 dias antes | `ObrigacaoPet` + `ObrigacaoService` |
