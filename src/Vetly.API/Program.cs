@@ -41,6 +41,10 @@ builder.Services
         // Encerramento de acesso do vet desativado (RN-022), preservando so o que a
         // RN-024 garante a ele. Tambem falha fechado.
         options.Filters.Add<VetDesativadoFilter>();
+
+        // Idempotencia (§2.5): so age nas rotas marcadas com [Idempotente] — o que
+        // nao pode acontecer duas vezes por um reenvio do app.
+        options.Filters.Add<IdempotencyFilter>();
     })
     .AddJsonOptions(options =>
     {

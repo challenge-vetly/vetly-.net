@@ -41,6 +41,9 @@ public class VetlyDbContext : DbContext
     /// <summary>Lista de espera por horário (RN-004/RN-037).</summary>
     public DbSet<ItemListaEspera> ListaDeEspera => Set<ItemListaEspera>();
 
+    /// <summary>Respostas guardadas das requisições idempotentes (§2.5).</summary>
+    public DbSet<RegistroIdempotencia> RegistrosDeIdempotencia => Set<RegistroIdempotencia>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(VetlyDbContext).Assembly);
