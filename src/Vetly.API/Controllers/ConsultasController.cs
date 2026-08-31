@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Vetly.API.Filters;
 using Vetly.Application.DTOs.Cancelamento;
+using Vetly.Application.DTOs.Captura;
 using Vetly.Application.DTOs.Comum;
 using Vetly.Application.DTOs.Consulta;
 using Vetly.Application.Interfaces;
@@ -19,8 +20,13 @@ namespace Vetly.API.Controllers;
 public class ConsultasController : ControllerBase
 {
     private readonly IConsultaService _service;
+    private readonly ICapturaService _captura;
 
-    public ConsultasController(IConsultaService service) => _service = service;
+    public ConsultasController(IConsultaService service, ICapturaService captura)
+    {
+        _service = service;
+        _captura = captura;
+    }
 
     /// <summary>
     /// Lista consultas com filtros opcionais, paginada (§2.3).
@@ -130,4 +136,71 @@ public class ConsultasController : ControllerBase
         await _service.ValidarDiagnosticoAsync(id);
         return NoContent();
     }
+
+    // ── Captura de audio da consulta (RN-008/RN-009/RN-079/RN-085) ───────────
+
+    /// <summary>
+    /// Abre a janela de captura: a consulta comeca aqui (RN-008).
+    /// </summary>
+    /// <remarks>
+    /// No plano Basico a consulta inicia normalmente, mas SEM captura (RN-085) — o
+    /// prontuario e preenchido manualmente. A resposta traz avisos que o veterinario
+    /// precisa ver antes de comecar, como peso ausente, que impede sugestao de dose
+    /// (RN-081).
+    /// </remarks>
+    [HttpPost("{id:guid}/iniciar")]
+    [ProducesResponseType(typeof(SessaoIniciadaDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
+    public async Task<IActionResult> Iniciar(Guid id) =>
+        Ok(await _captura.IniciarAsync(id));
+
+    /// <summary>
+    /// Recebe um trecho de audio da consulta e enfileira a transcricao (RN-009).
+    /// </summary>
+    /// <remarks>
+    /// Fora da janela de captura devolve 409: a IA nao captura audio nem produz
+    /// conteudo clinico fora dela (RN-079). O audio ja deve estar no storage — aqui
+    /// viaja apenas o midiaId.
+    /// </remarks>
+    [HttpPost("{id:guid}/captura/segmentos")]
+    [ProducesResponseType(typeof(SegmentoRecebidoDto), StatusCodes.Status202Accepted)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> ReceberSegmento(Guid id, [FromBody] EnviarSegmentoDto dto) =>
+        Accepted(await _captura.ReceberSegmentoAsync(id, dto));
+
+    /// <summary>
+    /// Situacao da captura, com o texto ja transcrito ate agora (RN-009).
+    /// </summary>
+    [HttpGet("{id:guid}/captura")]
+    [ProducesResponseType(typeof(EstadoDaCapturaDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ObterCaptura(Guid id) =>
+        Ok(await _captura.ObterEstadoAsync(id));
+
+    /// <summary>
+    /// Fecha a janela de captura e marca a consulta como realizada (RN-008/RN-038).
+    /// </summary>
+    /// <remarks>
+    /// A partir daqui os processos pos-consulta sao disparados. Segmento que ainda nao
+    /// voltou do motor continua sendo aguardado — a consulta nao espera por ele.
+    /// </remarks>
+    [HttpPost("{id:guid}/encerrar")]
+    [ProducesResponseType(typeof(ConsultaEncerradaDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
+    public async Task<IActionResult> Encerrar(Guid id) =>
+        Ok(await _captura.EncerrarAsync(id));
 }

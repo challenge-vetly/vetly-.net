@@ -116,6 +116,7 @@ builder.Services.AddScoped<IBuscaRepository, BuscaRepository>();
 builder.Services.AddScoped<IListaEsperaRepository, ListaEsperaRepository>();
 builder.Services.AddScoped<IFilaDeJobs, FilaDeJobs>();
 builder.Services.AddScoped<IMidiaRepository, MidiaRepository>();
+builder.Services.AddScoped<ICapturaRepository, CapturaRepository>();
 
 // ── Escopo do usuário da requisição (RN-105/RN-106) ──────────────────────────
 // Os serviços leem identidade e escopo daqui, nunca de parametro vindo do cliente.
@@ -156,6 +157,31 @@ switch (adaptadorStorage)
             $"Adaptador de storage '{adaptadorStorage}' nao reconhecido. Valores validos: Local.");
 }
 
+// Transcricao de fala (§5.3): Node-RED em producao, simulado em desenvolvimento.
+// O contrato do callback e da Vetly nos dois casos.
+var adaptadorStt = builder.Configuration["Adaptadores:Stt"] ?? "Simulado";
+switch (adaptadorStt)
+{
+    case "Simulado":
+        builder.Services.AddScoped<ISttAdapter, SttAdapterSimulado>();
+        break;
+
+    case "NodeRed":
+        builder.Services.AddHttpClient<ISttAdapter, SttAdapterNodeRed>(client =>
+        {
+            client.BaseAddress = new Uri(
+                builder.Configuration["NodeRed:BaseUrl"]
+                ?? throw new InvalidOperationException("NodeRed:BaseUrl nao configurada."));
+
+            client.Timeout = TimeSpan.FromSeconds(30);
+        });
+        break;
+
+    default:
+        throw new InvalidOperationException(
+            $"Adaptador de STT '{adaptadorStt}' nao reconhecido. Valores validos: Simulado, NodeRed.");
+}
+
 var adaptadorPagamento = builder.Configuration["Adaptadores:Pagamento"] ?? "Simulado";
 switch (adaptadorPagamento)
 {
@@ -194,6 +220,7 @@ builder.Services.AddScoped<IDispositivoService, DispositivoService>();
 builder.Services.AddScoped<IAgendaService, AgendaService>();
 builder.Services.AddScoped<IBuscaService, BuscaService>();
 builder.Services.AddScoped<IMidiaService, MidiaService>();
+builder.Services.AddScoped<ICapturaService, CapturaService>();
 builder.Services.AddScoped<IListaEsperaService, ListaEsperaService>();
 
 // ── Factories (IEnumerable<IDocumentoFactory> — resolvidas pelo DI) ──────────
@@ -227,6 +254,8 @@ builder.Services.AddHttpClient<IOllamaService, OllamaService>(client =>
 // novo. Handlers e rotinas entram por DI — o worker nao conhece nenhum deles.
 builder.Services.AddScoped<IJobHandler, PromoverListaEsperaHandler>();
 builder.Services.AddScoped<IJobHandler, ConfirmarPagamentoSimuladoHandler>();
+builder.Services.AddScoped<IJobHandler, TranscreverSegmentoHandler>();
+builder.Services.AddScoped<IJobHandler, TranscreverSegmentoSimuladoHandler>();
 
 builder.Services.AddScoped<IRotinaPeriodica, ExpirarLocksDeCheckout>();
 builder.Services.AddScoped<IRotinaPeriodica, LimparIdempotenciaVencida>();
