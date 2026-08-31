@@ -62,6 +62,23 @@ public class PagamentoConfiguration : IEntityTypeConfiguration<Pagamento>
             .HasColumnName("VALOR_ESTORNADO");
 
         builder.HasIndex(p => p.TutorId).HasDatabaseName("IX_PAGAMENTO_TUTOR");
+        // ── Split por plano (RN-070/RN-071/RN-072) ───────────────────────────
+        builder.Property(p => p.PlanoAplicado)
+            .HasConversion<int?>().HasColumnName("PLANO");
+
+        // Percentual 0-100, nao basis points (§2.3)
+        builder.Property(p => p.TakeRate)
+            .HasColumnType("NUMBER(5,2)").HasColumnName("TAKE_RATE");
+
+        builder.Property(p => p.Comissao)
+            .HasColumnType("NUMBER(18,2)").HasColumnName("COMISSAO");
+
+        builder.Property(p => p.Repasse)
+            .HasColumnType("NUMBER(18,2)").HasColumnName("REPASSE");
+
+        builder.Property(p => p.DestinatarioRepasseId)
+            .HasColumnType("CHAR(36)").HasColumnName("DESTINATARIO_REPASSE_ID");
+
         builder.HasIndex(p => p.ConsultaId).HasDatabaseName("IX_PAGAMENTO_CONSULTA");
     }
 }

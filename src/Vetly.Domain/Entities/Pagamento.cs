@@ -54,6 +54,26 @@ public class Pagamento
     /// <summary>Valor estornado ao tutor em caso de cancelamento. Nulo se não houve estorno.</summary>
     public decimal? ValorEstornado { get; private set; }
 
+    // ── Split por plano (RN-070/RN-072) ──────────────────────────────────────
+
+    /// <summary>Plano que definiu o take rate desta transação (RN-070).</summary>
+    public PlanoAssinatura? PlanoAplicado { get; private set; }
+
+    /// <summary>Percentual retido pela Vetly, de 0 a 100.</summary>
+    public decimal? TakeRate { get; private set; }
+
+    /// <summary>Valor retido pela Vetly. Registrado, não liquidado, no MVP (RN-071).</summary>
+    public decimal? Comissao { get; private set; }
+
+    /// <summary>Valor repassado ao prestador. Registrado, não liquidado (RN-071).</summary>
+    public decimal? Repasse { get; private set; }
+
+    /// <summary>
+    /// Quem recebe o repasse: o veterinário autônomo ou a empresa. A remuneração
+    /// interna dos vinculados é relação da clínica, fora do escopo (RN-072).
+    /// </summary>
+    public Guid? DestinatarioRepasseId { get; private set; }
+
     /// <summary>Construtor privado reservado ao EF Core para materialização de entidades.</summary>
     private Pagamento() { }
 
@@ -86,6 +106,26 @@ public class Pagamento
 
     /// <summary>Define o percentual do split financeiro após processamento pela Strategy.</summary>
     public void DefinirSplit(decimal percentual) => PercentualSplit = percentual;
+
+    /// <summary>
+    /// Registra a repartição da transação (RN-070/RN-071). No MVP os valores são
+    /// apurados e gravados, nunca liquidados.
+    /// </summary>
+    public void RegistrarSplit(
+        PlanoAssinatura plano, decimal takeRate, decimal comissao, decimal repasse, Guid destinatarioId)
+    {
+        if (comissao + repasse != Valor)
+            throw new ArgumentException("A soma de comissão e repasse deve fechar o valor da transação.");
+
+        PlanoAplicado = plano;
+        TakeRate = takeRate;
+        Comissao = comissao;
+        Repasse = repasse;
+        DestinatarioRepasseId = destinatarioId;
+
+        // PERCENTUAL_SPLIT continua alimentado: e o percentual que fica com o prestador
+        PercentualSplit = 100m - takeRate;
+    }
 
     /// <summary>
     /// Registra o estorno total ou parcial do pagamento.

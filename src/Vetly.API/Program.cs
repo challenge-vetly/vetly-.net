@@ -174,8 +174,10 @@ builder.Services.AddScoped<ICancelamentoStrategy, ReembolsoParcialStrategy>();
 builder.Services.AddScoped<ICancelamentoStrategy, SemReembolsoStrategy>();
 
 // ── Strategies — Split Financeiro ────────────────────────────────────────────
-builder.Services.AddScoped<ISplitFinanceiroStrategy, SplitAutonomoStrategy>();
-builder.Services.AddScoped<ISplitFinanceiroStrategy, SplitEmpresaStrategy>();
+// Take rate por plano (RN-070): a maior comissao pertence ao menor plano
+builder.Services.AddScoped<ISplitFinanceiroStrategy, SplitBasicoStrategy>();
+builder.Services.AddScoped<ISplitFinanceiroStrategy, SplitProfissionalStrategy>();
+builder.Services.AddScoped<ISplitFinanceiroStrategy, SplitEnterpriseStrategy>();
 
 // ── OllamaService — HttpClient com timeout de 120s ──────────────────────────
 builder.Services.AddHttpClient<IOllamaService, OllamaService>(client =>
