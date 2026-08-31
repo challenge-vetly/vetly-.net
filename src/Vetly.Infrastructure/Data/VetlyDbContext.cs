@@ -47,6 +47,9 @@ public class VetlyDbContext : DbContext
     /// <summary>Fila de trabalhos de negócio executados fora da requisição (§11).</summary>
     public DbSet<Job> Jobs => Set<Job>();
 
+    /// <summary>Arquivos guardados no storage de objetos (§2.6).</summary>
+    public DbSet<Midia> Midias => Set<Midia>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(VetlyDbContext).Assembly);

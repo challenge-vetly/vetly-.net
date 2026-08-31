@@ -115,6 +115,7 @@ builder.Services.AddScoped<IAgendaRepository, AgendaRepository>();
 builder.Services.AddScoped<IBuscaRepository, BuscaRepository>();
 builder.Services.AddScoped<IListaEsperaRepository, ListaEsperaRepository>();
 builder.Services.AddScoped<IFilaDeJobs, FilaDeJobs>();
+builder.Services.AddScoped<IMidiaRepository, MidiaRepository>();
 
 // ── Escopo do usuário da requisição (RN-105/RN-106) ──────────────────────────
 // Os serviços leem identidade e escopo daqui, nunca de parametro vindo do cliente.
@@ -140,6 +141,19 @@ switch (adaptadorCrmv)
     default:
         throw new InvalidOperationException(
             $"Adaptador de CRMV '{adaptadorCrmv}' nao reconhecido. Valores validos: Simulado.");
+}
+
+// Storage de objetos (§2.6): disco local em desenvolvimento, bucket S3-compativel em
+// producao. A API nunca proxia os bytes em nenhum dos dois.
+var adaptadorStorage = builder.Configuration["Adaptadores:Storage"] ?? "Local";
+switch (adaptadorStorage)
+{
+    case "Local":
+        builder.Services.AddScoped<IStorageAdapter, StorageAdapterLocal>();
+        break;
+    default:
+        throw new InvalidOperationException(
+            $"Adaptador de storage '{adaptadorStorage}' nao reconhecido. Valores validos: Local.");
 }
 
 var adaptadorPagamento = builder.Configuration["Adaptadores:Pagamento"] ?? "Simulado";
@@ -179,6 +193,7 @@ builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IDispositivoService, DispositivoService>();
 builder.Services.AddScoped<IAgendaService, AgendaService>();
 builder.Services.AddScoped<IBuscaService, BuscaService>();
+builder.Services.AddScoped<IMidiaService, MidiaService>();
 builder.Services.AddScoped<IListaEsperaService, ListaEsperaService>();
 
 // ── Factories (IEnumerable<IDocumentoFactory> — resolvidas pelo DI) ──────────
