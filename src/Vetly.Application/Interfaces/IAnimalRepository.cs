@@ -32,4 +32,10 @@ public interface IAnimalRepository : IRepositoryBase<Animal>
     /// Indica se o veterinário tem alguma consulta com o animal — atendida ou agendada.
     /// </summary>
     Task<bool> VeterinarioAtendeAnimalAsync(Guid veterinarioId, Guid animalId);
+
+    /// <summary>
+    /// Consultas futuras de um animal, para o board do pet (RN-011). Cancelada e
+    /// expirada ficam de fora: o board mostra o que vai acontecer.
+    /// </summary>
+    Task<IEnumerable<Consulta>> ObterConsultasFuturasAsync(Guid animalId, DateTime agora);
 }

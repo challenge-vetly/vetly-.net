@@ -142,6 +142,49 @@ public class PagamentoService : IPagamentoService
         };
     }
 
+    /// <inheritdoc/>
+    public async Task<CarteiraDoTutorDto> ObterCarteiraAsync(Guid tutorId)
+    {
+        // RN-106: a carteira e do proprio Responsavel. O Admin alcanca pelo
+        // consolidado da unidade, que e outra visao e outro escopo.
+        if (!_usuario.EhAdmin && _usuario.TutorId != tutorId)
+            throw new AcessoNegadoException("RN-106", "Esta carteira nao pertence ao seu escopo de acesso.");
+
+        var pagamentos = (await _repo.ObterPorTutorAsync(tutorId)).ToList();
+
+        var lancamentos = pagamentos
+            .OrderByDescending(p => p.Momento)
+            .Select(p => new LancamentoDaCarteiraDto
+            {
+                PagamentoId = p.Id,
+                ConsultaId = p.ConsultaId,
+                InternacaoId = p.InternacaoId,
+                Tipo = p.Tipo,
+                MeioPagamento = p.MeioPagamento,
+                Status = p.StatusPagamento,
+                Valor = p.Valor,
+                Desconto = p.ValorDoDesconto,
+                ValorCobrado = p.ValorCobrado,
+                ValorEstornado = p.ValorEstornado,
+                Momento = p.Momento
+            })
+            .ToList();
+
+        // So transacao confirmada soma no total pago: cobranca pendente ainda nao saiu
+        // do bolso de ninguem, e recusada nunca vai sair.
+        var confirmados = pagamentos.Where(p => p.StatusPagamento == StatusPagamento.Confirmado).ToList();
+
+        return new CarteiraDoTutorDto
+        {
+            TutorId = tutorId,
+            TotalPago = confirmados.Sum(p => p.ValorCobrado),
+            TotalEstornado = pagamentos.Sum(p => p.ValorEstornado ?? 0m),
+            TotalDeDescontos = confirmados.Sum(p => p.ValorDoDesconto ?? 0m),
+            Liquidacao = "Simulada",
+            Lancamentos = lancamentos
+        };
+    }
+
     /// <summary>Separador usado pelo adaptador ao devolver as instrucoes de pagamento.</summary>
     private const char SeparadorDaInstrucao = '|';
 

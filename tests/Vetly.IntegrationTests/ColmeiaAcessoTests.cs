@@ -49,7 +49,10 @@ public class ColmeiaAcessoTests
         var colmeia = new ColmeiaService(
             colmeiaRepo, animalRepo.Object, Mock.Of<IVeterinarioRepository>(), usuario.Object);
 
-        return (new AnimalService(animalRepo.Object, colmeia, usuario.Object), contexto, colmeiaRepo);
+        return (new AnimalService(
+            animalRepo.Object, colmeia, Mock.Of<IObrigacaoService>(),
+            Mock.Of<IDocumentoRepository>(), Mock.Of<IVeterinarioRepository>(), usuario.Object),
+            contexto, colmeiaRepo);
     }
 
     private async Task ConcederAsync(ColmeiaRepository repo, EscopoAcessoColmeia escopo, TimeSpan? validade = null)

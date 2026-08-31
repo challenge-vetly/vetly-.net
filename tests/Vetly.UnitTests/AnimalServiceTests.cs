@@ -19,8 +19,13 @@ public class AnimalServiceTests
     private readonly Mock<IColmeiaService> _colmeiaMock = new();
     private readonly Mock<IUsuarioAtual> _usuarioMock = new();
 
+    private readonly Mock<IObrigacaoService> _obrigacoesMock = new();
+    private readonly Mock<IDocumentoRepository> _documentoRepoMock = new();
+    private readonly Mock<IVeterinarioRepository> _vetRepoMock = new();
+
     private AnimalService CriarServico() =>
-        new(_repoMock.Object, _colmeiaMock.Object, _usuarioMock.Object);
+        new(_repoMock.Object, _colmeiaMock.Object, _obrigacoesMock.Object,
+            _documentoRepoMock.Object, _vetRepoMock.Object, _usuarioMock.Object);
 
     /// <summary>Por padrao os testes rodam como Admin, que enxerga todo o escopo.</summary>
     public AnimalServiceTests() => _usuarioMock.SetupGet(u => u.EhAdmin).Returns(true);

@@ -1,3 +1,4 @@
+using Vetly.Application.DTOs.Pagamento;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Vetly.API.Filters;
@@ -15,8 +16,10 @@ public class TutoresController : ControllerBase
 {
     private readonly ITutorService _service;
     private readonly IDispositivoService _dispositivos;
+    private readonly IPagamentoService _pagamentos;
 
-    public TutoresController(ITutorService service, IDispositivoService dispositivos)
+    public TutoresController(
+        ITutorService service, IDispositivoService dispositivos, IPagamentoService pagamentos)
     {
         _service = service;
         _dispositivos = dispositivos;
@@ -44,6 +47,23 @@ public class TutoresController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> ObterPorId(Guid id) =>
         Ok(await _service.ObterPorIdAsync(id));
+
+    /// <summary>Carteira do Responsavel: pagamentos, reembolsos e documentos fiscais.</summary>
+    /// <remarks>
+    /// E o extrato financeiro do lado de quem paga (RN-041/RN-071). No MVP os valores
+    /// sao registrados e nao liquidados, e a resposta diz isso: prometer movimentacao
+    /// que nao acontece seria pior que nao mostrar.
+    ///
+    /// O escopo vem do token — o Responsavel alcanca apenas a propria carteira
+    /// (RN-106).
+    /// </remarks>
+    [HttpGet("{id:guid}/carteira")]
+    [ProducesResponseType(typeof(CarteiraDoTutorDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ObterCarteira(Guid id) =>
+        Ok(await _pagamentos.ObterCarteiraAsync(id));
 
     /// <summary>Retorna todos os animais cadastrados por um tutor.</summary>
     [HttpGet("{id:guid}/animais")]
