@@ -16,6 +16,11 @@ public interface IPagamentoRepository : IRepositoryBase<Pagamento>
     /// </summary>
     Task<ResultadoPaginado<Pagamento>> ObterPaginadoAsync(Paginacao paginacao, Guid? tutorId = null);
 
+    /// <summary>
+    /// Busca pela referência do provedor. É por ela que o webhook encontra o pagamento.
+    /// </summary>
+    Task<Pagamento?> ObterPorReferenciaExternaAsync(string referenciaExterna);
+
     /// <summary>Retorna o pagamento vinculado a uma consulta, se existir.</summary>
     Task<Pagamento?> ObterPorConsultaAsync(Guid consultaId);
 }

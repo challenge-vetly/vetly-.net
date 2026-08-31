@@ -35,6 +35,10 @@ public class PagamentoRepository : RepositoryBase<Pagamento>, IPagamentoReposito
     }
 
     /// <inheritdoc/>
+    public async Task<Pagamento?> ObterPorReferenciaExternaAsync(string referenciaExterna) =>
+        await _dbSet.FirstOrDefaultAsync(p => p.ReferenciaExterna == referenciaExterna);
+
+    /// <inheritdoc/>
     public async Task<Pagamento?> ObterPorConsultaAsync(Guid consultaId) =>
         await _dbSet
             .FirstOrDefaultAsync(p => p.ConsultaId == consultaId);
