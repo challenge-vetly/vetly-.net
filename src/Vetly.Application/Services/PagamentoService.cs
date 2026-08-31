@@ -19,6 +19,7 @@ public class PagamentoService : IPagamentoService
     private readonly IAgendaRepository _agendaRepo;
     private readonly IFilaDeJobs _fila;
     private readonly IEnumerable<ISplitFinanceiroStrategy> _splitStrategies;
+    private readonly IFidelidadeService _fidelidade;
     private readonly IUsuarioAtual _usuario;
 
     public PagamentoService(
@@ -30,6 +31,7 @@ public class PagamentoService : IPagamentoService
         IAgendaRepository agendaRepo,
         IFilaDeJobs fila,
         IEnumerable<ISplitFinanceiroStrategy> splitStrategies,
+        IFidelidadeService fidelidade,
         IUsuarioAtual usuario)
     {
         _repo = repo;
@@ -40,6 +42,7 @@ public class PagamentoService : IPagamentoService
         _agendaRepo = agendaRepo;
         _fila = fila;
         _splitStrategies = splitStrategies;
+        _fidelidade = fidelidade;
         _usuario = usuario;
     }
 
@@ -82,9 +85,16 @@ public class PagamentoService : IPagamentoService
         // O split e calculado pela Vetly, nunca pelo provedor (RN-051/RN-070)
         var split = await ApurarSplitAsync(pagamento);
 
+        // RN-051: o desconto do resgate sai da comissao da plataforma, e nao do bruto.
+        // O repasse ja foi calculado sobre o valor cheio e nao se mexe nele — fazer o
+        // prestador custear um programa de fidelidade que ele nao ofereceu seria tirar
+        // dinheiro de terceiro.
+        if (dto.PontosAResgatar > 0)
+            split = await AplicarResgateAsync(pagamento, split, dto.PontosAResgatar);
+
         var chave = pagamento.Id.ToString();
         var cobranca = await _adaptador.CriarCobrancaAsync(
-            new CriarCobrancaRequest(chave, pagamento.Id, pagamento.Valor, pagamento.MeioPagamento));
+            new CriarCobrancaRequest(chave, pagamento.Id, pagamento.ValorCobrado, pagamento.MeioPagamento));
 
         pagamento.RegistrarCobranca(cobranca.ReferenciaExterna, chave);
 
@@ -99,11 +109,17 @@ public class PagamentoService : IPagamentoService
 
         var partes = cobranca.Instrucoes.Split(SeparadorDaInstrucao);
 
+        if (pagamento.PontosResgatados is { } resgatados && pagamento.ValorDoDesconto is { } desconto)
+            await _fidelidade.RegistrarResgateAsync(pagamento.TutorId, resgatados, desconto, pagamento.Id);
+
         return new CobrancaCriadaRespostaDto
         {
             Id = pagamento.Id,
             StatusPagamento = pagamento.StatusPagamento,
             Valor = pagamento.Valor,
+            ValorCobrado = pagamento.ValorCobrado,
+            PontosResgatados = pagamento.PontosResgatados,
+            ValorDoDesconto = pagamento.ValorDoDesconto,
             Split = new SplitDto
             {
                 Plano = split.Plano,
@@ -253,6 +269,30 @@ public class PagamentoService : IPagamentoService
         }
 
         return consulta;
+    }
+
+    /// <summary>
+    /// Aplica o resgate de pontos e reapura o split (RN-051).
+    ///
+    /// O desconto é abatido <b>da comissão</b>, não do bruto. O teto é a própria
+    /// comissão: a Vetly banca a fidelidade que oferece, mas não paga para atender.
+    /// O repasse ao prestador não muda em nenhum dos casos (RN-072).
+    /// </summary>
+    private async Task<ResultadoDoSplit> AplicarResgateAsync(
+        Pagamento pagamento, ResultadoDoSplit split, int pontos)
+    {
+        var desconto = await _fidelidade.ApurarDescontoAsync(
+            pagamento.TutorId, pontos, pagamento.Valor, split.Comissao);
+
+        pagamento.AplicarDesconto(desconto.PontosResgatados, desconto.ValorDoDesconto);
+
+        var comissaoLiquida = split.Comissao - desconto.ValorDoDesconto;
+
+        pagamento.RegistrarSplit(
+            split.Plano, split.TakeRate, comissaoLiquida, split.Repasse,
+            pagamento.DestinatarioRepasseId ?? Guid.Empty);
+
+        return split with { Comissao = comissaoLiquida };
     }
 
     /// <summary>Apura e grava o split do pagamento, quando ele tem consulta vinculada.</summary>

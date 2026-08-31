@@ -189,6 +189,11 @@ public class CapturaService : ICapturaService
         await _repo.SalvarAsync();
         await _consultaRepo.SalvarAsync();
 
+        // RN-052: o atendimento aconteceu, entao os pontos sao devidos. Sai da
+        // requisicao porque o veterinario nao pode esperar o programa de fidelidade
+        // para fechar a consulta, e uma falha aqui nao pode desfazer o encerramento.
+        await _fila.EnfileirarAsync(TipoJob.CreditarPontosDaConsulta, consulta.Id.ToString());
+
         // Se todos os segmentos ja tiveram desfecho, o ciclo pode seguir agora
         await AvaliarDesfechoDaTranscricaoAsync(sessao.Id);
 

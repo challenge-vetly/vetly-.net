@@ -71,10 +71,27 @@ public class Pagamento
     public string? ChaveIdempotencia { get; private set; }
 
     /// <summary>
-    /// Indica liquidação financeira efetiva. <b>Sempre falso no MVP</b>: valores são
-    /// apurados e registrados, nunca repassados (RN-071).
+    /// Indica liquidação financeira efetiva. Valores são apurados e registrados, e o
+    /// repasse em si acontece fora da plataforma (RN-071) — nada no MVP liga esta
+    /// transição sozinho; ela existe para o painel financeiro marcar o que já saiu.
     /// </summary>
     public bool Liquidado { get; private set; }
+
+    // ── Fidelidade (RN-051) ──────────────────────────────────────────────────
+
+    /// <summary>Pontos de fidelidade resgatados nesta cobrança (RN-051).</summary>
+    public int? PontosResgatados { get; private set; }
+
+    /// <summary>
+    /// Desconto em reais concedido pelo resgate (RN-051). Sai da comissão da
+    /// plataforma, não do repasse ao prestador.
+    /// </summary>
+    public decimal? ValorDoDesconto { get; private set; }
+
+    /// <summary>
+    /// O que o Responsável de fato paga: o valor bruto menos o desconto do resgate.
+    /// </summary>
+    public decimal ValorCobrado => Valor - (ValorDoDesconto ?? 0m);
 
     // ── Split por plano (RN-070/RN-072) ──────────────────────────────────────
 
@@ -163,8 +180,11 @@ public class Pagamento
     public void RegistrarSplit(
         PlanoAssinatura plano, decimal takeRate, decimal comissao, decimal repasse, Guid destinatarioId)
     {
-        if (comissao + repasse != Valor)
-            throw new ArgumentException("A soma de comissão e repasse deve fechar o valor da transação.");
+        // Com resgate, o desconto e a terceira parcela do bruto: ele sai da comissao,
+        // mas continua sendo dinheiro que existiu no preco do servico (RN-051).
+        if (comissao + repasse + (ValorDoDesconto ?? 0m) != Valor)
+            throw new ArgumentException(
+                "A soma de comissão, repasse e desconto deve fechar o valor da transação.");
 
         PlanoAplicado = plano;
         TakeRate = takeRate;
@@ -174,6 +194,30 @@ public class Pagamento
 
         // PERCENTUAL_SPLIT continua alimentado: e o percentual que fica com o prestador
         PercentualSplit = 100m - takeRate;
+    }
+
+    /// <summary>
+    /// Aplica o desconto de um resgate de pontos (RN-051).
+    ///
+    /// O desconto NAO reduz <see cref="Valor"/>: o bruto continua sendo o preco do
+    /// servico, e e sobre ele que o repasse ao prestador e calculado. O que o
+    /// Responsavel paga e <see cref="ValorCobrado"/>.
+    ///
+    /// A separacao decide quem paga a fidelidade. Se o desconto reduzisse o bruto, o
+    /// prestador estaria custeando um programa que nao ofereceu.
+    /// </summary>
+    public void AplicarDesconto(int pontosResgatados, decimal valorDoDesconto)
+    {
+        if (pontosResgatados <= 0 || valorDoDesconto <= 0)
+            throw new ArgumentOutOfRangeException(nameof(valorDoDesconto),
+                "O desconto deve ser maior que zero.");
+
+        if (valorDoDesconto > Valor)
+            throw new ArgumentOutOfRangeException(nameof(valorDoDesconto),
+                "O desconto não pode passar do valor da cobrança.");
+
+        PontosResgatados = pontosResgatados;
+        ValorDoDesconto = valorDoDesconto;
     }
 
     /// <summary>

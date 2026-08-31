@@ -12,7 +12,7 @@ O Vetly é uma API REST para gestão de clínicas veterinárias, cobrindo todo o
 | Autenticação | JWT Bearer |
 | Documentação | Scalar (tema DeepSpace) em `/scalar/v1` |
 | IA | Ollama local (modelo `llama3.1`) |
-| Testes | xUnit + Moq (555 testes verdes) |
+| Testes | xUnit + Moq (577 testes verdes) |
 
 ## Padrões aplicados
 
@@ -320,6 +320,23 @@ A API **nunca proxia os bytes**: registra a mídia e o app fala direto com o sto
 
 Áudio de consulta é a única mídia com prazo: 30 dias para reprocessamento e depois some (P-06). Conteúdo clínico não expira, por guarda regulatória.
 
+### Fidelidade
+
+| Método | Rota | Descrição |
+|---|---|---|
+| GET | `/api/fidelidade/tutor/{id}/saldo` | Saldo de pontos e o que vence em 30 dias (RN-052) |
+| GET | `/api/fidelidade/tutor/{id}/extrato` | Extrato append-only dos lançamentos (RN-051/RN-052) |
+
+O resgate entra no checkout: `POST /api/pagamentos` aceita `pontosAResgatar`.
+
+**O saldo é a soma dos lançamentos, não um campo guardado.** Saldo à parte diverge do extrato no primeiro erro, e aí não há como saber qual dos dois está certo. `TB_MOVIMENTO_PONTOS` é append-only e a coluna `PONTOS` é assinada — negativa em débito e expiração — justamente para que a soma feche. Corrigir um crédito indevido é lançar o débito correspondente, como em contabilidade.
+
+Consulta realizada e **paga** rende 1 ponto por real (RN-052); 100 pontos valem R$ 1,00 no resgate. Consulta cancelada ou com pagamento não confirmado não credita — o programa pagaria por receita que não entrou. O crédito vale um ano, e o saldo mostra o que vence nos próximos 30 dias: avisar antes é o que separa um programa de fidelidade de uma pegadinha.
+
+**Quem paga o desconto é a plataforma (RN-051).** Esta era a pendência da onda 4, e a decisão foi a mais conservadora: o desconto do resgate **sai da comissão da Vetly, não do repasse ao prestador**. O valor bruto continua sendo o preço do serviço, e é sobre ele que o repasse é calculado; o que muda é só o que a plataforma retém. Fazer o veterinário custear um programa de fidelidade que ele não ofereceu seria tirar dinheiro de terceiro. Por consequência, o resgate é limitado à comissão daquela cobrança — a Vetly banca a própria fidelidade, mas não paga para atender — e a mensagem de erro diz quantos pontos cabem.
+
+A expiração é uma rotina diária, e a baixa entra como **lançamento** no extrato em vez de o saldo cair sozinho. Ponto já gasto não expira de novo: quem resgatou e depois viu o crédito vencer não fica devendo pontos que usou legitimamente.
+
 ### Obrigações do pet
 
 | Método | Rota | Descrição |
@@ -417,6 +434,8 @@ Sem parâmetros valem página 1 e 20 itens. O tamanho é limitado a 100 por pág
 | RN-037 | Vaga liberada é oferecida ao primeiro da fila com prioridade de 15 min; vencida, passa ao próximo | `ItemListaEspera` + `PromoverProximoAsync` |
 | RN-026 | Endereço persistido no próprio registro, com latitude/longitude **derivadas dele** pela geocodificação — o payload do cliente é ignorado | `Endereco` + `IGeocodificacaoAdapter` |
 | RN-033/RN-057 | Nota só é pública a partir de 3 avaliações; `PUBLICADO_EM` ancora o selo "Novo na Vetly" por 30 dias | `Veterinario.TemNotaPublica` + `PublicarNoMatching` |
+| RN-051 | O desconto do resgate sai da comissão da plataforma, não do repasse: o bruto e o repasse não mudam, e o resgate é limitado à comissão daquela cobrança | `Pagamento.AplicarDesconto` + `PagamentoService.AplicarResgateAsync` |
+| RN-052 | Consulta realizada e paga rende 1 ponto por real; o saldo é a soma de um extrato append-only, e o crédito expira em um ano com lançamento de baixa | `MovimentoDePontos` + `FidelidadeService` |
 | RN-045 | Obrigação de cuidado guarda periodicidade e se reagenda sozinha ao ser cumprida, contando a partir do cumprimento; `Vencendo` avisa 30 dias antes | `ObrigacaoPet` + `ObrigacaoService` |
 | RN-046 | Obrigações derivadas da carteira de vacinação, uma por tipo, a partir da dose mais recente; derivar de novo não duplica | `ObrigacaoService.DerivarDaCarteiraAsync` |
 | RN-090 | Colmeia: o Responsável (e só ele) autoriza um veterinário de fora a alcançar o histórico do animal, com escopo e prazo; concessão vigente duplicada devolve 409 | `AcessoColmeia` + `ColmeiaService` |
