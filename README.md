@@ -12,7 +12,7 @@ O Vetly é uma API REST para gestão de clínicas veterinárias, cobrindo todo o
 | Autenticação | JWT Bearer |
 | Documentação | Scalar (tema DeepSpace) em `/scalar/v1` |
 | IA | Ollama local (modelo `llama3.1`) |
-| Testes | xUnit + Moq (522 testes verdes) |
+| Testes | xUnit + Moq (535 testes verdes) |
 
 ## Padrões aplicados
 
@@ -167,6 +167,7 @@ curl http://localhost:5099/health/ready
 | GET | `/api/veterinarios/{id}/agenda-config` | Configuração de agenda vigente (RN-034) |
 | PUT | `/api/veterinarios/{id}/agenda-config` | Configura dias/horário/duração e materializa 60 dias de horários (RN-034) |
 | GET | `/api/veterinarios/{id}/disponibilidade` | Horários livres por dia (RN-034/RN-035) |
+| GET | `/api/veterinarios/me/extrato` | Extrato dos próprios atendimentos — alcançável pelo vet desativado (RN-024) |
 | GET | `/api/veterinarios/{id}/servicos` | Serviços com valor e duração (RN-032) |
 | PUT | `/api/veterinarios/{id}/servicos` | Define a vitrine de serviços (RN-032/RN-074) |
 | GET | `/api/veterinarios/{id}/agenda` | Agenda futura de consultas |
@@ -419,6 +420,7 @@ Sem parâmetros valem página 1 e 20 itens. O tamanho é limitado a 100 por pág
 | RN-041/RN-042 | Cancelamento entre 2h e 24h = reembolso parcial, com o percentual configurado pela clínica (padrão 30%) | `ReembolsoParcialStrategy` + `ConsultaService.CancelarAsync` |
 | RN-041 | Cancelamento com menos de 2h = sem reembolso | `SemReembolsoStrategy` |
 | RN-022/RN-024 | Vet desativado entra com role `VetDesativado` e é bloqueado em toda rota de negócio, mantendo só o que a RN-024 garante | `VetDesativadoFilter` + `AuthService` |
+| RN-024 | O extrato é a única rota de negócio que o vet desativado alcança, e não carrega dado de Responsável, de animal nem clínico — só o registro financeiro do próprio trabalho | `VeterinarioService.ObterExtratoAsync` + `[PermitidoAoVetDesativado]` |
 | RN-060 | Sem consentimento de atendimento, as rotas de negócio do Responsável devolvem 422 — a base legal precede o tratamento | `ConsentimentoAtendimentoFilter` |
 | RN-061/RN-062 | Consentimento granular por finalidade, com data de concessão e de revogação; revogar não apaga registro clínico já produzido | `Tutor.RegistrarConsentimento` + `TutorService` |
 | RN-006 | A consulta só é confirmada com o pagamento, e a confirmação vem do **webhook**, nunca da resposta síncrona | `PagamentoService.ProcessarWebhookAsync` |

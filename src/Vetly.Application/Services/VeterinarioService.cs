@@ -24,18 +24,99 @@ public class VeterinarioService : IVeterinarioService
     private readonly IGeradorDeSenhaTemporaria _geradorDeSenha;
     private readonly IGeocodificacaoAdapter _geocodificacao;
 
+    private readonly IConsultaRepository _consultaRepo;
+    private readonly IPagamentoRepository _pagamentoRepo;
+    private readonly IUsuarioAtual _usuario;
+
     public VeterinarioService(
         IVeterinarioRepository repo,
         ICrmvAdapter crmvAdapter,
         ISenhaHasher hasher,
         IGeradorDeSenhaTemporaria geradorDeSenha,
-        IGeocodificacaoAdapter geocodificacao)
+        IGeocodificacaoAdapter geocodificacao,
+        IConsultaRepository consultaRepo,
+        IPagamentoRepository pagamentoRepo,
+        IUsuarioAtual usuario)
     {
         _repo = repo;
         _crmvAdapter = crmvAdapter;
         _hasher = hasher;
         _geradorDeSenha = geradorDeSenha;
         _geocodificacao = geocodificacao;
+        _consultaRepo = consultaRepo;
+        _pagamentoRepo = pagamentoRepo;
+        _usuario = usuario;
+    }
+
+    /// <inheritdoc/>
+    public async Task<ExtratoDoVeterinarioDto> ObterExtratoAsync(DateTime? inicio, DateTime? fim)
+    {
+        // O extrato e do proprio profissional, sempre: o escopo vem do token e nao ha
+        // parametro de veterinario na rota — nem para o Admin, que tem o consolidado
+        // da unidade por outro caminho (RN-105/RN-106).
+        var vetId = _usuario.VeterinarioId
+            ?? throw new AcessoNegadoException("RN-024",
+                "O extrato e do proprio veterinario. Entre com um cadastro de veterinario.");
+
+        var vet = await _repo.ObterPorIdAsync(vetId)
+            ?? throw new NotFoundException("Veterinario", vetId);
+
+        // Periodo padrao: os ultimos 12 meses. E o recorte que resolve conferencia de
+        // repasse e fecho contabil sem obrigar o profissional a escolher datas.
+        var fimDoPeriodo = fim ?? DateTime.UtcNow;
+        var inicioDoPeriodo = inicio ?? fimDoPeriodo.AddMonths(-12);
+
+        if (inicioDoPeriodo > fimDoPeriodo)
+            throw new ValidationException("inicio", "O inicio do periodo nao pode ser depois do fim.");
+
+        var consultas = await _consultaRepo.ObterPorVeterinarioAsync(vetId, inicioDoPeriodo, fimDoPeriodo);
+
+        var itens = new List<ItemDoExtratoDto>();
+
+        foreach (var consulta in consultas.OrderByDescending(c => c.DataHora))
+        {
+            var pagamento = await _pagamentoRepo.ObterPorConsultaAsync(consulta.Id);
+
+            itens.Add(new ItemDoExtratoDto
+            {
+                ConsultaId = consulta.Id,
+                DataDoAtendimento = consulta.EncerradaEm ?? consulta.DataHora,
+                Modalidade = consulta.Modalidade,
+                Status = consulta.Status,
+
+                // Sem espécie, sem nome, sem diagnóstico: o extrato é financeiro, e
+                // dado clínico aqui seria dado vazando por uma porta que a RN-022
+                // fechou.
+                Valor = pagamento?.Valor ?? 0m,
+                Comissao = pagamento?.Comissao,
+                Repasse = pagamento?.Repasse,
+                PlanoAplicado = pagamento?.PlanoAplicado,
+                StatusPagamento = pagamento?.StatusPagamento ?? consulta.StatusPagamento,
+                Liquidado = pagamento?.Liquidado ?? false
+            });
+        }
+
+        // So o que foi efetivamente cobrado entra na soma: consulta cancelada ou
+        // expirada aparece na lista, para o profissional conferir, mas nao soma
+        // dinheiro que nao existiu.
+        var cobrados = itens.Where(i => i.StatusPagamento == StatusPagamento.Confirmado).ToList();
+
+        return new ExtratoDoVeterinarioDto
+        {
+            VeterinarioId = vet.Id,
+            Nome = vet.Nome,
+            Crmv = vet.Crmv.Valor,
+            CadastroAtivo = vet.Ativo,
+            PeriodoInicio = inicioDoPeriodo,
+            PeriodoFim = fimDoPeriodo,
+            TotalDeAtendimentos = cobrados.Count,
+            ValorBruto = cobrados.Sum(i => i.Valor),
+            ComissaoDaPlataforma = cobrados.Sum(i => i.Comissao ?? 0m),
+            RepasseTotal = cobrados.Sum(i => i.Repasse ?? 0m),
+            RepasseLiquidado = cobrados.Where(i => i.Liquidado).Sum(i => i.Repasse ?? 0m),
+            RepassePendente = cobrados.Where(i => !i.Liquidado).Sum(i => i.Repasse ?? 0m),
+            Itens = itens
+        };
     }
 
     /// <inheritdoc/>

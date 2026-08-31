@@ -177,6 +177,24 @@ public class Pagamento
     }
 
     /// <summary>
+    /// Marca o repasse como liquidado — o dinheiro saiu para o prestador (RN-072).
+    ///
+    /// Só pagamento confirmado liquida: marcar como pago um repasse cuja cobrança não
+    /// se confirmou faria o extrato do profissional mentir justamente no número que
+    /// ele vem conferir (RN-024).
+    ///
+    /// A rota que dispara a liquidação em lote é do painel financeiro (onda 8); aqui
+    /// fica só a transição, que é o que o extrato precisa saber.
+    /// </summary>
+    public void Liquidar()
+    {
+        if (StatusPagamento != StatusPagamento.Confirmado)
+            throw new InvalidOperationException("Somente pagamento confirmado pode ser liquidado.");
+
+        Liquidado = true;
+    }
+
+    /// <summary>
     /// Registra o estorno total ou parcial do pagamento.
     /// Estorno igual ou maior que o valor original define status como Estornado;
     /// estorno parcial define como Parcial.
