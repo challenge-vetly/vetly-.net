@@ -12,7 +12,7 @@ O Vetly é uma API REST para gestão de clínicas veterinárias, cobrindo todo o
 | Autenticação | JWT Bearer |
 | Documentação | Scalar (tema DeepSpace) em `/scalar/v1` |
 | IA | Ollama local (modelo `llama3.1`) |
-| Testes | xUnit + Moq (356 testes verdes) |
+| Testes | xUnit + Moq (371 testes verdes) |
 
 ## Padrões aplicados
 
@@ -269,6 +269,17 @@ curl http://localhost:5099/health/ready
 | POST | `/api/lembretes` | Agendar lembrete (vacina, retorno, medicação…) |
 | POST | `/api/lembretes/{id}/tentativa` | Registrar tentativa de contato — após 3 sem resposta, alerta à clínica (RN-095) |
 | POST | `/api/lembretes/{id}/resposta` | Registrar resposta do tutor — encerra régua (RN-094) |
+
+### Mídia e storage
+
+| Método | Rota | Descrição |
+|---|---|---|
+| POST | `/api/midia/upload-url` | Reserva espaço no storage e devolve URL temporária de upload (§2.6) |
+| GET | `/api/midia/{id}/url` | URL temporária de leitura — conteúdo clínico nunca vira URL pública (RN-090) |
+
+A API **nunca proxia os bytes**: registra a mídia e o app fala direto com o storage. O `midiaId` é o que viaja nos payloads de negócio, nunca a URL, que expira em 15 minutos. Em desenvolvimento o storage é uma pasta em disco, com URLs assinadas por HMAC; em produção, um bucket S3-compatível.
+
+Áudio de consulta é a única mídia com prazo: 30 dias para reprocessamento e depois some (P-06). Conteúdo clínico não expira, por guarda regulatória.
 
 ### Rotas internas (serviço-a-serviço)
 
