@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using Vetly.Domain.Enums;
 
 namespace Vetly.Domain.Entities;
 
@@ -60,6 +61,16 @@ public class RascunhoIa
     /// </summary>
     public List<string> Avisos { get; private set; }
 
+    /// <summary>
+    /// Decisão do veterinário sobre este rascunho (RN-082). Nasce
+    /// <c>Pendente</c> — sugestão sem decisão não é conteúdo clínico.
+    /// </summary>
+    [Required]
+    public DecisaoSobreRascunho Decisao { get; private set; }
+
+    /// <summary>Quando a decisão foi tomada. Nulo enquanto pendente.</summary>
+    public DateTime? DecididoEm { get; private set; }
+
     public DateTime GeradoEm { get; private set; }
 
     /// <summary>Quanto a estruturação demorou, em milissegundos.</summary>
@@ -104,9 +115,27 @@ public class RascunhoIa
         Modelo = modelo;
         Parcial = parcial;
         Avisos = [.. avisos ?? []];
+        Decisao = DecisaoSobreRascunho.Pendente;
         GeradoEm = DateTime.UtcNow;
         DuracaoMs = duracaoMs < 0 ? 0 : duracaoMs;
     }
+
+    /// <summary>
+    /// Registra a decisão do veterinário (RN-082). Rascunho já decidido não volta a
+    /// ser decidido: o registro de auditoria correspondente já foi gravado, e uma
+    /// segunda decisão sobre o mesmo rascunho deixaria a trilha ambígua.
+    /// </summary>
+    public void RegistrarDecisao(DecisaoSobreRascunho decisao)
+    {
+        if (Decisao != DecisaoSobreRascunho.Pendente)
+            throw new InvalidOperationException("Este rascunho já foi decidido.");
+
+        Decisao = decisao;
+        DecididoEm = DateTime.UtcNow;
+    }
+
+    /// <summary>Verdadeiro enquanto o veterinário não decidiu (RN-082).</summary>
+    public bool AguardandoDecisao() => Decisao == DecisaoSobreRascunho.Pendente;
 
     /// <summary>
     /// Verdadeiro quando a IA não conseguiu extrair conteúdo clínico algum. Rascunho

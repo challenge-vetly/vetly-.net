@@ -575,35 +575,9 @@ public class ConsultaServiceTests
         _pagamentoRepoMock.Verify(r => r.SalvarAsync(), Times.Once);
     }
 
-    [Fact]
-    public async Task ValidarDiagnosticoAsync_ConsultaExistente_MarcaDiagnosticoValidado()
-    {
-        var consulta = new Consulta(
-            DateTime.UtcNow.AddDays(1), ModalidadeAtendimento.Presencial,
-            Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
-
-        _repoMock.Setup(r => r.ObterPorIdAsync(consulta.Id)).ReturnsAsync(consulta);
-        _repoMock.Setup(r => r.Atualizar(It.IsAny<Consulta>()));
-        _repoMock.Setup(r => r.SalvarAsync()).ReturnsAsync(1);
-
-        await CriarServico().ValidarDiagnosticoAsync(consulta.Id);
-
-        Assert.True(consulta.DiagnosticoValidado);
-    }
-
-    [Fact]
-    public async Task ValidarDiagnosticoAsync_ConsultaCancelada_LancaBusinessRuleExceptionCONSULTA003()
-    {
-        var consulta = new Consulta(
-            DateTime.UtcNow.AddDays(1), ModalidadeAtendimento.Presencial,
-            Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
-        consulta.Cancelar();
-
-        _repoMock.Setup(r => r.ObterPorIdAsync(consulta.Id)).ReturnsAsync(consulta);
-
-        var ex = await Assert.ThrowsAsync<BusinessRuleException>(
-            () => CriarServico().ValidarDiagnosticoAsync(consulta.Id));
-
-        Assert.Equal("CONSULTA-003", ex.Codigo);
-    }
+    // As duas verificacoes de validacao de diagnostico que ficavam aqui foram para
+    // ProntuarioServiceTests: RN-082 deixou de ser um booleano ligado por
+    // ConsultaService e passou a ser a decisao em tres caminhos, registrada na trilha
+    // de auditoria. O comportamento continua coberto — diagnostico validado ao
+    // aprovar, e CONSULTA-003 em consulta cancelada.
 }

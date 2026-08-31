@@ -346,24 +346,6 @@ public class ConsultaService : IConsultaService
     }
 
     /// <summary>
-    /// Registra a validacao manual do diagnostico pelo veterinario (RN-082).
-    /// Pre-requisito para gerar documentos via DocumentoService.
-    /// </summary>
-    public async Task ValidarDiagnosticoAsync(Guid consultaId)
-    {
-        var consulta = await _repo.ObterPorIdAsync(consultaId)
-            ?? throw new NotFoundException("Consulta", consultaId);
-
-        if (consulta.Cancelada)
-            throw new BusinessRuleException("CONSULTA-003",
-                "Nao e possivel validar diagnostico de consulta cancelada.");
-
-        consulta.ValidarDiagnostico();
-        _repo.Atualizar(consulta);
-        await _repo.SalvarAsync();
-    }
-
-    /// <summary>
     /// Devolve o horario da consulta a disponibilidade e avisa a lista de espera.
     /// Toda entrada em "livre" dispara a promocao do primeiro da fila (RN-037).
     /// </summary>

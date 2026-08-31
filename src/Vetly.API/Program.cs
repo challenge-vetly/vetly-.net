@@ -117,6 +117,7 @@ builder.Services.AddScoped<IListaEsperaRepository, ListaEsperaRepository>();
 builder.Services.AddScoped<IFilaDeJobs, FilaDeJobs>();
 builder.Services.AddScoped<IMidiaRepository, MidiaRepository>();
 builder.Services.AddScoped<ICapturaRepository, CapturaRepository>();
+builder.Services.AddScoped<IAuditoriaIaRepository, AuditoriaIaRepository>();
 
 // ── Escopo do usuário da requisição (RN-105/RN-106) ──────────────────────────
 // Os serviços leem identidade e escopo daqui, nunca de parametro vindo do cliente.
@@ -222,6 +223,7 @@ builder.Services.AddScoped<IBuscaService, BuscaService>();
 builder.Services.AddScoped<IMidiaService, MidiaService>();
 builder.Services.AddScoped<ICapturaService, CapturaService>();
 builder.Services.AddScoped<IRascunhoService, RascunhoService>();
+builder.Services.AddScoped<IProntuarioService, ProntuarioService>();
 builder.Services.AddScoped<IListaEsperaService, ListaEsperaService>();
 
 // ── Factories (IEnumerable<IDocumentoFactory> — resolvidas pelo DI) ──────────

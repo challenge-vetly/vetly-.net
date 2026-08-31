@@ -12,7 +12,7 @@ O Vetly é uma API REST para gestão de clínicas veterinárias, cobrindo todo o
 | Autenticação | JWT Bearer |
 | Documentação | Scalar (tema DeepSpace) em `/scalar/v1` |
 | IA | Ollama local (modelo `llama3.1`) |
-| Testes | xUnit + Moq (425 testes verdes) |
+| Testes | xUnit + Moq (444 testes verdes) |
 
 ## Padrões aplicados
 
@@ -217,7 +217,9 @@ curl http://localhost:5099/health/ready
 | GET | `/api/consultas/{id}/captura` | Situação da captura, com o texto já transcrito (RN-009) |
 | POST | `/api/consultas/{id}/encerrar` | Fecha a janela e marca a consulta como `Realizada` (RN-008/RN-038) |
 | GET | `/api/consultas/{id}/rascunho` | Prontuário estruturado pela IA — rascunho até o vet decidir (RN-080/RN-082) |
-| PUT | `/api/consultas/{id}/validar-diagnostico` | Registra validação manual do diagnóstico (RN-082) |
+| PUT | `/api/consultas/{id}/validar-diagnostico` | Decisão sobre o rascunho: `Aprovado`, `Corrigido` ou `NaoAprovado` (RN-082) |
+| POST | `/api/consultas/{id}/prontuario-manual` | Prontuário escrito à mão, sem IA no caminho (RN-085) |
+| GET | `/api/consultas/{id}/auditoria-ia` | Trilha append-only das decisões sobre conteúdo de IA (RN-082) |
 | POST | `/api/consultas/{id}/finalizar` | Finalizar — exige receita assinada (RN-087) |
 | DELETE | `/api/consultas/{id}` | Cancelar + Strategy de reembolso (RN-014/RN-041/RN-042) |
 
@@ -228,6 +230,12 @@ O despacho ao motor sai da requisição pelo worker: o veterinário não espera 
 Encerrada a janela e transcritos os trechos, a IA estrutura o texto em prontuário (RN-080) — também fora da requisição, porque é lenta e o veterinário já saiu do atendimento. O rascunho guarda **a transcrição que o originou**: sem ela não há como conferir depois se a IA produziu algo que não foi dito, e sugestão que chega ao prontuário precisa ser auditável. Transcrição parcial gera rascunho parcial, com aviso e com a instrução explícita ao modelo de não preencher lacunas — perder a consulta inteira porque um trecho falhou seria pior. IA fora do ar ou rascunho sem conteúdo clínico caem no caminho manual em vez de travar a consulta: o atendimento aconteceu e precisa virar prontuário de algum jeito (RN-085).
 
 A estruturação usa o `IOllamaService` que já servia diagnóstico, protocolo e triagem — `EstruturarConsultaAsync`, não um adaptador paralelo: é o mesmo motor e o mesmo contrato de sugestão.
+
+**A decisão sobre o rascunho é explícita e tem três caminhos** (RN-082): `Aprovado` aceita o texto como veio; `Corrigido` exige o conteúdo corrigido, porque corrigir sem dizer o que mudou não é corrigir; `NaoAprovado` exige justificativa, encerra o ciclo sem documentos e **não** valida o diagnóstico — e sem validação não se gera documento. Não há aprovação por omissão, e um rascunho só é decidido uma vez: uma segunda decisão deixaria a trilha ambígua.
+
+Toda decisão vira registro em `TB_LOG_AUDITORIA_IA`, que é **append-only**: o contrato do repositório só tem adicionar e ler, e a entidade não expõe mutação depois de gravada. Cada registro guarda o conteúdo final inteiro como o veterinário aceitou — não um diff, porque reconstruir o que foi assinado a partir de diferenças é frágil justamente quando mais importa — junto de quem decidiu, do modelo que sugeriu e de se houve alteração. É o que sustenta a afirmação de que nenhuma sugestão chegou ao prontuário sem decisão humana.
+
+Recusado o rascunho, ou nunca tendo havido captura, `POST /api/consultas/{id}/prontuario-manual` fecha o atendimento à mão (RN-085) — conteúdo escrito pelo próprio veterinário já é conteúdo validado. Com rascunho ainda pendente devolve 409: seriam dois prontuários concorrentes sobre o mesmo atendimento.
 
 No plano Básico a consulta inicia normalmente, **sem captura** (RN-085): o prontuário é preenchido à mão. `iniciar` também devolve os avisos que o veterinário precisa ver antes de começar — `PesoAusente` é o mais importante, porque sem peso não há sugestão de dose (RN-081) e descobrir isso no fim do atendimento seria tarde.
 
@@ -390,6 +398,9 @@ Sem parâmetros valem página 1 e 20 itens. O tamanho é limitado a 100 por pág
 | RN-079 | Fora da janela de captura a IA não captura áudio nem produz conteúdo clínico — trecho enviado com a janela fechada devolve 409 | `SessaoCaptura.JanelaAberta` |
 | RN-085 | Captura e IA na consulta existem nos planos Profissional e Enterprise; no Básico a consulta inicia sem captura e o prontuário é manual | `CapturaService.PlanoTemCapturaAsync` |
 | RN-080 | A IA estrutura a transcrição em prontuário fora da requisição; o rascunho guarda o texto de origem e o modelo, e transcrição parcial vira rascunho parcial com aviso | `OllamaService.EstruturarConsultaAsync` + `RascunhoService` |
+| RN-082 | Decisão sobre o rascunho da IA em três caminhos (aprovar / corrigir / não aprovar), cada um com o que o torna auditável; não aprovar não valida o diagnóstico | `ProntuarioService.DecidirAsync` |
+| RN-082 | Toda decisão vira registro append-only com o conteúdo final, quem decidiu e o modelo — o repositório não tem atualizar nem remover | `LogAuditoriaIa` + `AuditoriaIaRepository` |
+| RN-085 | Prontuário manual fecha o atendimento quando não houve IA no caminho; com rascunho pendente devolve 409 | `ProntuarioService.RegistrarManualAsync` |
 | RN-082 | Documentos só podem ser gerados após `consulta.DiagnosticoValidado = true` E pagamento confirmado | `DocumentoService.GerarAsync` |
 | RN-087 | Finalizar consulta exige documento `ReceitaVeterinaria` assinado digitalmente | `ConsultaService.FinalizarAsync` |
 | RN-088 | Correção cria nova versão do documento (original preservado com `VersaoOriginalId`) | `DocumentoService.CorrigirAsync` |
