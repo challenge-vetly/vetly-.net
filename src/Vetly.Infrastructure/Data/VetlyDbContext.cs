@@ -65,6 +65,9 @@ public class VetlyDbContext : DbContext
     /// <summary>Trilha append-only das decisões sobre conteúdo de IA (RN-082).</summary>
     public DbSet<LogAuditoriaIa> LogsDeAuditoriaIa => Set<LogAuditoriaIa>();
 
+    /// <summary>Caixa de entrada de notificações do Responsável (RN-092).</summary>
+    public DbSet<Notificacao> Notificacoes => Set<Notificacao>();
+
     /// <summary>Avaliações dos atendimentos (RN-055/RN-057).</summary>
     public DbSet<Avaliacao> Avaliacoes => Set<Avaliacao>();
 

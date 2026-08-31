@@ -12,7 +12,7 @@ O Vetly é uma API REST para gestão de clínicas veterinárias, cobrindo todo o
 | Autenticação | JWT Bearer |
 | Documentação | Scalar (tema DeepSpace) em `/scalar/v1` |
 | IA | Ollama local (modelo `llama3.1`) |
-| Testes | xUnit + Moq (594 testes verdes) |
+| Testes | xUnit + Moq (614 testes verdes) |
 
 ## Padrões aplicados
 
@@ -320,6 +320,19 @@ A API **nunca proxia os bytes**: registra a mídia e o app fala direto com o sto
 
 Áudio de consulta é a única mídia com prazo: 30 dias para reprocessamento e depois some (P-06). Conteúdo clínico não expira, por guarda regulatória.
 
+### Notificações
+
+| Método | Rota | Descrição |
+|---|---|---|
+| GET | `/api/notificacoes/tutor/{id}` | Caixa de entrada do Responsável (`?apenasNaoLidas=`) (RN-092) |
+| POST | `/api/notificacoes/{id}/lida` | Registra que o Responsável abriu no app |
+
+**A notificação é gravada antes de ser enviada.** O app precisa de uma caixa de entrada que sobrevive ao push perdido — aparelho desligado, token trocado, permissão negada — e o histórico do que foi comunicado é o que permite responder "avisamos?" depois. `NaoEntregue` não é o fim da linha: a notificação segue visível na caixa, porque push perdido não pode significar aviso perdido.
+
+O envio sai da requisição, numa rotina de um minuto: o Responsável não pode esperar o APNs responder para que a consulta seja confirmada. Token que o provedor recusa como inválido **desativa o dispositivo** — app desinstalado e token rotacionado são o caso comum, não a exceção; falha do provedor, ao contrário, não desativa nada. O push passa por `IPushAdapter`, escolhido por `Adaptadores:Push`.
+
+**A régua de lembretes** (rotina diária) transforma obrigação vencendo em aviso: sem ela, o board de obrigações é uma tela que só quem abre o app descobre — e quem já esqueceu da vacina é exatamente quem não abre. É **um aviso por animal, não por obrigação**, e nomeia a mais urgente em vez de dizer "você tem pendências", porque aviso genérico não move ninguém. Há intervalo mínimo de 7 dias entre dois avisos do mesmo animal: avisar de hora em hora sobre a mesma vacina transformaria cuidado em incômodo, e o Responsável desligaria a notificação inteira. Cada aviso cria também o `LembreteAgendado` que sustenta a régua — três tentativas sem resposta acionam o alerta à clínica (RN-095).
+
 ### Avaliações
 
 | Método | Rota | Descrição |
@@ -449,6 +462,8 @@ Sem parâmetros valem página 1 e 20 itens. O tamanho é limitado a 100 por pág
 | RN-037 | Vaga liberada é oferecida ao primeiro da fila com prioridade de 15 min; vencida, passa ao próximo | `ItemListaEspera` + `PromoverProximoAsync` |
 | RN-026 | Endereço persistido no próprio registro, com latitude/longitude **derivadas dele** pela geocodificação — o payload do cliente é ignorado | `Endereco` + `IGeocodificacaoAdapter` |
 | RN-033/RN-057 | Nota só é pública a partir de 3 avaliações; `PUBLICADO_EM` ancora o selo "Novo na Vetly" por 30 dias | `Veterinario.TemNotaPublica` + `PublicarNoMatching` |
+| RN-092 | Notificação é gravada antes de enviada e sobrevive ao push perdido; token recusado como inválido desativa o dispositivo, falha de provedor não | `Notificacao` + `NotificacaoService` + `IPushAdapter` |
+| RN-094/RN-095 | Régua diária transforma obrigação vencendo em um aviso por animal, com intervalo mínimo de 7 dias, e cria o lembrete que aciona a clínica após 3 tentativas | `AvisarObrigacoesVencendo` + `LembreteAgendado` |
 | RN-055 | Só o Responsável atendido avalia, uma vez por consulta e em até 30 dias; índice único garante a invariante sob concorrência | `Avaliacao` + `AvaliacaoService` |
 | RN-057 | Reputação recalculada a partir das avaliações; abaixo de 3 a nota não é pública nem entra no score, e comentário moderado não tira a nota da média | `AvaliacaoService.RecalcularReputacaoAsync` + `Veterinario.TemNotaPublica` |
 | RN-051 | O desconto do resgate sai da comissão da plataforma, não do repasse: o bruto e o repasse não mudam, e o resgate é limitado à comissão daquela cobrança | `Pagamento.AplicarDesconto` + `PagamentoService.AplicarResgateAsync` |
