@@ -54,6 +54,28 @@ public class Pagamento
     /// <summary>Valor estornado ao tutor em caso de cancelamento. Nulo se não houve estorno.</summary>
     public decimal? ValorEstornado { get; private set; }
 
+    // ── Cobrança (RN-006/RN-071, §5.1) ───────────────────────────────────────
+
+    /// <summary>O que está sendo cobrado (RN-101).</summary>
+    public TipoPagamento Tipo { get; private set; }
+
+    /// <summary>Identificador da cobrança no provedor. Nulo antes de criá-la.</summary>
+    [MaxLength(100)]
+    public string? ReferenciaExterna { get; private set; }
+
+    /// <summary>
+    /// Chave de idempotência da transação: reenviar a mesma cobrança não duplica nada
+    /// (vetly-tech §7.5).
+    /// </summary>
+    [MaxLength(100)]
+    public string? ChaveIdempotencia { get; private set; }
+
+    /// <summary>
+    /// Indica liquidação financeira efetiva. <b>Sempre falso no MVP</b>: valores são
+    /// apurados e registrados, nunca repassados (RN-071).
+    /// </summary>
+    public bool Liquidado { get; private set; }
+
     // ── Split por plano (RN-070/RN-072) ──────────────────────────────────────
 
     /// <summary>Plano que definiu o take rate desta transação (RN-070).</summary>
@@ -92,6 +114,33 @@ public class Pagamento
 
     /// <summary>Confirma o recebimento do pagamento.</summary>
     public void Confirmar() => StatusPagamento = StatusPagamento.Confirmado;
+
+    /// <summary>Define o que está sendo cobrado (RN-101).</summary>
+    public void DefinirTipo(TipoPagamento tipo) => Tipo = tipo;
+
+    /// <summary>
+    /// Registra a cobrança criada no provedor. O pagamento continua pendente: quem
+    /// confirma é o webhook, nunca a resposta síncrona (vetly-tech §7.5).
+    /// </summary>
+    public void RegistrarCobranca(string referenciaExterna, string chaveIdempotencia)
+    {
+        if (string.IsNullOrWhiteSpace(referenciaExterna))
+            throw new ArgumentException("A referência externa é obrigatória.", nameof(referenciaExterna));
+
+        ReferenciaExterna = referenciaExterna;
+        ChaveIdempotencia = chaveIdempotencia;
+    }
+
+    /// <summary>
+    /// Registra a recusa do provedor. O horário travado deve voltar a ficar livre e a
+    /// consulta expira (RN-006/RN-035).
+    /// </summary>
+    public void Recusar() => StatusPagamento = StatusPagamento.Recusado;
+
+    /// <summary>Verdadeiro quando o pagamento já teve desfecho — não cabe mais mudar.</summary>
+    public bool TemDesfecho() =>
+        StatusPagamento is StatusPagamento.Confirmado or StatusPagamento.Recusado
+            or StatusPagamento.Estornado or StatusPagamento.Parcial;
 
     /// <summary>
     /// Vincula este pagamento a uma consulta apos o agendamento.

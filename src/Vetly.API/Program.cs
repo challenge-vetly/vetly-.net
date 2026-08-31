@@ -134,6 +134,17 @@ switch (adaptadorCrmv)
             $"Adaptador de CRMV '{adaptadorCrmv}' nao reconhecido. Valores validos: Simulado.");
 }
 
+var adaptadorPagamento = builder.Configuration["Adaptadores:Pagamento"] ?? "Simulado";
+switch (adaptadorPagamento)
+{
+    case "Simulado":
+        builder.Services.AddScoped<IPagamentoAdapter, PagamentoAdapterSimulado>();
+        break;
+    default:
+        throw new InvalidOperationException(
+            $"Adaptador de pagamento '{adaptadorPagamento}' nao reconhecido. Valores validos: Simulado.");
+}
+
 var adaptadorGeo = builder.Configuration["Adaptadores:Geocodificacao"] ?? "Simulado";
 switch (adaptadorGeo)
 {

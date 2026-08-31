@@ -62,6 +62,22 @@ public class PagamentoConfiguration : IEntityTypeConfiguration<Pagamento>
             .HasColumnName("VALOR_ESTORNADO");
 
         builder.HasIndex(p => p.TutorId).HasDatabaseName("IX_PAGAMENTO_TUTOR");
+        // ── Cobranca (RN-006/RN-071, §5.1) ───────────────────────────────────
+        builder.Property(p => p.Tipo)
+            .HasConversion<int>().HasColumnName("TIPO").IsRequired();
+
+        builder.Property(p => p.ReferenciaExterna)
+            .HasColumnType("VARCHAR2(100)").HasColumnName("REFERENCIA_EXTERNA");
+
+        builder.Property(p => p.ChaveIdempotencia)
+            .HasColumnType("VARCHAR2(100)").HasColumnName("CHAVE_IDEMPOTENCIA");
+
+        builder.Property(p => p.Liquidado)
+            .HasColumnType("NUMBER(1)").HasColumnName("LIQUIDADO").IsRequired();
+
+        // O webhook chega com a referencia do provedor: e por ela que se acha o pagamento
+        builder.HasIndex(p => p.ReferenciaExterna).HasDatabaseName("IX_PAGAMENTO_REFERENCIA");
+
         // ── Split por plano (RN-070/RN-071/RN-072) ───────────────────────────
         builder.Property(p => p.PlanoAplicado)
             .HasConversion<int?>().HasColumnName("PLANO");

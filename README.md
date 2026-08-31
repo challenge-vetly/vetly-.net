@@ -12,7 +12,7 @@ O Vetly é uma API REST para gestão de clínicas veterinárias, cobrindo todo o
 | Autenticação | JWT Bearer |
 | Documentação | Scalar (tema DeepSpace) em `/scalar/v1` |
 | IA | Ollama local (modelo `llama3.1`) |
-| Testes | xUnit + Moq (312 testes verdes) |
+| Testes | xUnit + Moq (335 testes verdes) |
 
 ## Padrões aplicados
 
@@ -246,7 +246,8 @@ curl http://localhost:5099/health/ready
 |---|---|---|
 | GET | `/api/pagamentos` | Lista paginada (`?pagina=&tamanho=`) |
 | GET | `/api/pagamentos/{id}` | Detalhe |
-| POST | `/api/pagamentos` | Registrar pagamento |
+| POST | `/api/pagamentos` | Cria a cobrança com o split apurado — responde 202, pagamento fica **pendente** (RN-006/RN-070) |
+| GET | `/api/pagamentos/{id}/status` | Polling do checkout: status da cobrança e da consulta |
 | POST | `/api/pagamentos/{id}/processar-split` | Split financeiro via Strategy (autônomo 80% / vinculado 60%) |
 
 ### Empresas
@@ -266,6 +267,16 @@ curl http://localhost:5099/health/ready
 | POST | `/api/lembretes` | Agendar lembrete (vacina, retorno, medicação…) |
 | POST | `/api/lembretes/{id}/tentativa` | Registrar tentativa de contato — após 3 sem resposta, alerta à clínica (RN-095) |
 | POST | `/api/lembretes/{id}/resposta` | Registrar resposta do tutor — encerra régua (RN-094) |
+
+### Rotas internas (serviço-a-serviço)
+
+| Método | Rota | Descrição |
+|---|---|---|
+| POST | `/api/internos/pagamentos/webhook` | Evento de status do pagamento — **estado autoritativo** da transação |
+
+Autenticadas por `X-Vetly-Service-Token`, não por JWT de usuário: quem chama é um provedor, não uma pessoa. Sem token configurado a rota fica indisponível.
+
+O webhook é o que confirma o pagamento: `Confirmado` promove a consulta de `EmCheckout` para `Confirmada` e ocupa o horário; `Recusado` expira a consulta e libera o horário. Reentrega de evento já processado responde 200 sem efeito — webhook é entregue mais de uma vez por natureza.
 
 ### Lista de espera
 
@@ -341,6 +352,7 @@ Sem parâmetros valem página 1 e 20 itens. O tamanho é limitado a 100 por pág
 | RN-022/RN-024 | Vet desativado entra com role `VetDesativado` e é bloqueado em toda rota de negócio, mantendo só o que a RN-024 garante | `VetDesativadoFilter` + `AuthService` |
 | RN-060 | Sem consentimento de atendimento, as rotas de negócio do Responsável devolvem 422 — a base legal precede o tratamento | `ConsentimentoAtendimentoFilter` |
 | RN-061/RN-062 | Consentimento granular por finalidade, com data de concessão e de revogação; revogar não apaga registro clínico já produzido | `Tutor.RegistrarConsentimento` + `TutorService` |
+| RN-006 | A consulta só é confirmada com o pagamento, e a confirmação vem do **webhook**, nunca da resposta síncrona | `PagamentoService.ProcessarWebhookAsync` |
 | RN-070 | Take rate por plano: Básico 15%, Profissional 12%, Enterprise 10% — a maior comissão pertence ao menor plano | `SplitBasicoStrategy`, `SplitProfissionalStrategy`, `SplitEnterpriseStrategy` |
 | RN-072 | Repasse único: ao vet autônomo ou à clínica. Vet vinculado usa o plano da unidade, e a remuneração interna fica fora do escopo | `PagamentoService.ResolverPlanoEDestinatarioAsync` |
 | RN-081 | Sugestão de dose exige peso do animal — `POST /api/ia/protocolo` com peso ausente/zero devolve 422, e o cadastro do pet passa a exigir `pesoKg` | `OllamaService.SugerirProtocoloAsync` + `AnimalService` |

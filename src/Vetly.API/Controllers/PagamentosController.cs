@@ -33,18 +33,52 @@ public class PagamentosController : ControllerBase
         Ok(await _service.ObterPorIdAsync(id));
 
     /// <summary>Registra um novo pagamento.</summary>
+    /// <summary>
+    /// Cria a cobranca com o split ja apurado pela Vetly (RN-070) e devolve as
+    /// instrucoes de pagamento.
+    /// </summary>
+    /// <remarks>
+    /// Responde 202: o pagamento fica PENDENTE. A confirmacao chega pelo webhook do
+    /// provedor, nunca por esta resposta — e o que mantem o fluxo pronto para um
+    /// gateway real (RN-006, vetly-tech §7.5). Use
+    /// <c>GET /api/pagamentos/{id}/status</c> para acompanhar.
+    /// </remarks>
     [HttpPost]
-    [ProducesResponseType(typeof(PagamentoDto), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(CobrancaCriadaRespostaDto), StatusCodes.Status202Accepted)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    public async Task<IActionResult> Criar([FromBody] CriarPagamentoDto dto)
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
+    public async Task<IActionResult> CriarCobranca([FromBody] CriarPagamentoDto dto)
     {
-        var criado = await _service.CriarAsync(dto);
-        return CreatedAtAction(nameof(ObterPorId), new { id = criado.Id }, criado);
+        var cobranca = await _service.CriarCobrancaAsync(dto);
+        return Accepted(cobranca);
     }
 
-    /// <summary>Processa o split financeiro aplicando a Strategy correta pela persona do veterinario.</summary>
+    /// <summary>
+    /// Status da cobranca e da consulta vinculada. E o polling do app durante o
+    /// checkout (RN-006).
+    /// </summary>
+    [HttpGet("{id:guid}/status")]
+    [ProducesResponseType(typeof(StatusDaCobrancaDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ObterStatus(Guid id) =>
+        Ok(await _service.ObterStatusAsync(id));
+
+    /// <summary>
+    /// Reapura o split de um pagamento (RN-070).
+    /// </summary>
+    /// <remarks>
+    /// O split ja e apurado automaticamente na criacao da cobranca. Esta rota fica
+    /// como ferramenta de correcao, para o caso de a consulta ou o plano terem mudado
+    /// depois — nao e parte do fluxo normal.
+    /// </remarks>
     [HttpPost("{id:guid}/processar-split")]
+    [Authorize(Policy = "ApenasAdmin")]
     [ProducesResponseType(typeof(PagamentoDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
     public async Task<IActionResult> ProcessarSplit(Guid id) =>
