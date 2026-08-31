@@ -12,7 +12,7 @@ O Vetly é uma API REST para gestão de clínicas veterinárias, cobrindo todo o
 | Autenticação | JWT Bearer |
 | Documentação | Scalar (tema DeepSpace) em `/scalar/v1` |
 | IA | Ollama local (modelo `llama3.1`) |
-| Testes | xUnit + Moq (630 testes verdes) |
+| Testes | xUnit + Moq (647 testes verdes) |
 
 ## Padrões aplicados
 
@@ -320,6 +320,19 @@ A API **nunca proxia os bytes**: registra a mídia e o app fala direto com o sto
 
 Áudio de consulta é a única mídia com prazo: 30 dias para reprocessamento e depois some (P-06). Conteúdo clínico não expira, por guarda regulatória.
 
+### Financeiro (administração)
+
+| Método | Rota | Descrição |
+|---|---|---|
+| GET | `/api/financeiro/consolidado` | Consolidado do período, com repasse por destinatário (RN-070/RN-072) |
+| POST | `/api/financeiro/liquidar` | Marca os repasses do período como liquidados (RN-071) |
+
+**A conta que este painel precisa fechar é uma só: `bruto = comissão + repasse + desconto`.** O campo `fecha` diz se ela bate — split incoerente é silencioso, os totais continuam somando e só a conta cruzada revela o problema. `porDestinatario` é a lista que a operação usa para pagar, ordenada pela maior pendência: um prestador, um valor.
+
+A liquidação acontece **fora da plataforma** (RN-071) — transferência, lote do banco. A rota registra que aconteceu, e por isso a `referencia` é obrigatória: marcar como pago sem dizer com base em quê deixa a conferência sem âncora. Pagamento já liquidado é ignorado, não recontado — a operação repete fechamento com frequência, e chamar duas vezes não pode pagar duas vezes; a resposta diz quantos foram ignorados. Cobrança pendente ou recusada nunca entra em fechamento.
+
+Restrito à administração: o veterinário vê o próprio dinheiro pelo extrato (RN-024), e o Responsável pelos próprios pagamentos.
+
 ### Painel do veterinário
 
 | Método | Rota | Descrição |
@@ -474,6 +487,8 @@ Sem parâmetros valem página 1 e 20 itens. O tamanho é limitado a 100 por pág
 | RN-037 | Vaga liberada é oferecida ao primeiro da fila com prioridade de 15 min; vencida, passa ao próximo | `ItemListaEspera` + `PromoverProximoAsync` |
 | RN-026 | Endereço persistido no próprio registro, com latitude/longitude **derivadas dele** pela geocodificação — o payload do cliente é ignorado | `Endereco` + `IGeocodificacaoAdapter` |
 | RN-033/RN-057 | Nota só é pública a partir de 3 avaliações; `PUBLICADO_EM` ancora o selo "Novo na Vetly" por 30 dias | `Veterinario.TemNotaPublica` + `PublicarNoMatching` |
+| RN-070/RN-072 | O consolidado verifica explicitamente que comissão + repasse + desconto fecha o bruto, e agrupa o repasse por destinatário pela maior pendência | `FinanceiroService.ObterConsolidadoAsync` |
+| RN-071 | A liquidação registra um pagamento feito fora da plataforma, exige referência e ignora o que já estava liquidado; só cobrança confirmada entra | `FinanceiroService.LiquidarAsync` + `Pagamento.Liquidar` |
 | RN-105 | O painel é sempre do próprio veterinário e destaca só o que trava dinheiro ou documento; avaliação sem resposta não conta como pendência bloqueante | `DashboardService.ObterDoVeterinarioAsync` |
 | RN-092 | Notificação é gravada antes de enviada e sobrevive ao push perdido; token recusado como inválido desativa o dispositivo, falha de provedor não | `Notificacao` + `NotificacaoService` + `IPushAdapter` |
 | RN-094/RN-095 | Régua diária transforma obrigação vencendo em um aviso por animal, com intervalo mínimo de 7 dias, e cria o lembrete que aciona a clínica após 3 tentativas | `AvisarObrigacoesVencendo` + `LembreteAgendado` |

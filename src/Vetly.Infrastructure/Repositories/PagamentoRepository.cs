@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Vetly.Application.DTOs.Comum;
 using Vetly.Application.Interfaces;
 using Vetly.Domain.Entities;
+using Vetly.Domain.Enums;
 using Vetly.Infrastructure.Data;
 
 namespace Vetly.Infrastructure.Repositories;
@@ -42,4 +43,15 @@ public class PagamentoRepository : RepositoryBase<Pagamento>, IPagamentoReposito
     public async Task<Pagamento?> ObterPorConsultaAsync(Guid consultaId) =>
         await _dbSet
             .FirstOrDefaultAsync(p => p.ConsultaId == consultaId);
+
+    /// <inheritdoc/>
+    public async Task<IEnumerable<Pagamento>> ObterConfirmadosNoPeriodoAsync(DateTime inicio, DateTime fim) =>
+        // Cobranca pendente ou recusada nao entra em fechamento: dinheiro que nao
+        // entrou nao se repassa (RN-071).
+        await _dbSet
+            .Where(p => p.StatusPagamento == StatusPagamento.Confirmado
+                        && p.Momento >= inicio
+                        && p.Momento <= fim)
+            .OrderBy(p => p.Momento)
+            .ToListAsync();
 }
