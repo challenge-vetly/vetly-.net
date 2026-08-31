@@ -12,7 +12,7 @@ O Vetly é uma API REST para gestão de clínicas veterinárias, cobrindo todo o
 | Autenticação | JWT Bearer |
 | Documentação | Scalar (tema DeepSpace) em `/scalar/v1` |
 | IA | Ollama local (modelo `llama3.1`) |
-| Testes | xUnit + Moq (699 testes verdes) |
+| Testes | xUnit + Moq (715 testes verdes) |
 
 ## Padrões aplicados
 
@@ -213,6 +213,10 @@ curl http://localhost:5099/health/ready
 | GET | `/api/consultas/{id}/briefing` | Pré-consulta: animal, histórico (últimas 5) e exames recentes (últimos 3) |
 | POST | `/api/consultas/checkout` | Trava o horário por 10 min e cria a consulta em `EmCheckout` (RN-003/RN-035) |
 | POST | `/api/consultas` | Agendar no ato — emergência presencial e balcão (RN-040) |
+| PUT | `/api/consultas/{id}/pre-sintomas` | Texto guiado + mídias, antes do atendimento (RN-005/RN-036) |
+| GET | `/api/consultas/{id}/simulacao-cancelamento` | O valor do reembolso **antes** de cancelar (RN-014/RN-042) |
+| POST | `/api/consultas/{id}/remarcar` | Transfere o horário sem nova cobrança — limite 2 (RN-013/RN-043) |
+| POST | `/api/consultas/{id}/no-show` | Registra não comparecimento, sem reembolso (RN-044) |
 | POST | `/api/consultas/{id}/iniciar` | Abre a janela de captura — a consulta começa aqui (RN-008) |
 | POST | `/api/consultas/{id}/captura/segmentos` | Recebe um trecho de áudio e enfileira a transcrição — 202 (RN-009) |
 | GET | `/api/consultas/{id}/captura` | Situação da captura, com o texto já transcrito (RN-009) |
@@ -231,6 +235,12 @@ curl http://localhost:5099/health/ready
 Os candidatos vêm ordenados pela **proximidade do horário original**, não por reputação: quem agendou às 14h de terça organizou o dia em torno disso, e trocar o profissional já é uma quebra. Espécie é eliminatória (RN-029). O horário novo é travado antes de a consulta ser movida — sem isso, duas redistribuições simultâneas mandariam dois animais para o mesmo slot — e o antigo volta à disponibilidade.
 
 O Responsável é avisado, e o `motivo` é obrigatório porque entra na mensagem: aviso sem motivo soa como erro do app. Restrito à administração — nem o veterinário que sai decide para quem vai.
+
+**Os pré-sintomas são texto guiado, não campo livre** (RN-036): perguntas fechadas produzem contexto que o veterinário lê em dez segundos no briefing e que a IA consegue usar; um parágrafo solto não faz nem uma coisa nem outra. Só valem antes do atendimento — depois, o briefing já foi lido.
+
+**A simulação de cancelamento usa a mesma seleção de Strategy do cancelamento**, aplicada só para calcular. Se usasse outro critério, mostraria um valor e o cancelamento cobraria outro — que é exatamente o que a RN-042 quer evitar ao exigir que a política de retenção seja transparente no agendamento.
+
+**Remarcar tem limite de 2 por consulta** (RN-043): duas cobrem imprevisto legítimo, e acima disso remarcar vira burla à janela de reembolso — quem quer desistir sem perder dinheiro empurraria a data indefinidamente em vez de cancelar sob a política. O pagamento acompanha a nova data (RN-013), o horário novo é travado antes da troca e o antigo volta à fila de espera.
 
 **A janela de captura é explícita.** `iniciar` abre, `encerrar` fecha, e fora dela a IA não captura áudio nem produz conteúdo clínico (RN-079) — trecho enviado com a janela fechada devolve 409. O áudio vai em segmentos curtos, cada um com sua sequência: assim a transcrição acontece durante o atendimento e a falha de um trecho não derruba a consulta inteira. Reenvio da mesma sequência devolve 409, porque duplicaria o texto.
 
@@ -530,6 +540,10 @@ Sem parâmetros valem página 1 e 20 itens. O tamanho é limitado a 100 por pág
 | RN-051 | O custo do desconto é dividido por faixa (100/0 · 60/40 · 30/70): a parte da Vetly sai da comissão, a do prestador sai do repasse, e as três parcelas fecham o bruto | `RegrasDeFidelidade.Dividir` + `Pagamento.AplicarDesconto` |
 | RN-052 | Cancelamento estorna os pontos da consulta, tirando só o que ainda não foi gasto | `FidelidadeService.EstornarPorConsultaAsync` |
 | RN-053/RN-054 | Cupom com QR e 30 dias; vencido, os pontos não voltam; vale para uma transação | `CupomResgate` |
+| RN-036 | Pré-sintomas em texto guiado + mídias, aceitos só antes do atendimento; lista vazia grava o sentinela `";"`, porque no Oracle string vazia é NULL | `Consulta.RegistrarPreSintomas` |
+| RN-041/RN-042 | A simulação de cancelamento reusa a mesma Strategy do cancelamento e não deixa rastro — mostrar um valor e cobrar outro é o que a regra proíbe | `ConsultaService.SimularCancelamentoAsync` |
+| RN-013/RN-043 | Remarcar transfere o pagamento e incrementa o contador da consulta, limitado a 2; esgotado, resta cancelar | `Consulta.RemarcarPara` |
+| RN-044 | No-show é registrado por quem esperava — nunca pelo próprio Responsável — e não gera reembolso | `ConsultaService.RegistrarNoShowAsync` |
 | RN-045 | Obrigação de cuidado guarda periodicidade e se reagenda sozinha ao ser cumprida, contando a partir do cumprimento; `Vencendo` avisa 30 dias antes | `ObrigacaoPet` + `ObrigacaoService` |
 | RN-046 | Obrigações derivadas da carteira de vacinação, uma por tipo, a partir da dose mais recente; derivar de novo não duplica | `ObrigacaoService.DerivarDaCarteiraAsync` |
 | RN-090 | Colmeia: o Responsável (e só ele) autoriza um veterinário de fora a alcançar o histórico do animal, com escopo e prazo; concessão vigente duplicada devolve 409 | `AcessoColmeia` + `ColmeiaService` |

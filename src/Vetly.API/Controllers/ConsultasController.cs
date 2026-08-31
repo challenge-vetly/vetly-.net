@@ -131,6 +131,102 @@ public class ConsultasController : ControllerBase
         return NoContent();
     }
 
+    // ── Agendamento: pre-sintomas, simulacao, remarcacao e no-show ───────────
+
+    /// <summary>
+    /// Registra os pre-sintomas informados pelo Responsavel (RN-005/RN-036).
+    /// </summary>
+    /// <remarks>
+    /// E texto guiado, e nao campo livre: perguntas fechadas produzem contexto que o
+    /// veterinario le em dez segundos no briefing e que a IA consegue usar. Um
+    /// paragrafo solto nao faz nem uma coisa nem outra.
+    ///
+    /// So vale antes do atendimento: depois, o briefing ja foi lido e a IA ja recebeu
+    /// o contexto — informar ali nao alimenta nada.
+    ///
+    /// As midias ja devem estar no storage; aqui viajam apenas os `midiaIds` (§2.6).
+    /// </remarks>
+    [HttpPut("{id:guid}/pre-sintomas")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
+    public async Task<IActionResult> RegistrarPreSintomas(Guid id, [FromBody] PreSintomasDto dto)
+    {
+        await _service.RegistrarPreSintomasAsync(id, dto);
+
+        return NoContent();
+    }
+
+    /// <summary>
+    /// Mostra o que aconteceria se a consulta fosse cancelada agora
+    /// (RN-014/RN-041/RN-042).
+    /// </summary>
+    /// <remarks>
+    /// Nao executa nada: e a mesma selecao de Strategy do cancelamento, aplicada so
+    /// para calcular. Se a simulacao usasse outro criterio, ela mostraria um valor e o
+    /// cancelamento cobraria outro — que e exatamente o que a RN-042 quer evitar ao
+    /// exigir que a politica de retencao seja transparente no agendamento.
+    ///
+    /// <c>liquidacao</c> vem sempre <c>Simulada</c>: no MVP o valor e calculado e
+    /// exibido, nao devolvido (RN-041).
+    /// </remarks>
+    [HttpGet("{id:guid}/simulacao-cancelamento")]
+    [ProducesResponseType(typeof(SimulacaoDeCancelamentoDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
+    public async Task<IActionResult> SimularCancelamento(Guid id) =>
+        Ok(await _service.SimularCancelamentoAsync(id));
+
+    /// <summary>
+    /// Transfere a consulta para outro horario, sem nova cobranca (RN-013/RN-043).
+    /// </summary>
+    /// <remarks>
+    /// O pagamento ja realizado acompanha a nova data (RN-013). O limite e de <b>2
+    /// remarcacoes por consulta</b>: duas cobrem imprevisto legitimo, e acima disso
+    /// remarcar vira burla a janela de reembolso — quem quer desistir sem perder
+    /// dinheiro empurraria a data indefinidamente em vez de cancelar sob a politica.
+    /// Esgotado o limite, devolve 422 e resta cancelar.
+    ///
+    /// A remarcacao mantem o mesmo veterinario; trocar de profissional e cancelar e
+    /// agendar de novo, ou redistribuir (RN-025).
+    ///
+    /// O horario novo e travado antes de mover a consulta, e o antigo volta a fila de
+    /// espera (RN-035/RN-037).
+    /// </remarks>
+    [HttpPost("{id:guid}/remarcar")]
+    [Idempotente]
+    [ProducesResponseType(typeof(RemarcacaoRealizadaDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
+    public async Task<IActionResult> Remarcar(Guid id, [FromBody] RemarcarConsultaDto dto) =>
+        Ok(await _service.RemarcarAsync(id, dto));
+
+    /// <summary>Registra o nao comparecimento do Responsavel (RN-038/RN-044).</summary>
+    /// <remarks>
+    /// Sem reembolso, seguindo a faixa "menos de 2h ou no ato" da RN-014: nao ha
+    /// penalidade nova, so a politica que ja existia.
+    ///
+    /// Quem registra e quem estava esperando — o profissional ou a unidade. O
+    /// Responsavel nao declara o proprio no-show.
+    /// </remarks>
+    [HttpPost("{id:guid}/no-show")]
+    [ProducesResponseType(typeof(NoShowRegistradoDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
+    public async Task<IActionResult> RegistrarNoShow(Guid id) =>
+        Ok(await _service.RegistrarNoShowAsync(id));
+
     /// <summary>Retorna briefing pre-consulta com animal, historico e exames recentes.</summary>
     [HttpGet("{id:guid}/briefing")]
     [ProducesResponseType(typeof(BriefingConsultaDto), StatusCodes.Status200OK)]
