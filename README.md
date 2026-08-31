@@ -12,7 +12,7 @@ O Vetly é uma API REST para gestão de clínicas veterinárias, cobrindo todo o
 | Autenticação | JWT Bearer |
 | Documentação | Scalar (tema DeepSpace) em `/scalar/v1` |
 | IA | Ollama local (modelo `llama3.1`) |
-| Testes | xUnit + Moq (498 testes verdes) |
+| Testes | xUnit + Moq (522 testes verdes) |
 
 ## Padrões aplicados
 
@@ -319,6 +319,21 @@ A API **nunca proxia os bytes**: registra a mídia e o app fala direto com o sto
 
 Áudio de consulta é a única mídia com prazo: 30 dias para reprocessamento e depois some (P-06). Conteúdo clínico não expira, por guarda regulatória.
 
+### Colmeia — histórico entre clínicas
+
+| Método | Rota | Descrição |
+|---|---|---|
+| POST | `/api/colmeia` | Responsável autoriza um veterinário a alcançar o histórico do animal (RN-090) |
+| DELETE | `/api/colmeia/{id}` | Revoga a autorização (RN-062/RN-090) |
+| GET | `/api/colmeia/animal/{id}` | Autorizações de um animal — quem alcança o quê |
+| GET | `/api/colmeia/animal/{id}/acessos` | Quem leu o histórico, o quê e quando |
+
+**Quem concede é o Responsável, não a clínica.** O histórico do animal é dele, e o veterinário de fora só alcança o que foi autorizado, pelo tempo autorizado. A clínica que quisesse se autoconceder acesso é exatamente o que a guarda impede. Sem isso, "compartilhar o histórico" viraria "qualquer profissional cadastrado lê o prontuário de qualquer animal".
+
+A concessão **nasce com prazo** — 30 dias por padrão, 365 no máximo: acesso clínico que não expira sozinho é acesso que ninguém lembra de revogar. E tem escopo, porque compartilhar quase nunca quer dizer tudo: `HistoricoCompleto`, `UltimaConsulta` ou `Documentos` — pedir segunda opinião sobre um exame não é abrir o prontuário desde filhote.
+
+Todo acesso vai para `TB_LOG_ACESSO_COLMEIA`, **append-only**, inclusive a tentativa negada — que é justamente o que se quer enxergar numa auditoria. Autorização sem registro seria um cheque em branco; registro sem autorização não seria acesso, seria vazamento. Revogar encerra a autorização e **não** apaga o log: é isso que o Responsável precisa poder conferir depois.
+
 ### Rotas internas (serviço-a-serviço)
 
 | Método | Rota | Descrição |
@@ -385,6 +400,8 @@ Sem parâmetros valem página 1 e 20 itens. O tamanho é limitado a 100 por pág
 | RN-037 | Vaga liberada é oferecida ao primeiro da fila com prioridade de 15 min; vencida, passa ao próximo | `ItemListaEspera` + `PromoverProximoAsync` |
 | RN-026 | Endereço persistido no próprio registro, com latitude/longitude **derivadas dele** pela geocodificação — o payload do cliente é ignorado | `Endereco` + `IGeocodificacaoAdapter` |
 | RN-033/RN-057 | Nota só é pública a partir de 3 avaliações; `PUBLICADO_EM` ancora o selo "Novo na Vetly" por 30 dias | `Veterinario.TemNotaPublica` + `PublicarNoMatching` |
+| RN-090 | Colmeia: o Responsável (e só ele) autoriza um veterinário de fora a alcançar o histórico do animal, com escopo e prazo; concessão vigente duplicada devolve 409 | `AcessoColmeia` + `ColmeiaService` |
+| RN-090 | Todo acesso pela colmeia — permitido ou negado — vai para uma trilha append-only que o Responsável consulta; revogar não apaga o que já foi acessado | `LogAcessoColmeia` + `ColmeiaRepository` |
 | RN-105/RN-106 | Escopo por linha: o Responsável só alcança os próprios dados, o veterinário só os animais que atende, e o escopo vem do token — não de parâmetro do cliente | `IUsuarioAtual` + guardas em `AnimalService`, `ConsultaService`, `PagamentoService`, `TutorService` |
 | RN-001/RN-002 | Busca lista clínicas e vets autônomos por proximidade e necessidade, ordenados por score | `BuscaService` |
 | RN-027 | Distância entre a posição do Responsável e a coordenada do prestador; CEP é o fallback quando a localização é negada | `BuscaService.ResolverPosicaoAsync` |

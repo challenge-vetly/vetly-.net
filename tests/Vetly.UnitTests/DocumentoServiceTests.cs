@@ -31,6 +31,7 @@ public class DocumentoServiceTests
     private readonly Mock<IStorageAdapter> _storageMock = new();
     private readonly Mock<IGeradorDePdf> _pdfMock = new();
     private readonly Mock<IAssinaturaAdapter> _assinaturaMock = new();
+    private readonly Mock<IColmeiaService> _colmeiaMock = new();
     private readonly Mock<IUsuarioAtual> _usuarioMock = new();
 
     public DocumentoServiceTests()
@@ -51,7 +52,8 @@ public class DocumentoServiceTests
         new(_docRepoMock.Object, _consultaRepoMock.Object, _vetRepoMock.Object,
             _animalRepoMock.Object, _tutorRepoMock.Object, _pagamentoRepoMock.Object,
             _auditoriaMock.Object, _midiaRepoMock.Object, _storageMock.Object,
-            _pdfMock.Object, _assinaturaMock.Object, _usuarioMock.Object, factories);
+            _pdfMock.Object, _assinaturaMock.Object, _colmeiaMock.Object,
+            _usuarioMock.Object, factories);
 
     private static Consulta CriarConsultaValidada()
     {

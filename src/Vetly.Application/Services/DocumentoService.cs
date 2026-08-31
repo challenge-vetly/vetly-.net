@@ -30,6 +30,7 @@ public class DocumentoService : IDocumentoService
     private readonly IStorageAdapter _storage;
     private readonly IGeradorDePdf _pdf;
     private readonly IAssinaturaAdapter _assinatura;
+    private readonly IColmeiaService _colmeia;
     private readonly IUsuarioAtual _usuario;
     private readonly IEnumerable<IDocumentoFactory> _factories;
 
@@ -47,6 +48,7 @@ public class DocumentoService : IDocumentoService
         IStorageAdapter storage,
         IGeradorDePdf pdf,
         IAssinaturaAdapter assinatura,
+        IColmeiaService colmeia,
         IUsuarioAtual usuario,
         IEnumerable<IDocumentoFactory> factories)
     {
@@ -61,6 +63,7 @@ public class DocumentoService : IDocumentoService
         _storage = storage;
         _pdf = pdf;
         _assinatura = assinatura;
+        _colmeia = colmeia;
         _usuario = usuario;
         _factories = factories;
     }
@@ -228,7 +231,16 @@ public class DocumentoService : IDocumentoService
         if (_usuario.EhVeterinario && _usuario.VeterinarioId is { } vetId
             && !await _animalRepo.VeterinarioAtendeAnimalAsync(vetId, animalId))
         {
-            throw new AcessoNegadoException("RN-105", "Este animal nao pertence ao seu escopo de acesso.");
+            // Colmeia: o Responsavel pode ter autorizado este veterinario a ver os
+            // documentos do animal, e o acesso fica registrado de todo jeito (RN-090).
+            var autorizado = await _colmeia.PodeAcessarAsync(
+                vetId, animalId, EscopoAcessoColmeia.Documentos);
+
+            await _colmeia.RegistrarAcessoAsync(
+                animalId, EscopoAcessoColmeia.Documentos, autorizado, "GET /api/documentos/animal");
+
+            if (!autorizado)
+                throw new AcessoNegadoException("RN-105", "Este animal nao pertence ao seu escopo de acesso.");
         }
 
         var documentos = await _repo.ObterPublicadosPorAnimalAsync(animalId);
