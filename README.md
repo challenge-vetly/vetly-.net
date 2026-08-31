@@ -12,7 +12,7 @@ O Vetly é uma API REST para gestão de clínicas veterinárias, cobrindo todo o
 | Autenticação | JWT Bearer |
 | Documentação | Scalar (tema DeepSpace) em `/scalar/v1` |
 | IA | Ollama local (modelo `llama3.1`) |
-| Testes | xUnit + Moq (647 testes verdes) |
+| Testes | xUnit + Moq (663 testes verdes) |
 
 ## Padrões aplicados
 
@@ -222,7 +222,15 @@ curl http://localhost:5099/health/ready
 | POST | `/api/consultas/{id}/prontuario-manual` | Prontuário escrito à mão, sem IA no caminho (RN-085) |
 | GET | `/api/consultas/{id}/auditoria-ia` | Trilha append-only das decisões sobre conteúdo de IA (RN-082) |
 | POST | `/api/consultas/{id}/finalizar` | Finalizar — exige receita assinada (RN-087) |
+| GET | `/api/consultas/{id}/redistribuicao/candidatos` | Veterinários que poderiam assumir a consulta (RN-025) |
+| POST | `/api/consultas/{id}/redistribuir` | Passa a consulta a outro veterinário (RN-025) |
 | DELETE | `/api/consultas/{id}` | Cancelar + Strategy de reembolso (RN-014/RN-041/RN-042) |
+
+**Redistribuir em vez de cancelar em massa (RN-025).** Quando o profissional sai da plataforma ou fica indisponível, cancelar jogaria o problema no colo do Responsável, que agendou de boa-fé e teria de refazer tudo — inclusive pagar de novo. A redistribuição preserva pagamento, animal e compromisso; o que muda é quem atende.
+
+Os candidatos vêm ordenados pela **proximidade do horário original**, não por reputação: quem agendou às 14h de terça organizou o dia em torno disso, e trocar o profissional já é uma quebra. Espécie é eliminatória (RN-029). O horário novo é travado antes de a consulta ser movida — sem isso, duas redistribuições simultâneas mandariam dois animais para o mesmo slot — e o antigo volta à disponibilidade.
+
+O Responsável é avisado, e o `motivo` é obrigatório porque entra na mensagem: aviso sem motivo soa como erro do app. Restrito à administração — nem o veterinário que sai decide para quem vai.
 
 **A janela de captura é explícita.** `iniciar` abre, `encerrar` fecha, e fora dela a IA não captura áudio nem produz conteúdo clínico (RN-079) — trecho enviado com a janela fechada devolve 409. O áudio vai em segmentos curtos, cada um com sua sequência: assim a transcrição acontece durante o atendimento e a falha de um trecho não derruba a consulta inteira. Reenvio da mesma sequência devolve 409, porque duplicaria o texto.
 
@@ -487,6 +495,7 @@ Sem parâmetros valem página 1 e 20 itens. O tamanho é limitado a 100 por pág
 | RN-037 | Vaga liberada é oferecida ao primeiro da fila com prioridade de 15 min; vencida, passa ao próximo | `ItemListaEspera` + `PromoverProximoAsync` |
 | RN-026 | Endereço persistido no próprio registro, com latitude/longitude **derivadas dele** pela geocodificação — o payload do cliente é ignorado | `Endereco` + `IGeocodificacaoAdapter` |
 | RN-033/RN-057 | Nota só é pública a partir de 3 avaliações; `PUBLICADO_EM` ancora o selo "Novo na Vetly" por 30 dias | `Veterinario.TemNotaPublica` + `PublicarNoMatching` |
+| RN-025 | Consulta de vet indisponível é redistribuída preservando pagamento e animal, com o horário novo travado antes da troca e o antigo liberado; o Responsável é avisado | `Consulta.Redistribuir` + `RedistribuicaoService` |
 | RN-070/RN-072 | O consolidado verifica explicitamente que comissão + repasse + desconto fecha o bruto, e agrupa o repasse por destinatário pela maior pendência | `FinanceiroService.ObterConsolidadoAsync` |
 | RN-071 | A liquidação registra um pagamento feito fora da plataforma, exige referência e ignora o que já estava liquidado; só cobrança confirmada entra | `FinanceiroService.LiquidarAsync` + `Pagamento.Liquidar` |
 | RN-105 | O painel é sempre do próprio veterinário e destaca só o que trava dinheiro ou documento; avaliação sem resposta não conta como pendência bloqueante | `DashboardService.ObterDoVeterinarioAsync` |

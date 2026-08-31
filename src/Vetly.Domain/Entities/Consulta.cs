@@ -190,6 +190,36 @@ public class Consulta
     public void Reagendar(DateTime novaDataHora) => DataHora = novaDataHora;
 
     /// <summary>
+    /// Passa a consulta a outro veterinário, mantendo o pagamento e o animal (RN-025).
+    ///
+    /// É o caminho para quando o profissional sai da plataforma ou fica indisponível:
+    /// cancelar em massa jogaria o problema no colo do Responsável, que agendou de
+    /// boa-fé e teria de refazer tudo — inclusive pagar de novo.
+    ///
+    /// Só consulta que ainda vai acontecer se redistribui. Realizada, cancelada ou
+    /// expirada não têm o que remanejar, e mexer nelas reescreveria história.
+    /// </summary>
+    public void Redistribuir(Guid novoVeterinarioId, Guid novoSlotId, DateTime novaDataHora)
+    {
+        if (Status is not (StatusConsulta.Confirmada or StatusConsulta.EmCheckout))
+            throw new InvalidOperationException(
+                "Somente consulta confirmada ou em checkout pode ser redistribuída.");
+
+        if (novoVeterinarioId == VeterinarioId)
+            throw new InvalidOperationException(
+                "A consulta já pertence a este veterinário.");
+
+        VeterinarioId = novoVeterinarioId;
+        SlotId = novoSlotId;
+        DataHora = novaDataHora;
+
+        // Redistribuir não é iniciar de novo: o vínculo com a captura anterior, se
+        // houver, deixa de fazer sentido e o novo profissional começa do zero.
+        IniciadaEm = null;
+        EncerradaEm = null;
+    }
+
+    /// <summary>
     /// Verifica se a consulta está apta para geração de documentos.
     /// Requer diagnóstico validado E pagamento confirmado.
     /// </summary>

@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Vetly.API.Filters;
 using Vetly.Application.DTOs.Cancelamento;
 using Vetly.Application.DTOs.Captura;
+using Vetly.Application.DTOs.Redistribuicao;
 using Vetly.Application.DTOs.Comum;
 using Vetly.Application.DTOs.Consulta;
 using Vetly.Application.Interfaces;
@@ -23,17 +24,20 @@ public class ConsultasController : ControllerBase
     private readonly ICapturaService _captura;
     private readonly IRascunhoService _rascunhos;
     private readonly IProntuarioService _prontuarios;
+    private readonly IRedistribuicaoService _redistribuicao;
 
     public ConsultasController(
         IConsultaService service,
         ICapturaService captura,
         IRascunhoService rascunhos,
-        IProntuarioService prontuarios)
+        IProntuarioService prontuarios,
+        IRedistribuicaoService redistribuicao)
     {
         _service = service;
         _captura = captura;
         _rascunhos = rascunhos;
         _prontuarios = prontuarios;
+        _redistribuicao = redistribuicao;
     }
 
     /// <summary>
@@ -198,6 +202,57 @@ public class ConsultasController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> ObterAuditoriaIa(Guid id) =>
         Ok(await _prontuarios.ObterAuditoriaAsync(id));
+
+    // ── Redistribuicao (RN-025) ──────────────────────────────────────────────
+
+    /// <summary>
+    /// Veterinarios que poderiam assumir esta consulta (RN-025).
+    /// </summary>
+    /// <remarks>
+    /// A ordem e pela proximidade do horario original, e nao por reputacao: quem
+    /// agendou as 14h de terca organizou o dia em torno disso, e trocar o profissional
+    /// ja e uma quebra — trocar tambem o horario e outra.
+    ///
+    /// Especie e eliminatoria (RN-029): encaminhar um felino para quem so atende caes
+    /// nao e uma sugestao pior, e uma sugestao errada. So entram veterinarios ativos,
+    /// publicados e da mesma UF.
+    /// </remarks>
+    [HttpGet("{id:guid}/redistribuicao/candidatos")]
+    [ProducesResponseType(typeof(IEnumerable<CandidatoARedistribuicaoDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
+    public async Task<IActionResult> SugerirCandidatos(Guid id) =>
+        Ok(await _redistribuicao.SugerirCandidatosAsync(id));
+
+    /// <summary>
+    /// Passa a consulta a outro veterinario, mantendo pagamento e animal (RN-025).
+    /// </summary>
+    /// <remarks>
+    /// E o caminho para quando o profissional sai da plataforma ou fica indisponivel.
+    /// Cancelar em massa jogaria o problema no colo do Responsavel, que agendou de
+    /// boa-fe e teria de refazer tudo — inclusive pagar de novo.
+    ///
+    /// O horario novo e travado antes de mover a consulta: sem isso, duas
+    /// redistribuicoes simultaneas mandariam dois animais para o mesmo slot. O horario
+    /// antigo volta a disponibilidade.
+    ///
+    /// O Responsavel e avisado, e o <c>motivo</c> e obrigatorio porque entra na
+    /// mensagem: aviso sem motivo soa como erro do app (RN-092).
+    ///
+    /// Restrito a administracao: nem o veterinario que sai decide para quem vai.
+    /// </remarks>
+    [HttpPost("{id:guid}/redistribuir")]
+    [ProducesResponseType(typeof(RedistribuicaoRealizadaDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
+    public async Task<IActionResult> Redistribuir(Guid id, [FromBody] RedistribuirConsultaDto dto) =>
+        Ok(await _redistribuicao.RedistribuirAsync(id, dto));
 
     // ── Captura de audio da consulta (RN-008/RN-009/RN-079/RN-085) ───────────
 
