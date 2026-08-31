@@ -1,20 +1,33 @@
-using Vetly.Domain.Entities;
+using Vetly.Domain.Enums;
 
 namespace Vetly.Application.Strategies.Split;
 
 /// <summary>
-/// Contrato do Strategy Pattern para cálculo do split financeiro.
-/// Determina como o valor pago é distribuído entre veterinário e plataforma,
-/// variando conforme a persona do veterinário (autônomo ou vinculado a empresa).
+/// Repartição de uma transação entre a plataforma e o prestador (RN-070/RN-072).
+/// </summary>
+/// <param name="Plano">Plano que definiu o take rate.</param>
+/// <param name="TakeRate">Percentual retido pela Vetly, de 0 a 100.</param>
+/// <param name="Comissao">Valor retido pela Vetly.</param>
+/// <param name="Repasse">Valor repassado ao prestador.</param>
+public readonly record struct ResultadoDoSplit(
+    PlanoAssinatura Plano, decimal TakeRate, decimal Comissao, decimal Repasse);
+
+/// <summary>
+/// Contrato do Strategy Pattern para o split financeiro.
+///
+/// O critério é o <b>plano de assinatura</b> (RN-070): Básico 15%, Profissional 12%,
+/// Enterprise 10% — a maior comissão pertence ao menor plano, porque a escada troca
+/// assinatura por comissão.
+///
+/// O repasse é <b>um só</b>: vai ao veterinário autônomo ou à empresa. A remuneração
+/// interna dos vinculados é relação da clínica e está fora do escopo da plataforma
+/// (RN-072).
 /// </summary>
 public interface ISplitFinanceiroStrategy
 {
-    /// <summary>Indica se esta strategy é aplicável ao veterinário informado.</summary>
-    bool Aplicavel(Veterinario veterinario);
+    /// <summary>Plano ao qual esta strategy se aplica.</summary>
+    bool Aplicavel(PlanoAssinatura plano);
 
-    /// <summary>
-    /// Processa o split e retorna o percentual que será repassado ao veterinário.
-    /// A plataforma retém o percentual restante.
-    /// </summary>
-    decimal CalcularPercentualVeterinario(Veterinario veterinario, Pagamento pagamento);
+    /// <summary>Calcula a repartição de um valor bruto.</summary>
+    ResultadoDoSplit Calcular(decimal valorBruto);
 }
