@@ -57,6 +57,19 @@ public class StorageAdapterLocal : IStorageAdapter
         Task.FromResult(Assinar(chave, "leitura", validade));
 
     /// <inheritdoc/>
+    public async Task GravarAsync(string chave, byte[] conteudo, string contentType)
+    {
+        var caminho = CaminhoDe(chave);
+        Directory.CreateDirectory(Path.GetDirectoryName(caminho)!);
+
+        await File.WriteAllBytesAsync(caminho, conteudo);
+
+        _logger.LogInformation(
+            "Objeto gravado pela API no storage local | chave={Chave} bytes={Bytes} tipo={Tipo}",
+            chave, conteudo.Length, contentType);
+    }
+
+    /// <inheritdoc/>
     public Task<bool> ExisteAsync(string chave) => Task.FromResult(File.Exists(CaminhoDe(chave)));
 
     /// <inheritdoc/>

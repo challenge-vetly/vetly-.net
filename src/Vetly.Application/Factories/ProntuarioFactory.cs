@@ -1,14 +1,15 @@
-using Vetly.Application.DTOs.Animal;
-using Vetly.Application.DTOs.Consulta;
-using Vetly.Application.DTOs.Veterinario;
+using Vetly.Application.DTOs.Documento;
 using Vetly.Domain.Entities;
 using Vetly.Domain.Enums;
 
 namespace Vetly.Application.Factories;
 
 /// <summary>
-/// Factory responsável pela criação de documentos do tipo <see cref="TipoDocumento.Prontuario"/>.
-/// Registrada automaticamente via IEnumerable&lt;IDocumentoFactory&gt; no DI container.
+/// Factory do <see cref="TipoDocumento.Prontuario"/>.
+///
+/// É o documento mais completo: registra o atendimento inteiro, na ordem clínica
+/// (anamnese → exame → hipóteses → conduta → orientações). Sai do estado final
+/// aprovado pelo veterinário (RN-082/RN-083).
 /// </summary>
 public class ProntuarioFactory : IDocumentoFactory
 {
@@ -16,13 +17,24 @@ public class ProntuarioFactory : IDocumentoFactory
     public TipoDocumento TipoSuportado => TipoDocumento.Prontuario;
 
     /// <inheritdoc/>
-    public Documento Criar(ConsultaDto consulta, VeterinarioDto veterinario, AnimalDto animal)
+    public Documento Criar(ContextoDoDocumentoDto contexto)
     {
-        // O prontuário é vinculado à consulta e assinado pelo CRMV do veterinário responsável
-        return new Documento(
+        var documento = new Documento(
             tipo: TipoDocumento.Prontuario,
-            crmvSignatario: veterinario.Crmv,
-            consultaId: consulta.Id
-        );
+            crmvSignatario: contexto.Crmv,
+            consultaId: contexto.ConsultaId);
+
+        var conteudo = contexto.Conteudo;
+
+        documento.RegistrarConteudo(BlocosDoDocumento.Juntar(
+            BlocosDoDocumento.Cabecalho(contexto, "Prontuario Veterinario"),
+            BlocosDoDocumento.Secao("ANAMNESE", conteudo.Anamnese),
+            BlocosDoDocumento.Secao("EXAME FISICO", conteudo.ExameFisico),
+            BlocosDoDocumento.Lista("HIPOTESES DIAGNOSTICAS", conteudo.HipotesesDiagnosticas),
+            BlocosDoDocumento.Secao("CONDUTA", conteudo.Conduta),
+            BlocosDoDocumento.Secao("ORIENTACOES AO RESPONSAVEL", conteudo.Orientacoes),
+            BlocosDoDocumento.Rodape(contexto)));
+
+        return documento;
     }
 }

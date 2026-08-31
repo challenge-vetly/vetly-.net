@@ -1,14 +1,15 @@
-using Vetly.Application.DTOs.Animal;
-using Vetly.Application.DTOs.Consulta;
-using Vetly.Application.DTOs.Veterinario;
+using Vetly.Application.DTOs.Documento;
 using Vetly.Domain.Entities;
 using Vetly.Domain.Enums;
 
 namespace Vetly.Application.Factories;
 
 /// <summary>
-/// Factory responsável pela criação de documentos do tipo <see cref="TipoDocumento.NotaFiscal"/>.
-/// Nota fiscal é gerada automaticamente ao dar alta em internação ou finalizar consulta paga.
+/// Factory do <see cref="TipoDocumento.NotaFiscal"/>.
+///
+/// É recibo de atendimento, e não documento fiscal com validade tributária: a emissão
+/// fiscal de verdade depende de integração com a prefeitura, que está fora do MVP. O
+/// documento diz isso em letras claras — deixar ambíguo seria pior que não emitir.
 /// </summary>
 public class NotaFiscalFactory : IDocumentoFactory
 {
@@ -16,13 +17,26 @@ public class NotaFiscalFactory : IDocumentoFactory
     public TipoDocumento TipoSuportado => TipoDocumento.NotaFiscal;
 
     /// <inheritdoc/>
-    public Documento Criar(ConsultaDto consulta, VeterinarioDto veterinario, AnimalDto animal)
+    public Documento Criar(ContextoDoDocumentoDto contexto)
     {
-        // Nota fiscal pode ser vinculada à consulta ou à internação — aqui usa consultaId
-        return new Documento(
+        var documento = new Documento(
             tipo: TipoDocumento.NotaFiscal,
-            crmvSignatario: veterinario.Crmv,
-            consultaId: consulta.Id
-        );
+            crmvSignatario: contexto.Crmv,
+            consultaId: contexto.ConsultaId);
+
+        var valor = contexto.ValorDoAtendimento is { } v ? $"R$ {v:N2}" : "nao informado";
+
+        documento.RegistrarConteudo(BlocosDoDocumento.Juntar(
+            BlocosDoDocumento.Cabecalho(contexto, "Recibo de Atendimento"),
+            $"""
+            Servico: atendimento veterinario ({contexto.Modalidade})
+            Valor: {valor}
+
+            Este recibo comprova o atendimento e o pagamento na plataforma Vetly.
+            Nao substitui documento fiscal emitido pelo prestador.
+            """,
+            BlocosDoDocumento.Rodape(contexto)));
+
+        return documento;
     }
 }

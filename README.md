@@ -12,7 +12,7 @@ O Vetly é uma API REST para gestão de clínicas veterinárias, cobrindo todo o
 | Autenticação | JWT Bearer |
 | Documentação | Scalar (tema DeepSpace) em `/scalar/v1` |
 | IA | Ollama local (modelo `llama3.1`) |
-| Testes | xUnit + Moq (444 testes verdes) |
+| Testes | xUnit + Moq (478 testes verdes) |
 
 ## Padrões aplicados
 
@@ -262,9 +262,20 @@ No plano Básico a consulta inicia normalmente, **sem captura** (RN-085): o pron
 |---|---|---|
 | GET | `/api/documentos/consulta/{id}` | Documentos de uma consulta |
 | GET | `/api/documentos/{id}` | Detalhe |
-| POST | `/api/documentos/consulta/{id}?tipo={TipoDocumento}` | Gerar via Factory — exige diagnóstico validado (RN-082) |
+| GET | `/api/documentos/animal/{id}` | Board do pet: documentos publicados de um animal (RN-011/RN-090) |
+| POST | `/api/documentos/consulta/{id}?tipo={TipoDocumento}&subtipo={TipoAtestado}` | Gerar via Factory, com conteúdo e PDF — exige diagnóstico validado (RN-082/RN-083) |
 | POST | `/api/documentos/{id}/assinar` | Assinar digitalmente (RN-087) |
+| POST | `/api/documentos/{id}/publicar` | Publicar no board do pet (RN-011/RN-090) |
+| POST | `/api/documentos/{id}/lido` | Registrar que o Responsável abriu o documento |
 | POST | `/api/documentos/{id}/correcao` | Criar versão corrigida — após 24h exige justificativa (RN-088/RN-089) |
+
+**Gerar documento é formatar, não inferir.** O conteúdo sai do estado final aprovado pelo veterinário, lido da trilha de auditoria (RN-083) — não do rascunho da IA. Sem conteúdo aprovado a geração devolve 422: decida sobre o rascunho ou registre o prontuário manual antes. Se a factory consultasse a IA de novo, o que fosse impresso poderia divergir do que o profissional aprovou.
+
+Cada tipo formata o que lhe cabe: o prontuário registra o atendimento na ordem clínica; a receita sai da conduta e recusa emissão sem prescrição, porque receita vazia pareceria válida; o atestado muda o **texto** conforme o subtipo, não só o rótulo (RN-086); a nota fiscal é recibo e diz em letras claras que não substitui documento fiscal. Seção sem conteúdo é omitida — impressa em branco, pareceria documento incompleto.
+
+O PDF é anexado na mesma chamada e entra pelo registro de mídia comum, então sua URL é sempre temporária (RN-090). O gerador é próprio, sem biblioteca de PDF: escreve um PDF 1.4 em Helvetica, uma das 14 fontes que todo leitor já traz. Para o que o MVP precisa — um documento legível que o Responsável leva para outra clínica — trazer uma dependência seria adicionar infraestrutura sem necessidade (§11); quando o documento ganhar identidade visual e QR de verificação, troca-se a implementação de `IGeradorDePdf`.
+
+**Gerar e publicar são passos separados**: o veterinário gera, confere e só então entrega. Receita sem assinatura não é publicada — no board ela pareceria válida sem ser (RN-087). Publicar é idempotente: republicar preserva a data original, que é a referência da notificação ao Responsável.
 
 ### Pagamentos
 | Método | Rota | Descrição |
@@ -402,6 +413,9 @@ Sem parâmetros valem página 1 e 20 itens. O tamanho é limitado a 100 por pág
 | RN-082 | Toda decisão vira registro append-only com o conteúdo final, quem decidiu e o modelo — o repositório não tem atualizar nem remover | `LogAuditoriaIa` + `AuditoriaIaRepository` |
 | RN-085 | Prontuário manual fecha o atendimento quando não houve IA no caminho; com rascunho pendente devolve 409 | `ProntuarioService.RegistrarManualAsync` |
 | RN-082 | Documentos só podem ser gerados após `consulta.DiagnosticoValidado = true` E pagamento confirmado | `DocumentoService.GerarAsync` |
+| RN-083 | O conteúdo do documento é formatação do estado final aprovado, lido da trilha de auditoria; sem conteúdo aprovado, não se gera documento | `DocumentoService.ObterConteudoAprovadoAsync` + factories |
+| RN-086 | O subtipo do atestado muda o texto do documento (óbito, saúde, vacinação), e não apenas o rótulo | `AtestadoFactory.Declaracao` |
+| RN-090 | Documento gerado vira PDF no storage, com URL sempre temporária; publicar no board é passo separado, e receita só vai ao board assinada | `IGeradorDePdf` + `DocumentoService.PublicarAsync` |
 | RN-087 | Finalizar consulta exige documento `ReceitaVeterinaria` assinado digitalmente | `ConsultaService.FinalizarAsync` |
 | RN-088 | Correção cria nova versão do documento (original preservado com `VersaoOriginalId`) | `DocumentoService.CorrigirAsync` |
 | RN-089 | Correção após 24h exige justificativa não vazia | `DocumentoService.CorrigirAsync` |
