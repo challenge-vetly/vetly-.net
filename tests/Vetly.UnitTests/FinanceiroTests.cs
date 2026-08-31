@@ -55,7 +55,12 @@ public class FinanceiroTests
         pagamento.Confirmar();
 
         if (desconto > 0m)
-            pagamento.AplicarDesconto(MovimentoDePontos.PontosPara(desconto), desconto);
+        {
+            var (dv, dp, faixa) = RegrasDeFidelidade.Dividir(desconto);
+
+            pagamento.AplicarDesconto(
+                Guid.NewGuid(), RegrasDeFidelidade.PontosPara(desconto), desconto, dv, dp, faixa);
+        }
 
         var repasse = valor - comissao - desconto;
         pagamento.RegistrarSplit(PlanoAssinatura.Profissional, 12m, comissao, repasse, destinatario ?? _vet.Id);

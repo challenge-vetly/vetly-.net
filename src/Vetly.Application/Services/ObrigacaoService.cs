@@ -17,6 +17,7 @@ public class ObrigacaoService : IObrigacaoService
 {
     private readonly IObrigacaoRepository _repo;
     private readonly IAnimalRepository _animalRepo;
+    private readonly IFidelidadeService _fidelidade;
     private readonly IUsuarioAtual _usuario;
 
     /// <summary>
@@ -29,10 +30,12 @@ public class ObrigacaoService : IObrigacaoService
     public ObrigacaoService(
         IObrigacaoRepository repo,
         IAnimalRepository animalRepo,
+        IFidelidadeService fidelidade,
         IUsuarioAtual usuario)
     {
         _repo = repo;
         _animalRepo = animalRepo;
+        _fidelidade = fidelidade;
         _usuario = usuario;
     }
 
@@ -95,10 +98,21 @@ public class ObrigacaoService : IObrigacaoService
         if (quando > DateTime.UtcNow.AddDays(1))
             throw new ValidationException("quando", "Nao e possivel registrar cumprimento no futuro.");
 
+        // RN-047: o credito e por cumprir NO PRAZO. Cumprir atrasado resolve a
+        // pendencia do animal, mas nao rende os 50 pontos — o bonus paga o
+        // comportamento preventivo, nao o corretivo.
+        var noPrazo = quando <= obrigacao.ProximoVencimento;
+
         obrigacao.Cumprir(quando, dto.ConsultaId, _usuario.VeterinarioId);
 
         _repo.Atualizar(obrigacao);
         await _repo.SalvarAsync();
+
+        if (noPrazo)
+        {
+            await _fidelidade.CreditarPorObrigacaoAsync(
+                obrigacao.TutorId, obrigacao.Id, obrigacao.Descricao);
+        }
 
         return Mapear(obrigacao, DateTime.UtcNow);
     }

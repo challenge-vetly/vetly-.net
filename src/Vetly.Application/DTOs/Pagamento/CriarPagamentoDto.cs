@@ -20,9 +20,11 @@ public class CriarPagamentoDto
     public MeioPagamento MeioPagamento { get; set; }
 
     /// <summary>
-    /// Pontos de fidelidade a resgatar nesta cobrança (RN-051). O desconto sai da
-    /// comissão da plataforma: o prestador recebe o repasse cheio de todo jeito.
+    /// Cupom de fidelidade a aplicar nesta cobrança (RN-051/RN-053).
+    ///
+    /// O cupom é emitido antes, em <c>POST /api/fidelidade/resgates</c>: os pontos já
+    /// saíram do saldo e a divisão do custo já está gravada nele. Aqui ele só é
+    /// consumido — assim o Responsável vê o desconto antes de decidir pagar.
     /// </summary>
-    [Range(0, int.MaxValue, ErrorMessage = "Os pontos a resgatar não podem ser negativos.")]
-    public int PontosAResgatar { get; set; }
+    public Guid? CupomId { get; set; }
 }

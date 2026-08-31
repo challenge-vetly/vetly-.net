@@ -34,8 +34,10 @@ public class ObrigacaoPetTests
         _repo.Setup(r => r.ObterDoAnimalAsync(It.IsAny<Guid>(), It.IsAny<bool>())).ReturnsAsync([]);
     }
 
+    private readonly Mock<IFidelidadeService> _fidelidade = new();
+
     private ObrigacaoService CriarServico() =>
-        new(_repo.Object, _animalRepo.Object, _usuario.Object);
+        new(_repo.Object, _animalRepo.Object, _fidelidade.Object, _usuario.Object);
 
     private ObrigacaoPet Obrigacao(
         int venceEmDias,
@@ -308,5 +310,32 @@ public class ObrigacaoPetTests
     {
         Assert.Throws<ArgumentOutOfRangeException>(() => new ObrigacaoPet(
             _animal.Id, _tutorId, TipoObrigacaoPet.Vacina, "V10", DateTime.UtcNow.AddDays(30), -1));
+    }
+
+    // ── Crédito de fidelidade (RN-047) ───────────────────────────────────────
+
+    [Fact]
+    public async Task Cumprir_NoPrazo_CreditaOsCinquentaPontos()
+    {
+        var obrigacao = Obrigacao(venceEmDias: 5);
+
+        await CriarServico().CumprirAsync(obrigacao.Id, new CumprirObrigacaoDto());
+
+        // RN-047: o bonus fixo paga comportamento de cuidado, nao gasto
+        _fidelidade.Verify(f => f.CreditarPorObrigacaoAsync(
+            _tutorId, obrigacao.Id, obrigacao.Descricao), Times.Once);
+    }
+
+    [Fact]
+    public async Task Cumprir_Atrasado_NaoCredita()
+    {
+        var vencida = Obrigacao(venceEmDias: -10);
+
+        await CriarServico().CumprirAsync(vencida.Id, new CumprirObrigacaoDto());
+
+        // Cumprir atrasado resolve a pendencia do animal, mas nao rende o bonus: o
+        // credito e do comportamento preventivo, nao do corretivo
+        _fidelidade.Verify(f => f.CreditarPorObrigacaoAsync(
+            It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<string>()), Times.Never);
     }
 }

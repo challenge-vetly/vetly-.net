@@ -117,25 +117,41 @@ public class PagamentoWebhookTests
         Assert.Equal("Simulada", resposta.Liquidacao);
     }
 
-    // ── Resgate de pontos no checkout (RN-051) ───────────────────────────────
+    // ── Cupom de fidelidade no checkout (RN-051) ─────────────────────────────
 
-    /// <summary>Prepara o resgate que o servico de fidelidade devolveria.</summary>
-    private void ResgateDe(int pontos, decimal desconto) =>
-        _fidelidade
-            .Setup(f => f.ApurarDescontoAsync(
-                It.IsAny<Guid>(), pontos, It.IsAny<decimal>(), It.IsAny<decimal>()))
-            .ReturnsAsync(new DescontoAplicadoDto
-            {
-                PontosResgatados = pontos,
-                ValorDoDesconto = desconto,
-                ValorFinal = 200m - desconto
-            });
+    /// <summary>Um cupom vigente, como o resgate o teria emitido.</summary>
+    private CupomDto CupomDe(decimal desconto)
+    {
+        var (vetly, prestador, faixa) = RegrasDeFidelidade.Dividir(desconto);
+
+        var cupom = new CupomDto
+        {
+            Id = Guid.NewGuid(),
+            CodigoQr = "VETLY-ABCDEFGHJKLM",
+            ItemRef = "mock-racao-premium-15kg",
+            Categoria = CategoriaItem.Alimentacao,
+            PontosDebitados = RegrasDeFidelidade.PontosPara(desconto),
+            Desconto = desconto,
+            Faixa = faixa,
+            DescontoVetly = vetly,
+            DescontoPrestador = prestador,
+            Status = StatusCupom.Emitido,
+            EmitidoEm = DateTime.UtcNow,
+            ExpiraEm = DateTime.UtcNow.AddDays(30)
+        };
+
+        _fidelidade.Setup(f => f.ObterCupomAsync(cupom.Id)).ReturnsAsync(cupom);
+
+        return cupom;
+    }
 
     [Fact]
-    public async Task Resgate_SaiDaComissaoDaPlataformaENaoDoRepasse()
+    public async Task Cupom_DivideOCustoEntreVetlyEPrestadorPelaFaixa()
     {
         var (_, consulta, _) = CenarioEmCheckout();
-        ResgateDe(pontos: 1000, desconto: 10m);
+
+        // R$ 20 cai na faixa 60/40 (RN-051): Vetly 12,00 e prestador 8,00
+        var cupom = CupomDe(20.00m);
 
         Pagamento? criado = null;
         _repo.Setup(r => r.AdicionarAsync(It.IsAny<Pagamento>()))
@@ -147,26 +163,63 @@ public class PagamentoWebhookTests
             ConsultaId = consulta.Id,
             Valor = 200m,
             MeioPagamento = MeioPagamento.Pix,
-            PontosAResgatar = 1000
+            CupomId = cupom.Id
         });
 
         // Plano Profissional: 12% de 200 = 24 de comissao, 176 de repasse.
-        // O desconto de 10 sai da comissao; o repasse nao muda.
-        Assert.Equal(14m, resposta.Split.ComissaoVetly);
-        Assert.Equal(176m, resposta.Split.Repasse);
-        Assert.Equal(176m, criado!.Repasse);
+        // A Vetly absorve 12 da comissao; o prestador, 8 do repasse.
+        Assert.Equal(12m, resposta.Split.ComissaoVetly);
+        Assert.Equal(168m, resposta.Split.Repasse);
 
-        // Fazer o prestador custear um programa que ele nao ofereceu seria tirar
-        // dinheiro de terceiro
-        Assert.Equal(200m, criado.Valor);
-        Assert.Equal(190m, criado.ValorCobrado);
+        // O bruto continua sendo o preco do servico
+        Assert.Equal(200m, criado!.Valor);
+        Assert.Equal(180m, criado.ValorCobrado);
     }
 
     [Fact]
-    public async Task Resgate_CobraDoProvedorApenasOValorComDesconto()
+    public async Task Cupom_AteDezReais_NaoOneraOPrestador()
     {
         var (_, consulta, _) = CenarioEmCheckout();
-        ResgateDe(pontos: 1000, desconto: 10m);
+        var cupom = CupomDe(9.00m);
+
+        var resposta = await CriarServico().CriarCobrancaAsync(new CriarPagamentoDto
+        {
+            TutorId = consulta.TutorId, ConsultaId = consulta.Id, Valor = 200m,
+            MeioPagamento = MeioPagamento.Pix, CupomId = cupom.Id
+        });
+
+        // Desconto pequeno e bancado so pela Vetly: e o que preserva a adesao ao
+        // programa (RN-051)
+        Assert.Equal(15m, resposta.Split.ComissaoVetly);
+        Assert.Equal(176m, resposta.Split.Repasse);
+    }
+
+    [Fact]
+    public async Task Cupom_AsTresParcelasFechamOBruto()
+    {
+        var (_, consulta, _) = CenarioEmCheckout();
+        var cupom = CupomDe(20.00m);
+
+        Pagamento? criado = null;
+        _repo.Setup(r => r.AdicionarAsync(It.IsAny<Pagamento>()))
+            .Callback<Pagamento>(p => criado = p).Returns(Task.CompletedTask);
+
+        await CriarServico().CriarCobrancaAsync(new CriarPagamentoDto
+        {
+            TutorId = consulta.TutorId, ConsultaId = consulta.Id, Valor = 200m,
+            MeioPagamento = MeioPagamento.Pix, CupomId = cupom.Id
+        });
+
+        // comissao + repasse + desconto = bruto. Se nao fecha, ha dinheiro sem dono.
+        Assert.Equal(criado!.Valor,
+            criado.Comissao + criado.Repasse + criado.ValorDoDesconto);
+    }
+
+    [Fact]
+    public async Task Cupom_CobraDoProvedorApenasOValorComDesconto()
+    {
+        var (_, consulta, _) = CenarioEmCheckout();
+        var cupom = CupomDe(20.00m);
 
         CriarCobrancaRequest? pedido = null;
         _adaptador
@@ -176,51 +229,58 @@ public class PagamentoWebhookTests
 
         await CriarServico().CriarCobrancaAsync(new CriarPagamentoDto
         {
-            TutorId = consulta.TutorId,
-            ConsultaId = consulta.Id,
-            Valor = 200m,
-            MeioPagamento = MeioPagamento.Pix,
-            PontosAResgatar = 1000
+            TutorId = consulta.TutorId, ConsultaId = consulta.Id, Valor = 200m,
+            MeioPagamento = MeioPagamento.Pix, CupomId = cupom.Id
         });
 
-        // O Responsavel paga o liquido; o bruto continua sendo o preco do servico
-        Assert.Equal(190m, pedido!.Value.Valor);
+        Assert.Equal(180m, pedido!.Value.Valor);
     }
 
     [Fact]
-    public async Task Resgate_LancaODebitoDepoisDeCriarACobranca()
+    public async Task Cupom_EConsumidoAoSerAplicado()
     {
         var (_, consulta, _) = CenarioEmCheckout();
-        ResgateDe(pontos: 1000, desconto: 10m);
+        var cupom = CupomDe(20.00m);
 
         await CriarServico().CriarCobrancaAsync(new CriarPagamentoDto
         {
-            TutorId = consulta.TutorId,
-            ConsultaId = consulta.Id,
-            Valor = 200m,
-            MeioPagamento = MeioPagamento.Pix,
-            PontosAResgatar = 1000
+            TutorId = consulta.TutorId, ConsultaId = consulta.Id, Valor = 200m,
+            MeioPagamento = MeioPagamento.Pix, CupomId = cupom.Id
         });
 
-        _fidelidade.Verify(f => f.RegistrarResgateAsync(
-            consulta.TutorId, 1000, 10m, It.IsAny<Guid>()), Times.Once);
+        // RN-054: um cupom vale para uma transacao
+        _fidelidade.Verify(f => f.MarcarCupomComoUsadoAsync(cupom.Id), Times.Once);
     }
 
     [Fact]
-    public async Task SemResgate_NaoConsultaAFidelidade()
+    public async Task Cupom_Expirado_NaoEAceito()
+    {
+        var (_, consulta, _) = CenarioEmCheckout();
+        var cupom = CupomDe(20.00m);
+        cupom.Status = StatusCupom.Expirado;
+
+        var ex = await Assert.ThrowsAsync<BusinessRuleException>(
+            () => CriarServico().CriarCobrancaAsync(new CriarPagamentoDto
+            {
+                TutorId = consulta.TutorId, ConsultaId = consulta.Id, Valor = 200m,
+                MeioPagamento = MeioPagamento.Pix, CupomId = cupom.Id
+            }));
+
+        Assert.Equal("RN-053", ex.Codigo);
+    }
+
+    [Fact]
+    public async Task SemCupom_NaoConsultaAFidelidade()
     {
         var (_, consulta, _) = CenarioEmCheckout();
 
         await CriarServico().CriarCobrancaAsync(new CriarPagamentoDto
         {
-            TutorId = consulta.TutorId,
-            ConsultaId = consulta.Id,
-            Valor = 200m,
+            TutorId = consulta.TutorId, ConsultaId = consulta.Id, Valor = 200m,
             MeioPagamento = MeioPagamento.Pix
         });
 
-        _fidelidade.Verify(f => f.ApurarDescontoAsync(
-            It.IsAny<Guid>(), It.IsAny<int>(), It.IsAny<decimal>(), It.IsAny<decimal>()), Times.Never);
+        _fidelidade.Verify(f => f.ObterCupomAsync(It.IsAny<Guid>()), Times.Never);
     }
 
     [Fact]

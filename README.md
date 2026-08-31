@@ -12,7 +12,7 @@ O Vetly é uma API REST para gestão de clínicas veterinárias, cobrindo todo o
 | Autenticação | JWT Bearer |
 | Documentação | Scalar (tema DeepSpace) em `/scalar/v1` |
 | IA | Ollama local (modelo `llama3.1`) |
-| Testes | xUnit + Moq (675 testes verdes) |
+| Testes | xUnit + Moq (699 testes verdes) |
 
 ## Padrões aplicados
 
@@ -399,18 +399,23 @@ A reputação em `TB_VETERINARIO` é **recalculada** a partir das avaliações, 
 
 | Método | Rota | Descrição |
 |---|---|---|
-| GET | `/api/fidelidade/tutor/{id}/saldo` | Saldo de pontos e o que vence em 30 dias (RN-052) |
-| GET | `/api/fidelidade/tutor/{id}/extrato` | Extrato append-only dos lançamentos (RN-051/RN-052) |
+| GET | `/api/fidelidade/saldo` | Saldo, tier e o que vence em 30 dias (RN-048/RN-050) |
+| GET | `/api/fidelidade/extrato` | Extrato dos lançamentos (RN-047 a RN-052) |
+| POST | `/api/fidelidade/resgates/simular` | Desconto e divisão do custo, sem gravar (RN-017/RN-051) |
+| POST | `/api/fidelidade/resgates` | Debita em FIFO e emite o cupom (RN-018/RN-050/RN-053) |
+| GET | `/api/fidelidade/cupons` · `/{id}` | Cupons do Responsável (RN-053) |
 
-O resgate entra no checkout: `POST /api/pagamentos` aceita `pontosAResgatar`.
+O cupom é aplicado no checkout: `POST /api/pagamentos` aceita `cupomId`.
 
-**O saldo é a soma dos lançamentos, não um campo guardado.** Saldo à parte diverge do extrato no primeiro erro, e aí não há como saber qual dos dois está certo. `TB_MOVIMENTO_PONTOS` é append-only e a coluna `PONTOS` é assinada — negativa em débito e expiração — justamente para que a soma feche. Corrigir um crédito indevido é lançar o débito correspondente, como em contabilidade.
+**Os parâmetros são fechados** (`vetly-tech` §1): serviço pago rende **1 ponto por R$ 1**; obrigação cumprida **no prazo** rende **50 pontos fixos** — é o bônus que paga comportamento de cuidado, não gasto, e por isso cumprir atrasado resolve a pendência mas não credita. Ambos passam pelo multiplicador do tier: Bronze 1,0× · Prata 1,25× · Ouro 1,5×, sobre o acúmulo de 12 meses. **100 pontos valem R$ 3,00.**
 
-Consulta realizada e **paga** rende 1 ponto por real (RN-052); 100 pontos valem R$ 1,00 no resgate. Consulta cancelada ou com pagamento não confirmado não credita — o programa pagaria por receita que não entrou. O crédito vale um ano, e o saldo mostra o que vence nos próximos 30 dias: avisar antes é o que separa um programa de fidelidade de uma pegadinha.
+O tier conta o que foi **creditado** na janela, não o saldo: quem resgatou não perde a faixa por ter usado o programa — usar é exatamente o comportamento que o programa quer.
 
-**Quem paga o desconto é a plataforma (RN-051).** Esta era a pendência da onda 4, e a decisão foi a mais conservadora: o desconto do resgate **sai da comissão da Vetly, não do repasse ao prestador**. O valor bruto continua sendo o preço do serviço, e é sobre ele que o repasse é calculado; o que muda é só o que a plataforma retém. Fazer o veterinário custear um programa de fidelidade que ele não ofereceu seria tirar dinheiro de terceiro. Por consequência, o resgate é limitado à comissão daquela cobrança — a Vetly banca a própria fidelidade, mas não paga para atender — e a mensagem de erro diz quantos pontos cabem.
+**O saldo é a soma dos lançamentos, não um campo guardado.** Saldo à parte diverge do extrato no primeiro erro. O crédito é um **lote** com saldo próprio, porque o consumo é **FIFO** (RN-050): o resgate come primeiro o ponto mais antigo, que é o que está mais perto de vencer. Sem isso, "expirar o que venceu" e "gastar o mais velho" seriam a mesma conta feita de dois jeitos incompatíveis. Ponto já gasto não expira de novo, e o estorno de cancelamento (RN-052) só tira o que ainda não foi usado — cobrar de volta ponto resgatado de boa-fé deixaria o saldo negativo.
 
-A expiração é uma rotina diária, e a baixa entra como **lançamento** no extrato em vez de o saldo cair sozinho. Ponto já gasto não expira de novo: quem resgatou e depois viu o crédito vencer não fica devendo pontos que usou legitimamente.
+**Quem paga o desconto depende do tamanho dele (RN-051).** Até R$ 10 a Vetly banca sozinha, o que preserva a adesão do vet ao programa; de R$ 10,01 a R$ 30 a divisão é 60/40; acima de R$ 30, 30/70 — resgate grande é co-financiado por quem captura a recorrência. A parte da Vetly sai da comissão, a do prestador sai do repasse, e o bruto continua sendo o preço do serviço: **comissão + repasse + desconto = valor**.
+
+O resgate emite um **cupom** com código QR e 30 dias de validade (RN-053). Vencido, os pontos **não** voltam ao saldo — é o que evita passivo perpétuo e resgate especulativo. Um cupom vale para uma transação (RN-054). A validação física no estabelecimento não existe no MVP (RN-019).
 
 ### Obrigações do pet
 
@@ -518,8 +523,13 @@ Sem parâmetros valem página 1 e 20 itens. O tamanho é limitado a 100 por pág
 | RN-094/RN-095 | Régua diária transforma obrigação vencendo em um aviso por animal, com intervalo mínimo de 7 dias, e cria o lembrete que aciona a clínica após 3 tentativas | `AvisarObrigacoesVencendo` + `LembreteAgendado` |
 | RN-055 | Só o Responsável atendido avalia, uma vez por consulta e em até 30 dias; índice único garante a invariante sob concorrência | `Avaliacao` + `AvaliacaoService` |
 | RN-057 | Reputação recalculada a partir das avaliações; abaixo de 3 a nota não é pública nem entra no score, e comentário moderado não tira a nota da média | `AvaliacaoService.RecalcularReputacaoAsync` + `Veterinario.TemNotaPublica` |
-| RN-051 | O desconto do resgate sai da comissão da plataforma, não do repasse: o bruto e o repasse não mudam, e o resgate é limitado à comissão daquela cobrança | `Pagamento.AplicarDesconto` + `PagamentoService.AplicarResgateAsync` |
-| RN-052 | Consulta realizada e paga rende 1 ponto por real; o saldo é a soma de um extrato append-only, e o crédito expira em um ano com lançamento de baixa | `MovimentoDePontos` + `FidelidadeService` |
+| RN-047 | Serviço pago rende 1 ponto por real; obrigação cumprida **no prazo** rende 50 pontos fixos — cumprir atrasado não credita | `MovimentoDePontos.PorServicoPago` / `PorObrigacaoCumprida` |
+| RN-048 | Tier por acúmulo de 12 meses (Bronze/Prata/Ouro) com multiplicador 1,0/1,25/1,5 aplicado no crédito; o tier conta o creditado, não o saldo | `RegrasDeFidelidade.TierPara` |
+| RN-049 | 100 pontos = R$ 3,00, arredondado a favor do programa nos dois sentidos | `RegrasDeFidelidade.EmReais` / `PontosPara` |
+| RN-050 | Crédito é lote com saldo próprio; resgate consome em FIFO e a expiração baixa só o que sobrou | `MovimentoDePontos.Consumir` + `FidelidadeService.ConsumirFifoAsync` |
+| RN-051 | O custo do desconto é dividido por faixa (100/0 · 60/40 · 30/70): a parte da Vetly sai da comissão, a do prestador sai do repasse, e as três parcelas fecham o bruto | `RegrasDeFidelidade.Dividir` + `Pagamento.AplicarDesconto` |
+| RN-052 | Cancelamento estorna os pontos da consulta, tirando só o que ainda não foi gasto | `FidelidadeService.EstornarPorConsultaAsync` |
+| RN-053/RN-054 | Cupom com QR e 30 dias; vencido, os pontos não voltam; vale para uma transação | `CupomResgate` |
 | RN-045 | Obrigação de cuidado guarda periodicidade e se reagenda sozinha ao ser cumprida, contando a partir do cumprimento; `Vencendo` avisa 30 dias antes | `ObrigacaoPet` + `ObrigacaoService` |
 | RN-046 | Obrigações derivadas da carteira de vacinação, uma por tipo, a partir da dose mais recente; derivar de novo não duplica | `ObrigacaoService.DerivarDaCarteiraAsync` |
 | RN-090 | Colmeia: o Responsável (e só ele) autoriza um veterinário de fora a alcançar o histórico do animal, com escopo e prazo; concessão vigente duplicada devolve 409 | `AcessoColmeia` + `ColmeiaService` |

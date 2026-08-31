@@ -26,6 +26,7 @@ public class ConsultaService : IConsultaService
     private readonly IUsuarioAtual _usuario;
     private readonly IAgendaRepository _agendaRepo;
     private readonly IFilaDeJobs _fila;
+    private readonly IFidelidadeService _fidelidade;
 
     public ConsultaService(
         IConsultaRepository repo,
@@ -37,7 +38,8 @@ public class ConsultaService : IConsultaService
         IEnumerable<ICancelamentoStrategy> strategies,
         IUsuarioAtual usuario,
         IAgendaRepository agendaRepo,
-        IFilaDeJobs fila)
+        IFilaDeJobs fila,
+        IFidelidadeService fidelidade)
     {
         _repo = repo;
         _pagamentoRepo = pagamentoRepo;
@@ -49,6 +51,7 @@ public class ConsultaService : IConsultaService
         _usuario = usuario;
         _agendaRepo = agendaRepo;
         _fila = fila;
+        _fidelidade = fidelidade;
     }
 
     /// <summary>
@@ -273,6 +276,11 @@ public class ConsultaService : IConsultaService
         _repo.Atualizar(consulta);
         _pagamentoRepo.Atualizar(pagamento);
         await _repo.SalvarAsync();
+
+        // RN-052: pontos so valem para consulta confirmada E realizada. Cancelada,
+        // o credito e desfeito — senao o programa teria pago por um atendimento que
+        // nao aconteceu.
+        await _fidelidade.EstornarPorConsultaAsync(consulta.Id);
 
         // O horario volta a valer, e quem esta na fila de espera precisa saber (RN-037)
         await LiberarHorarioAsync(consulta);

@@ -1,10 +1,11 @@
 using System.ComponentModel.DataAnnotations;
 using Vetly.Domain.Enums;
+using Vetly.Domain.ValueObjects;
 
 namespace Vetly.Domain.Entities;
 
 /// <summary>
-/// Um lançamento no extrato de pontos do Responsável (RN-051/RN-052).
+/// Um lançamento no extrato de pontos do Responsável (RN-047 a RN-052).
 ///
 /// O saldo é a <b>soma dos lançamentos</b>, e não um campo que alguém atualiza. Saldo
 /// guardado à parte diverge do extrato no primeiro erro, e aí não há como saber qual
@@ -12,30 +13,14 @@ namespace Vetly.Domain.Entities;
 ///
 /// A tabela é append-only: pontos não são editados nem apagados. Corrigir um crédito
 /// indevido é lançar o débito correspondente, do mesmo jeito que em contabilidade.
+///
+/// O crédito carrega <see cref="Restante"/> porque o consumo é <b>FIFO</b> (RN-050):
+/// o resgate come primeiro o ponto mais antigo, que é o que está mais perto de
+/// vencer. Sem controlar o saldo de cada lote, "expirar o que venceu" e "gastar o
+/// mais velho" viram a mesma conta feita de dois jeitos incompatíveis.
 /// </summary>
 public class MovimentoDePontos
 {
-    /// <summary>
-    /// Pontos por real gasto em consulta realizada (RN-052). Um por real mantém a
-    /// conta legível para quem recebe: R$ 180 viram 180 pontos.
-    /// </summary>
-    public const int PontosPorReal = 1;
-
-    /// <summary>
-    /// Quanto vale um ponto no resgate (RN-051). Cem pontos = R$ 1,00, ou seja, o
-    /// retorno é de 1% do que foi gasto.
-    /// </summary>
-    public const decimal ReaisPorPonto = 0.01m;
-
-    /// <summary>
-    /// Mínimo para resgatar. Abaixo disso o desconto sairia em centavos, o que gera
-    /// mais confusão no extrato do que valor para quem resgata.
-    /// </summary>
-    public const int MinimoParaResgate = 100;
-
-    /// <summary>Validade do crédito. Ponto que nunca expira vira passivo eterno.</summary>
-    public static readonly TimeSpan ValidadeDoCredito = TimeSpan.FromDays(365);
-
     /// <summary>Identificador do lançamento (chave primária).</summary>
     public Guid Id { get; private set; }
 
@@ -53,8 +38,26 @@ public class MovimentoDePontos
     /// </summary>
     public int Pontos { get; private set; }
 
+    /// <summary>Pontos antes do multiplicador de tier (RN-047/RN-048).</summary>
+    public int PontosBrutos { get; private set; }
+
+    /// <summary>Multiplicador do tier vigente no momento do crédito (RN-048).</summary>
+    public decimal Multiplicador { get; private set; }
+
+    /// <summary>
+    /// Quanto ainda resta deste lote de crédito. Só faz sentido em crédito, e é o que
+    /// permite o consumo FIFO e a expiração por lote (RN-050).
+    /// </summary>
+    public int Restante { get; private set; }
+
     /// <summary>Consulta que originou o lançamento, quando houve uma.</summary>
     public Guid? ConsultaId { get; private set; }
+
+    /// <summary>Obrigação do pet cumprida que originou o crédito (RN-047).</summary>
+    public Guid? ObrigacaoId { get; private set; }
+
+    /// <summary>Cupom que consumiu estes pontos, no débito (RN-053).</summary>
+    public Guid? CupomId { get; private set; }
 
     /// <summary>Pagamento em que o desconto foi aplicado, no débito.</summary>
     public Guid? PagamentoId { get; private set; }
@@ -87,60 +90,104 @@ public class MovimentoDePontos
         TutorId = tutorId;
         Tipo = tipo;
         Pontos = pontos;
+        Multiplicador = 1.0m;
         Descricao = descricao;
         OcorridoEm = DateTime.UtcNow;
     }
 
     /// <summary>
-    /// Credita pontos por uma consulta realizada e paga (RN-052).
+    /// Credita pontos por um serviço pago: 1 ponto por real, arredondado para baixo
+    /// (RN-047), com o multiplicador do tier vigente (RN-048).
     ///
     /// Só o valor efetivamente cobrado gera ponto: consulta cancelada ou com pagamento
-    /// recusado não vira crédito, senão o programa pagaria por receita que não entrou.
+    /// recusado não vira crédito, senão o programa pagaria por receita que não entrou
+    /// (RN-052).
     /// </summary>
-    public static MovimentoDePontos PorConsulta(Guid tutorId, Guid consultaId, decimal valorPago)
+    public static MovimentoDePontos PorServicoPago(
+        Guid tutorId, Guid consultaId, decimal valorPago, TierFidelidade tier)
     {
         if (valorPago <= 0)
             throw new ArgumentOutOfRangeException(nameof(valorPago),
                 "Só valor efetivamente cobrado gera pontos.");
 
-        var pontos = (int)Math.Floor(valorPago * PontosPorReal);
+        var brutos = (int)Math.Floor(valorPago * RegrasDeFidelidade.PontosPorReal);
+
+        return Creditar(tutorId, brutos, tier, $"Consulta realizada - R$ {valorPago:N2}",
+            consultaId: consultaId);
+    }
+
+    /// <summary>
+    /// Credita os 50 pontos fixos por obrigação do pet cumprida no prazo (RN-047).
+    ///
+    /// É o crédito que paga <b>comportamento</b>, e por isso independe do valor: manter
+    /// a vacinação em dia vale o mesmo numa consulta de R$ 80 e numa de R$ 300.
+    /// </summary>
+    public static MovimentoDePontos PorObrigacaoCumprida(
+        Guid tutorId, Guid obrigacaoId, string descricaoDaObrigacao, TierFidelidade tier) =>
+        Creditar(tutorId, RegrasDeFidelidade.PontosPorObrigacaoCumprida, tier,
+            $"{descricaoDaObrigacao} em dia", obrigacaoId: obrigacaoId);
+
+    /// <summary>Aplica o multiplicador do tier e monta o lote de crédito.</summary>
+    private static MovimentoDePontos Creditar(
+        Guid tutorId, int brutos, TierFidelidade tier, string descricao,
+        Guid? consultaId = null, Guid? obrigacaoId = null)
+    {
+        var multiplicador = RegrasDeFidelidade.MultiplicadorDe(tier);
+
+        // Para baixo: o programa não credita ponto que não foi conquistado
+        var creditados = (int)Math.Floor(brutos * multiplicador);
 
         var movimento = new MovimentoDePontos(
-            tutorId, TipoMovimentoDePontos.Credito, pontos,
-            $"Consulta realizada - R$ {valorPago:N2}")
+            tutorId, TipoMovimentoDePontos.Credito, creditados, descricao)
         {
-            ConsultaId = consultaId
+            PontosBrutos = brutos,
+            Multiplicador = multiplicador,
+            Restante = creditados,
+            ConsultaId = consultaId,
+            ObrigacaoId = obrigacaoId
         };
 
-        movimento.ExpiraEm = movimento.OcorridoEm.Add(ValidadeDoCredito);
+        movimento.ExpiraEm = movimento.OcorridoEm.Add(RegrasDeFidelidade.ValidadeDosPontos);
 
         return movimento;
     }
 
     /// <summary>
-    /// Debita pontos usados como desconto (RN-051). O lançamento guarda quanto virou
+    /// Debita pontos usados num resgate (RN-050). O lançamento guarda quanto virou
     /// dinheiro, porque é isso que a conferência financeira precisa cruzar.
     /// </summary>
-    public static MovimentoDePontos PorResgate(Guid tutorId, int pontos, decimal valorEmReais, Guid? pagamentoId)
+    public static MovimentoDePontos PorResgate(
+        Guid tutorId, int pontos, decimal valorEmReais, Guid cupomId)
     {
-        if (pontos < MinimoParaResgate)
-            throw new ArgumentOutOfRangeException(nameof(pontos),
-                $"O resgate mínimo é de {MinimoParaResgate} pontos.");
+        if (pontos <= 0)
+            throw new ArgumentOutOfRangeException(nameof(pontos), "O resgate deve debitar pontos.");
 
         return new MovimentoDePontos(
             tutorId, TipoMovimentoDePontos.Debito, -pontos,
-            $"Desconto aplicado - R$ {valorEmReais:N2}")
+            $"Resgate - R$ {valorEmReais:N2}")
         {
-            PagamentoId = pagamentoId,
+            CupomId = cupomId,
             ValorEmReais = valorEmReais
         };
     }
 
     /// <summary>
+    /// Estorna os pontos de uma consulta cancelada ou reembolsada (RN-052).
+    ///
+    /// Estornar é lançar o oposto, não apagar o crédito: o extrato precisa mostrar que
+    /// houve crédito e que ele foi desfeito, senão o Responsável vê o saldo cair sem
+    /// explicação.
+    /// </summary>
+    public static MovimentoDePontos PorEstorno(Guid tutorId, int pontos, Guid consultaId) =>
+        new(tutorId, TipoMovimentoDePontos.Estorno, -pontos, "Estorno por cancelamento")
+        {
+            ConsultaId = consultaId
+        };
+
+    /// <summary>
     /// Baixa um crédito vencido. O extrato mostra a expiração em vez de o saldo cair
     /// sozinho, e o lançamento aponta para o crédito que baixou — é assim que a rotina
-    /// sabe o que já processou, sem precisar alterar o crédito original. Tabela
-    /// append-only não tem coluna de "já tratado".
+    /// sabe o que já processou. Tabela append-only não tem coluna de "já tratado".
     /// </summary>
     public static MovimentoDePontos PorExpiracao(Guid tutorId, int pontos, Guid creditoOrigemId) =>
         new(tutorId, TipoMovimentoDePontos.Expiracao, -pontos, "Pontos expirados")
@@ -152,9 +199,22 @@ public class MovimentoDePontos
     public static MovimentoDePontos PorAjuste(Guid tutorId, int pontos, string motivo) =>
         new(tutorId, TipoMovimentoDePontos.Ajuste, pontos, motivo);
 
-    /// <summary>Converte pontos em reais (RN-051).</summary>
-    public static decimal EmReais(int pontos) => Math.Round(pontos * ReaisPorPonto, 2);
+    /// <summary>
+    /// Consome parte deste lote no resgate FIFO (RN-050). Devolve quanto foi
+    /// efetivamente consumido, que pode ser menos do que o pedido quando o lote acaba.
+    /// </summary>
+    public int Consumir(int pontos)
+    {
+        if (Tipo != TipoMovimentoDePontos.Credito)
+            throw new InvalidOperationException("Somente lotes de crédito são consumidos.");
 
-    /// <summary>Quantos pontos são necessários para um desconto de determinado valor.</summary>
-    public static int PontosPara(decimal reais) => (int)Math.Ceiling(reais / ReaisPorPonto);
+        var consumido = Math.Min(Restante, Math.Max(pontos, 0));
+        Restante -= consumido;
+
+        return consumido;
+    }
+
+    /// <summary>Verdadeiro quando o lote venceu e ainda tem saldo a baixar (RN-050).</summary>
+    public bool VencidoEm(DateTime agora) =>
+        Tipo == TipoMovimentoDePontos.Credito && Restante > 0 && ExpiraEm <= agora;
 }
