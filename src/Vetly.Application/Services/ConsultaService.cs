@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Vetly.Application.DTOs.Animal;
 using Vetly.Application.DTOs.Cancelamento;
 using Vetly.Application.DTOs.Comum;
@@ -287,6 +288,185 @@ public class ConsultaService : IConsultaService
 
         return resultado;
     }
+
+    /// <inheritdoc/>
+    public async Task<SimulacaoDeCancelamentoDto> SimularCancelamentoAsync(Guid consultaId)
+    {
+        var consulta = await ObterNoEscopoAsync(consultaId);
+
+        if (consulta.Cancelada)
+            throw new BusinessRuleException("CONSULTA-001", "Esta consulta ja foi cancelada.");
+
+        var pagamento = await _pagamentoRepo.ObterPorConsultaAsync(consultaId)
+            ?? throw new BusinessRuleException("CONSULTA-002", "Pagamento da consulta nao encontrado.");
+
+        var agora = DateTime.UtcNow;
+
+        // A MESMA selecao de strategy do cancelamento, de proposito: se a simulacao
+        // usasse outro criterio, ela mostraria um valor e o cancelamento cobraria
+        // outro — que e exatamente o que a RN-042 quer evitar ao exigir transparencia.
+        var strategy = _strategies
+            .OrderBy(s => s.Prioridade)
+            .First(s => s.Aplicavel(consulta.DataHora, agora));
+
+        var percentualRetencao = await ObterPercentualRetencaoAsync(consulta.VeterinarioId);
+
+        // O Strategy apenas calcula; quem muda o estado do pagamento e o cancelamento.
+        // Simular nao pode deixar rastro.
+        var resultado = strategy.Executar(pagamento, percentualRetencao);
+
+        return new SimulacaoDeCancelamentoDto
+        {
+            ConsultaId = consultaId,
+            EstrategiaAplicada = resultado.EstrategiaAplicada,
+            HorasDeAntecedencia = Math.Round((consulta.DataHora - agora).TotalHours, 1),
+            ValorPago = pagamento.Valor,
+            PercentualRetencao = resultado.PercentualRetencao,
+            ValorRetido = pagamento.Valor - resultado.ValorReembolso,
+            ValorReembolso = resultado.ValorReembolso,
+            Liquidacao = "Simulada"
+        };
+    }
+
+    /// <inheritdoc/>
+    public async Task RegistrarPreSintomasAsync(Guid consultaId, PreSintomasDto dto)
+    {
+        var consulta = await ObterNoEscopoAsync(consultaId);
+
+        // Pre-sintoma depois do atendimento nao alimenta nada: o briefing ja foi lido
+        // e a IA ja recebeu o contexto (RN-005/RN-078).
+        if (consulta.Status is not (StatusConsulta.EmCheckout or StatusConsulta.Confirmada))
+            throw new BusinessRuleException("RN-036",
+                "Os pre-sintomas so podem ser informados antes do atendimento.");
+
+        consulta.RegistrarPreSintomas(JsonSerializer.Serialize(dto, OpcoesDeJson), dto.MidiaIds);
+
+        _repo.Atualizar(consulta);
+        await _repo.SalvarAsync();
+    }
+
+    /// <inheritdoc/>
+    public async Task<RemarcacaoRealizadaDto> RemarcarAsync(Guid consultaId, RemarcarConsultaDto dto)
+    {
+        var consulta = await ObterNoEscopoAsync(consultaId);
+
+        if (consulta.ContadorRemarcacoes >= Consulta.LimiteDeRemarcacoes)
+            throw new BusinessRuleException("RN-043",
+                $"Esta consulta ja atingiu o limite de {Consulta.LimiteDeRemarcacoes} remarcacoes. " +
+                "Resta cancelar sob a politica vigente.");
+
+        var novoSlot = await _agendaRepo.ObterSlotAsync(dto.NovoSlotId)
+            ?? throw new NotFoundException("Slot", dto.NovoSlotId);
+
+        if (novoSlot.VeterinarioId != consulta.VeterinarioId)
+            throw new ValidationException("novoSlotId",
+                "A remarcacao mantem o mesmo veterinario. Para trocar de profissional, cancele e agende de novo.");
+
+        // Trava antes de mover: sem isso, duas remarcacoes simultaneas mandariam dois
+        // animais para o mesmo horario (RN-035).
+        if (!novoSlot.TravarParaCheckout(consulta.Id, DateTime.UtcNow))
+            throw new ConflitoDeEstadoException("RN-035",
+                "O horario escolhido nao esta mais disponivel.");
+
+        var horarioAnterior = consulta.DataHora;
+        var slotAnterior = consulta.SlotId;
+
+        consulta.RemarcarPara(novoSlot.Inicio, novoSlot.Id);
+
+        // RN-013: o pagamento ja realizado e transferido, sem nova cobranca
+        if (consulta.StatusPagamento == StatusPagamento.Confirmado)
+            novoSlot.Confirmar();
+
+        _agendaRepo.AtualizarSlot(novoSlot);
+        _repo.Atualizar(consulta);
+
+        await _agendaRepo.SalvarAsync();
+        await _repo.SalvarAsync();
+
+        // O horario antigo volta a fila: e vaga que alguem esta esperando (RN-037)
+        await LiberarSlotAsync(slotAnterior);
+
+        return new RemarcacaoRealizadaDto
+        {
+            ConsultaId = consulta.Id,
+            HorarioAnterior = horarioAnterior,
+            NovoHorario = consulta.DataHora,
+            Remarcacoes = consulta.ContadorRemarcacoes,
+            RemarcacoesRestantes = consulta.RemarcacoesRestantes(),
+            StatusPagamento = consulta.StatusPagamento
+        };
+    }
+
+    /// <inheritdoc/>
+    public async Task<NoShowRegistradoDto> RegistrarNoShowAsync(Guid consultaId)
+    {
+        var consulta = await _repo.ObterPorIdAsync(consultaId)
+            ?? throw new NotFoundException("Consulta", consultaId);
+
+        // Quem registra o nao comparecimento e quem estava esperando: o profissional
+        // ou a unidade. O Responsavel nao declara o proprio no-show.
+        if (!_usuario.EhAdmin && _usuario.VeterinarioId != consulta.VeterinarioId)
+            throw new AcessoNegadoException("RN-105", "Esta consulta nao pertence ao seu escopo de acesso.");
+
+        if (consulta.Status != StatusConsulta.Confirmada)
+            throw new BusinessRuleException("RN-044",
+                $"Consulta com status {consulta.Status} nao pode ser marcada como no-show.");
+
+        consulta.RegistrarNoShow();
+
+        _repo.Atualizar(consulta);
+        await _repo.SalvarAsync();
+
+        // RN-044: sem reembolso, seguindo a faixa "menos de 2h ou no ato" da RN-014.
+        // Nao ha penalidade nova — reaproveita a politica que ja existia.
+        return new NoShowRegistradoDto
+        {
+            ConsultaId = consulta.Id,
+            Status = consulta.Status,
+            GerouReembolso = false,
+            RegistradoEm = DateTime.UtcNow
+        };
+    }
+
+    /// <summary>Devolve um horario a disponibilidade e avisa a lista de espera (RN-037).</summary>
+    private async Task LiberarSlotAsync(Guid? slotId)
+    {
+        if (slotId is not { } id)
+            return;
+
+        var slot = await _agendaRepo.ObterSlotAsync(id);
+
+        if (slot is null)
+            return;
+
+        slot.Liberar();
+        _agendaRepo.AtualizarSlot(slot);
+        await _agendaRepo.SalvarAsync();
+
+        await _fila.EnfileirarAsync(TipoJob.PromoverListaEspera, slot.Id.ToString());
+    }
+
+    /// <summary>
+    /// A consulta e do Responsavel que a agendou; o veterinario que a conduz e o Admin
+    /// tambem alcancam (RN-105/RN-106).
+    /// </summary>
+    private async Task<Consulta> ObterNoEscopoAsync(Guid consultaId)
+    {
+        var consulta = await _repo.ObterPorIdAsync(consultaId)
+            ?? throw new NotFoundException("Consulta", consultaId);
+
+        if (_usuario.EhAdmin
+            || _usuario.TutorId == consulta.TutorId
+            || _usuario.VeterinarioId == consulta.VeterinarioId)
+        {
+            return consulta;
+        }
+
+        throw new AcessoNegadoException("RN-105", "Esta consulta nao pertence ao seu escopo de acesso.");
+    }
+
+    /// <summary>Serializacao dos pre-sintomas: camelCase, como o resto do contrato.</summary>
+    private static readonly JsonSerializerOptions OpcoesDeJson = new(JsonSerializerDefaults.Web);
 
     /// <summary>
     /// Finaliza a consulta exigindo receita veterinaria assinada digitalmente (RN-087).

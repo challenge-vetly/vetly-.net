@@ -27,6 +27,30 @@ public interface IConsultaService
     /// <summary>Finaliza a consulta — exige receita veterinária assinada digitalmente (RN-087).</summary>
     Task FinalizarAsync(Guid consultaId);
 
+    /// <summary>
+    /// O que aconteceria se a consulta fosse cancelada agora, sem executar nada
+    /// (RN-014/RN-041/RN-042). O Responsável precisa ver o valor antes de confirmar.
+    /// </summary>
+    Task<SimulacaoDeCancelamentoDto> SimularCancelamentoAsync(Guid consultaId);
+
+    /// <summary>
+    /// Registra os pré-sintomas do agendamento (RN-005/RN-036). Alimentam o briefing
+    /// e o contexto da IA, e por isso só valem antes do atendimento.
+    /// </summary>
+    Task RegistrarPreSintomasAsync(Guid consultaId, PreSintomasDto dto);
+
+    /// <summary>
+    /// Transfere a consulta para outro horário sem nova cobrança, até o limite de 2
+    /// remarcações (RN-013/RN-043).
+    /// </summary>
+    Task<RemarcacaoRealizadaDto> RemarcarAsync(Guid consultaId, RemarcarConsultaDto dto);
+
+    /// <summary>
+    /// Registra o não comparecimento do Responsável (RN-044). Sem reembolso, seguindo
+    /// a faixa "menos de 2h ou no ato" da RN-014.
+    /// </summary>
+    Task<NoShowRegistradoDto> RegistrarNoShowAsync(Guid consultaId);
+
     /// <summary>Retorna briefing pre-consulta com animal, historico e exames recentes.</summary>
     Task<BriefingConsultaDto> ObterBriefingAsync(Guid consultaId);
 

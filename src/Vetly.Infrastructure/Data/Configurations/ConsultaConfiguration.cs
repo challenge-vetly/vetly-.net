@@ -67,6 +67,18 @@ public class ConsultaConfiguration : IEntityTypeConfiguration<Consulta>
         builder.Property(c => c.EmpresaId)
             .HasColumnType("CHAR(36)").HasColumnName("EMPRESA_ID");
 
+        // ── Remarcacao e pre-sintomas (RN-036/RN-043) ────────────────────────
+
+        builder.Property(c => c.ContadorRemarcacoes)
+            .HasColumnType("NUMBER(2)").HasColumnName("CONTADOR_REMARCACOES").IsRequired();
+
+        // CLOB: o texto guiado pode ser longo, e a mídia vem por lista de ids
+        builder.Property(c => c.PreSintomas)
+            .HasColumnType("CLOB").HasColumnName("PRE_SINTOMAS");
+
+        builder.Property(c => c.PreSintomasMidias)
+            .HasColumnType("VARCHAR2(2000)").HasColumnName("PRE_SINTOMAS_MIDIAS");
+
         builder.Property(c => c.IniciadaEm).HasColumnName("INICIADA_EM");
         builder.Property(c => c.EncerradaEm).HasColumnName("ENCERRADA_EM");
 

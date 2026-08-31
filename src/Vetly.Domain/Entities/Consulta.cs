@@ -180,6 +180,72 @@ public class Consulta
     /// <summary>Expira a consulta cujo lock de checkout venceu sem pagamento (RN-035).</summary>
     public void Expirar() => Status = StatusConsulta.Expirada;
 
+    /// <summary>
+    /// Limite de remarcações por consulta (RN-043).
+    ///
+    /// Duas cobrem imprevisto legítimo. Acima disso, remarcar vira burla à janela de
+    /// reembolso: quem quer desistir sem perder dinheiro empurra a data indefinidamente
+    /// em vez de cancelar sob a política vigente.
+    /// </summary>
+    public const int LimiteDeRemarcacoes = 2;
+
+    /// <summary>Quantas vezes esta consulta já foi remarcada (RN-043).</summary>
+    public int ContadorRemarcacoes { get; private set; }
+
+    /// <summary>
+    /// Pré-sintomas informados pelo Responsável no agendamento, em JSON (RN-036).
+    /// Alimentam o briefing (RN-005) e o contexto da IA (RN-078).
+    /// </summary>
+    public string? PreSintomas { get; private set; }
+
+    /// <summary>Mídias anexadas aos pré-sintomas, separadas por ";" (RN-036).</summary>
+    public string? PreSintomasMidias { get; private set; }
+
+    /// <summary>
+    /// Registra os pré-sintomas do agendamento (RN-005/RN-036).
+    ///
+    /// É a única fonte de contexto prévio que vem do Responsável, e por isso entra
+    /// antes da consulta: o veterinário lê no briefing, e a IA recebe no contexto.
+    /// </summary>
+    public void RegistrarPreSintomas(string preSintomas, IEnumerable<Guid>? midias = null)
+    {
+        if (string.IsNullOrWhiteSpace(preSintomas))
+            throw new ArgumentException("Os pré-sintomas não podem ser vazios.", nameof(preSintomas));
+
+        PreSintomas = preSintomas;
+
+        // ";" em vez de vazio: no Oracle a string vazia É NULL, e distinguir "sem
+        // mídia" de "não informado" importa no briefing. Lista vazia é tão sem mídia
+        // quanto lista nula — testar só o nulo deixaria o sentinela escapar.
+        var lista = midias?.ToList() ?? [];
+
+        PreSintomasMidias = lista.Count == 0 ? ";" : string.Join(';', lista);
+    }
+
+    /// <summary>
+    /// Transfere a consulta para outro horário sem nova cobrança (RN-013/RN-043).
+    ///
+    /// O contador é da consulta, não do Responsável: quem remarca duas vezes o mesmo
+    /// atendimento esgotou o limite dele, e não o de todos os seus agendamentos.
+    /// </summary>
+    public void RemarcarPara(DateTime novaDataHora, Guid novoSlotId)
+    {
+        if (Status is not (StatusConsulta.Confirmada or StatusConsulta.EmCheckout))
+            throw new InvalidOperationException(
+                "Somente consulta confirmada ou em checkout pode ser remarcada.");
+
+        if (ContadorRemarcacoes >= LimiteDeRemarcacoes)
+            throw new InvalidOperationException(
+                $"Esta consulta já atingiu o limite de {LimiteDeRemarcacoes} remarcações.");
+
+        DataHora = novaDataHora;
+        SlotId = novoSlotId;
+        ContadorRemarcacoes++;
+    }
+
+    /// <summary>Quantas remarcações ainda cabem nesta consulta (RN-043).</summary>
+    public int RemarcacoesRestantes() => Math.Max(0, LimiteDeRemarcacoes - ContadorRemarcacoes);
+
     /// <summary>Registra o início do atendimento pelo veterinário (RN-008).</summary>
     public void RegistrarInicio(DateTime quando) => IniciadaEm = quando;
 
