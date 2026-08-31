@@ -30,5 +30,12 @@ public class AuditoriaIaRepository : IAuditoriaIaRepository
             .ToListAsync();
 
     /// <inheritdoc/>
+    public async Task<IEnumerable<LogAuditoriaIa>> ObterNoPeriodoAsync(DateTime inicio, DateTime fim) =>
+        await _context.LogsDeAuditoriaIa
+            .AsNoTracking()
+            .Where(l => l.RegistradoEm >= inicio && l.RegistradoEm <= fim)
+            .ToListAsync();
+
+    /// <inheritdoc/>
     public async Task<int> SalvarAsync() => await _context.SaveChangesAsync();
 }

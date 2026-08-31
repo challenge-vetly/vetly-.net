@@ -12,7 +12,7 @@ O Vetly é uma API REST para gestão de clínicas veterinárias, cobrindo todo o
 | Autenticação | JWT Bearer |
 | Documentação | Scalar (tema DeepSpace) em `/scalar/v1` |
 | IA | Ollama local (modelo `llama3.1`) |
-| Testes | xUnit + Moq (663 testes verdes) |
+| Testes | xUnit + Moq (675 testes verdes) |
 
 ## Padrões aplicados
 
@@ -328,6 +328,20 @@ A API **nunca proxia os bytes**: registra a mídia e o app fala direto com o sto
 
 Áudio de consulta é a única mídia com prazo: 30 dias para reprocessamento e depois some (P-06). Conteúdo clínico não expira, por guarda regulatória.
 
+### Analytics
+
+| Método | Rota | Descrição |
+|---|---|---|
+| GET | `/api/analytics/plataforma` | Funil, uso da IA e receita do período (`?inicio=&fim=`) (RN-106) |
+
+São três perguntas, e as seções respondem uma cada: **o agendamento está virando atendimento? o dinheiro está entrando? a IA está ajudando ou dando trabalho?**
+
+No funil, as taxas importam mais que os absolutos — 30 cancelamentos em 1000 consultas é ruído; em 60, é problema de agenda — e cada taxa tem o denominador certo: conversão sobre o que foi criado, cancelamento sobre o que chegou a ser pago (contar a consulta expirada faria a taxa parecer melhor do que é).
+
+Em `ia`, a métrica que interessa não é quantos rascunhos foram gerados: é quantos o veterinário **aceitou sem corrigir**. Correção alta significa que a IA está dando trabalho em vez de poupar; recusa alta, que ela erra o suficiente para não ser confiável. Prontuário manual fica fora do denominador — não é rascunho recusado, é atendimento que nunca teve rascunho. O dado vem da trilha append-only da RN-082, que existia justamente para isso.
+
+Nenhum número identifica pessoa: analytics é agregado, e cruzar métrica com dado de Responsável ou de animal seria usar a base clínica para outra coisa.
+
 ### Financeiro (administração)
 
 | Método | Rota | Descrição |
@@ -495,6 +509,7 @@ Sem parâmetros valem página 1 e 20 itens. O tamanho é limitado a 100 por pág
 | RN-037 | Vaga liberada é oferecida ao primeiro da fila com prioridade de 15 min; vencida, passa ao próximo | `ItemListaEspera` + `PromoverProximoAsync` |
 | RN-026 | Endereço persistido no próprio registro, com latitude/longitude **derivadas dele** pela geocodificação — o payload do cliente é ignorado | `Endereco` + `IGeocodificacaoAdapter` |
 | RN-033/RN-057 | Nota só é pública a partir de 3 avaliações; `PUBLICADO_EM` ancora o selo "Novo na Vetly" por 30 dias | `Veterinario.TemNotaPublica` + `PublicarNoMatching` |
+| RN-106 | Métricas agregadas com denominadores explícitos; a taxa de aprovação sem correção mede se a IA ajuda, e o prontuário manual fica fora do denominador | `AnalyticsService` |
 | RN-025 | Consulta de vet indisponível é redistribuída preservando pagamento e animal, com o horário novo travado antes da troca e o antigo liberado; o Responsável é avisado | `Consulta.Redistribuir` + `RedistribuicaoService` |
 | RN-070/RN-072 | O consolidado verifica explicitamente que comissão + repasse + desconto fecha o bruto, e agrupa o repasse por destinatário pela maior pendência | `FinanceiroService.ObterConsolidadoAsync` |
 | RN-071 | A liquidação registra um pagamento feito fora da plataforma, exige referência e ignora o que já estava liquidado; só cobrança confirmada entra | `FinanceiroService.LiquidarAsync` + `Pagamento.Liquidar` |
