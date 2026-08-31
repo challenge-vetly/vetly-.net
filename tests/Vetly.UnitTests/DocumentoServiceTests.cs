@@ -30,6 +30,7 @@ public class DocumentoServiceTests
     private readonly Mock<IMidiaRepository> _midiaRepoMock = new();
     private readonly Mock<IStorageAdapter> _storageMock = new();
     private readonly Mock<IGeradorDePdf> _pdfMock = new();
+    private readonly Mock<IAssinaturaAdapter> _assinaturaMock = new();
     private readonly Mock<IUsuarioAtual> _usuarioMock = new();
 
     public DocumentoServiceTests()
@@ -40,13 +41,17 @@ public class DocumentoServiceTests
         _midiaRepoMock.Setup(r => r.SalvarAsync()).ReturnsAsync(1);
         _pdfMock.Setup(p => p.Renderizar(It.IsAny<string>(), It.IsAny<string>())).Returns([1, 2, 3]);
         _usuarioMock.SetupGet(u => u.EhAdmin).Returns(true);
+
+        _assinaturaMock.Setup(a => a.AssinarAsync(It.IsAny<SolicitacaoDeAssinaturaDto>()))
+            .ReturnsAsync(new AssinaturaDto("NomeDigitado", "Assinado por Dr. Vet - CRMV 12345-SP",
+                DateTime.UtcNow, HabilitaDispensacaoExterna: false));
     }
 
     private DocumentoService CriarServico(params IDocumentoFactory[] factories) =>
         new(_docRepoMock.Object, _consultaRepoMock.Object, _vetRepoMock.Object,
             _animalRepoMock.Object, _tutorRepoMock.Object, _pagamentoRepoMock.Object,
             _auditoriaMock.Object, _midiaRepoMock.Object, _storageMock.Object,
-            _pdfMock.Object, _usuarioMock.Object, factories);
+            _pdfMock.Object, _assinaturaMock.Object, _usuarioMock.Object, factories);
 
     private static Consulta CriarConsultaValidada()
     {

@@ -16,8 +16,11 @@ public interface IDocumentoService
     /// </summary>
     Task<DocumentoDto> GerarAsync(Guid consultaId, TipoDocumento tipo, TipoAtestado? subtipo = null);
 
-    /// <summary>Assina digitalmente o documento (RN-087).</summary>
-    Task AssinarAsync(Guid id);
+    /// <summary>
+    /// Assina o documento pelo adaptador de assinatura (RN-087). Só o veterinário que
+    /// conduziu o atendimento assina, e o carimbo entra no corpo do documento.
+    /// </summary>
+    Task<DocumentoDto> AssinarAsync(Guid id, string? nomeCompleto);
 
     /// <summary>Cria uma versão corrigida do documento (RN-088/RN-089).</summary>
     Task<DocumentoDto> CorrigirAsync(Guid id, string novosDados, string? justificativa, string crmvSolicitante);

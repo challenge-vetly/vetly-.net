@@ -499,20 +499,30 @@ public class ConsultaServiceTests
         Assert.Equal(140m, resultado.ValorReembolso);
     }
 
-    [Fact]
-    public async Task FinalizarAsync_ComReceitaAssinada_Sucesso()
+    // ── Finalizacao e assinatura (RN-087, C-04) ──────────────────────────────
+
+    private Consulta ConsultaComDocumentos(params Documento[] documentos)
     {
         var consulta = new Consulta(
             DateTime.UtcNow.AddDays(1), ModalidadeAtendimento.Presencial,
             Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
-        var receita = new Documento(TipoDocumento.ReceitaVeterinaria, "12345-SP", consulta.Id);
-        receita.Assinar();
 
         _repoMock.Setup(r => r.ObterPorIdAsync(consulta.Id)).ReturnsAsync(consulta);
-        _documentoRepoMock.Setup(r => r.ObterPorConsultaETipoAsync(consulta.Id, TipoDocumento.ReceitaVeterinaria))
-            .ReturnsAsync(receita);
         _repoMock.Setup(r => r.Atualizar(It.IsAny<Consulta>()));
         _repoMock.Setup(r => r.SalvarAsync()).ReturnsAsync(1);
+
+        _documentoRepoMock.Setup(r => r.ObterPorConsultaAsync(consulta.Id)).ReturnsAsync(documentos);
+
+        return consulta;
+    }
+
+    [Fact]
+    public async Task FinalizarAsync_ComReceitaAssinada_Sucesso()
+    {
+        var receita = new Documento(TipoDocumento.ReceitaVeterinaria, "12345-SP", Guid.NewGuid());
+        receita.Assinar();
+
+        var consulta = ConsultaComDocumentos(receita);
 
         await CriarServico().FinalizarAsync(consulta.Id);
 
@@ -520,15 +530,36 @@ public class ConsultaServiceTests
     }
 
     [Fact]
-    public async Task FinalizarAsync_SemReceita_LancaBusinessRuleExceptionRN031()
+    public async Task FinalizarAsync_SemNenhumDocumentoQueExigeAssinatura_Sucesso()
     {
-        var consulta = new Consulta(
-            DateTime.UtcNow.AddDays(1), ModalidadeAtendimento.Presencial,
-            Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
+        // C-04: consulta de rotina, vacinacao ou retorno frequentemente nao prescrevem
+        // nada. Exigir receita em todas levaria o veterinario a emitir receita vazia so
+        // para conseguir fechar a consulta — o oposto do que a RN-087 protege.
+        var consulta = ConsultaComDocumentos(
+            new Documento(TipoDocumento.Prontuario, "12345-SP", Guid.NewGuid()));
 
-        _repoMock.Setup(r => r.ObterPorIdAsync(consulta.Id)).ReturnsAsync(consulta);
-        _documentoRepoMock.Setup(r => r.ObterPorConsultaETipoAsync(consulta.Id, TipoDocumento.ReceitaVeterinaria))
-            .ReturnsAsync((Documento?)null);
+        await CriarServico().FinalizarAsync(consulta.Id);
+
+        Assert.True(consulta.Finalizada);
+    }
+
+    [Fact]
+    public async Task FinalizarAsync_SemDocumentoAlgum_Sucesso()
+    {
+        var consulta = ConsultaComDocumentos();
+
+        await CriarServico().FinalizarAsync(consulta.Id);
+
+        Assert.True(consulta.Finalizada);
+    }
+
+    [Fact]
+    public async Task FinalizarAsync_ReceitaNaoAssinada_LancaBusinessRuleExceptionRN087()
+    {
+        var receita = new Documento(TipoDocumento.ReceitaVeterinaria, "12345-SP", Guid.NewGuid());
+        // NÃO chama receita.Assinar()
+
+        var consulta = ConsultaComDocumentos(receita);
 
         var ex = await Assert.ThrowsAsync<BusinessRuleException>(
             () => CriarServico().FinalizarAsync(consulta.Id));
@@ -537,22 +568,30 @@ public class ConsultaServiceTests
     }
 
     [Fact]
-    public async Task FinalizarAsync_ReceitaNaoAssinada_LancaBusinessRuleExceptionRN031()
+    public async Task FinalizarAsync_AtestadoNaoAssinado_LancaBusinessRuleExceptionRN087()
     {
-        var consulta = new Consulta(
-            DateTime.UtcNow.AddDays(1), ModalidadeAtendimento.Presencial,
-            Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
-        var receita = new Documento(TipoDocumento.ReceitaVeterinaria, "12345-SP", consulta.Id);
-        // NÃO chama receita.Assinar()
+        // O atestado tambem sai da plataforma afirmando algo em nome do profissional
+        var atestado = new Documento(TipoDocumento.Atestado, "12345-SP", Guid.NewGuid());
 
-        _repoMock.Setup(r => r.ObterPorIdAsync(consulta.Id)).ReturnsAsync(consulta);
-        _documentoRepoMock.Setup(r => r.ObterPorConsultaETipoAsync(consulta.Id, TipoDocumento.ReceitaVeterinaria))
-            .ReturnsAsync(receita);
+        var consulta = ConsultaComDocumentos(atestado);
 
         var ex = await Assert.ThrowsAsync<BusinessRuleException>(
             () => CriarServico().FinalizarAsync(consulta.Id));
 
         Assert.Equal("RN-087", ex.Codigo);
+    }
+
+    [Fact]
+    public async Task FinalizarAsync_ProntuarioNaoAssinado_NaoBloqueia()
+    {
+        var prontuario = new Documento(TipoDocumento.Prontuario, "12345-SP", Guid.NewGuid());
+        var recibo = new Documento(TipoDocumento.NotaFiscal, "12345-SP", Guid.NewGuid());
+
+        var consulta = ConsultaComDocumentos(prontuario, recibo);
+
+        await CriarServico().FinalizarAsync(consulta.Id);
+
+        Assert.True(consulta.Finalizada);
     }
 
     [Fact]

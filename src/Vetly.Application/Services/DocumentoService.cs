@@ -29,6 +29,7 @@ public class DocumentoService : IDocumentoService
     private readonly IMidiaRepository _midiaRepo;
     private readonly IStorageAdapter _storage;
     private readonly IGeradorDePdf _pdf;
+    private readonly IAssinaturaAdapter _assinatura;
     private readonly IUsuarioAtual _usuario;
     private readonly IEnumerable<IDocumentoFactory> _factories;
 
@@ -45,6 +46,7 @@ public class DocumentoService : IDocumentoService
         IMidiaRepository midiaRepo,
         IStorageAdapter storage,
         IGeradorDePdf pdf,
+        IAssinaturaAdapter assinatura,
         IUsuarioAtual usuario,
         IEnumerable<IDocumentoFactory> factories)
     {
@@ -58,6 +60,7 @@ public class DocumentoService : IDocumentoService
         _midiaRepo = midiaRepo;
         _storage = storage;
         _pdf = pdf;
+        _assinatura = assinatura;
         _usuario = usuario;
         _factories = factories;
     }
@@ -108,14 +111,56 @@ public class DocumentoService : IDocumentoService
     }
 
     /// <inheritdoc/>
-    public async Task AssinarAsync(Guid id)
+    public async Task<DocumentoDto> AssinarAsync(Guid id, string? nomeCompleto)
     {
         var doc = await _repo.ObterPorIdAsync(id)
             ?? throw new NotFoundException("Documento", id);
 
-        doc.Assinar();
+        if (doc.AssinadoDigitalmente)
+            throw new ConflitoDeEstadoException("RN-087", "Este documento ja foi assinado.");
+
+        var vet = await ObterSignatarioAsync(doc);
+
+        var assinatura = await _assinatura.AssinarAsync(new SolicitacaoDeAssinaturaDto(
+            doc.Id,
+            doc.TipoDocumento.ToString(),
+            vet.Nome,
+            vet.Crmv.Valor,
+            vet.UfAtuacao,
+            nomeCompleto));
+
+        doc.RegistrarAssinatura(assinatura.Metodo, assinatura.Carimbo);
+
+        // O carimbo entra no corpo do documento: quem recebe precisa ver como foi
+        // assinado sem perguntar (RN-087)
+        if (!string.IsNullOrWhiteSpace(doc.Conteudo))
+            doc.RegistrarConteudo($"{doc.Conteudo}\n\n{assinatura.Carimbo}");
+
         _repo.Atualizar(doc);
         await _repo.SalvarAsync();
+
+        return MapearParaDto(doc);
+    }
+
+    /// <summary>
+    /// Quem assina é o veterinário que conduziu o atendimento (RN-087/RN-105).
+    /// Assinar documento de consulta alheia é exatamente o que esta guarda impede.
+    /// </summary>
+    private async Task<Veterinario> ObterSignatarioAsync(Documento doc)
+    {
+        if (doc.ConsultaId is not { } consultaId)
+            throw new BusinessRuleException("RN-087",
+                "Documento sem consulta vinculada nao tem signatario definido.");
+
+        var consulta = await _consultaRepo.ObterPorIdAsync(consultaId)
+            ?? throw new NotFoundException("Consulta", consultaId);
+
+        if (!_usuario.EhAdmin && _usuario.VeterinarioId != consulta.VeterinarioId)
+            throw new AcessoNegadoException("RN-105",
+                "Somente o veterinario que conduziu o atendimento pode assinar seus documentos.");
+
+        return await _vetRepo.ObterPorIdAsync(consulta.VeterinarioId)
+            ?? throw new NotFoundException("Veterinario", consulta.VeterinarioId);
     }
 
     /// <inheritdoc/>

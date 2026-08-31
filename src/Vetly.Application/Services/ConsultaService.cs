@@ -288,11 +288,22 @@ public class ConsultaService : IConsultaService
         var consulta = await _repo.ObterPorIdAsync(consultaId)
             ?? throw new NotFoundException("Consulta", consultaId);
 
-        var receita = await _documentoRepo.ObterPorConsultaETipoAsync(consultaId, TipoDocumento.ReceitaVeterinaria);
-        if (receita is null)
-            throw new BusinessRuleException("RN-087", "Receita veterinaria nao encontrada para esta consulta.");
-        if (!receita.AssinadoDigitalmente)
-            throw new BusinessRuleException("RN-087", "A receita veterinaria deve estar assinada digitalmente.");
+        // C-04: a exigencia da RN-087 e sobre o documento que existe, nao sobre a
+        // consulta. Consulta de rotina, vacinacao ou retorno frequentemente nao
+        // prescrevem nada, e exigir receita em todas travaria o atendimento correto —
+        // o efeito seria o veterinario emitir receita vazia so para conseguir fechar
+        // a consulta, que e o oposto do que a regra protege.
+        //
+        // O que passa a valer: todo documento ja emitido que exige assinatura precisa
+        // estar assinado. Sem receita nem atestado, nada bloqueia.
+        var documentos = await _documentoRepo.ObterPorConsultaAsync(consultaId);
+
+        var pendente = documentos.FirstOrDefault(d => d.PendenteDeAssinatura());
+
+        if (pendente is not null)
+            throw new BusinessRuleException("RN-087",
+                $"O documento do tipo {pendente.TipoDocumento} precisa estar assinado digitalmente " +
+                "antes de finalizar a consulta.");
 
         consulta.Finalizar();
         _repo.Atualizar(consulta);
