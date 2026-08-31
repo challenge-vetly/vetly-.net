@@ -15,8 +15,13 @@ namespace Vetly.Domain.Entities;
 /// </summary>
 public class Avaliacao
 {
-    /// <summary>Prazo para avaliar depois do atendimento (RN-055).</summary>
-    public static readonly TimeSpan PrazoParaAvaliar = TimeSpan.FromDays(30);
+    /// <summary>
+    /// Prazo para avaliar depois do atendimento: 14 dias (RN-055).
+    ///
+    /// É a janela do Airbnb, referência de marketplace bilateral com reputação.
+    /// Avaliação muito posterior mede memória, não atendimento.
+    /// </summary>
+    public static readonly TimeSpan PrazoParaAvaliar = TimeSpan.FromDays(14);
 
     /// <summary>Identificador da avaliação (chave primária).</summary>
     public Guid Id { get; private set; }
@@ -60,6 +65,17 @@ public class Avaliacao
 
     public DateTime? RespondidaEm { get; private set; }
 
+    /// <summary>
+    /// Falso quando a consulta avaliada foi cancelada ou reembolsada (RN-059). A
+    /// avaliação some do cálculo da nota, mas a linha permanece: apagar registro de
+    /// reputação abriria caminho para gestão de nota via cancelamento.
+    /// </summary>
+    public bool Valida { get; private set; }
+
+    /// <summary>Por que a avaliação foi invalidada, quando foi.</summary>
+    [MaxLength(200)]
+    public string? MotivoDaInvalidacao { get; private set; }
+
     public DateTime CriadaEm { get; private set; }
 
     /// <summary>Construtor privado reservado ao EF Core.</summary>
@@ -84,6 +100,7 @@ public class Avaliacao
         EmpresaId = empresaId;
         Nota = nota;
         Comentario = string.IsNullOrWhiteSpace(comentario) ? null : comentario.Trim();
+        Valida = true;
         CriadaEm = DateTime.UtcNow;
     }
 
@@ -114,6 +131,22 @@ public class Avaliacao
 
         RespostaDoVeterinario = resposta.Trim();
         RespondidaEm = DateTime.UtcNow;
+    }
+
+    /// <summary>
+    /// Invalida a avaliação de uma consulta cancelada ou reembolsada (RN-059).
+    ///
+    /// Sai do cálculo da nota, mas a linha fica. A diferença importa: apagar o
+    /// registro permitiria a um prestador limpar uma avaliação ruim provocando o
+    /// cancelamento, e a auditoria não teria como notar.
+    /// </summary>
+    public void Invalidar(string motivo)
+    {
+        if (string.IsNullOrWhiteSpace(motivo))
+            throw new ArgumentException("A invalidação exige motivo.", nameof(motivo));
+
+        Valida = false;
+        MotivoDaInvalidacao = motivo.Trim();
     }
 
     /// <summary>O comentário visível ao público — nulo quando foi moderado.</summary>

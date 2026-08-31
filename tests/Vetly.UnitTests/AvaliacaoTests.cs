@@ -63,6 +63,14 @@ public class AvaliacaoTests
     private Avaliacao Nota(int nota, Guid? consultaId = null) =>
         new(consultaId ?? Guid.NewGuid(), _tutorId, _vet.Id, nota);
 
+    private Avaliacao NotaInvalidada(int nota)
+    {
+        var avaliacao = Nota(nota);
+        avaliacao.Invalidar("Consulta cancelada ou reembolsada.");
+
+        return avaliacao;
+    }
+
     // ── Quem pode avaliar (RN-055) ───────────────────────────────────────────
 
     [Fact]
@@ -118,7 +126,8 @@ public class AvaliacaoTests
     [Fact]
     public async Task Avaliar_ForaDoPrazo_NaoEPermitido()
     {
-        var consulta = Atendimento(diasAtras: 45);
+        // RN-055: a janela e de 14 dias
+        var consulta = Atendimento(diasAtras: 20);
 
         // Avaliacao muito posterior mede memoria, nao atendimento
         var ex = await Assert.ThrowsAsync<BusinessRuleException>(
@@ -298,5 +307,132 @@ public class AvaliacaoTests
 
         // (1 + 5 + 3) / 3 = 3,00 — a nota moderada continua contando
         Assert.Equal(3.00m, _vet.NotaMedia);
+    }
+
+    // ── Janela de avaliação (RN-055) ─────────────────────────────────────────
+
+    [Fact]
+    public void Prazo_EDeQuatorzeDias()
+    {
+        // A janela do Airbnb, referencia de marketplace bilateral com reputacao
+        Assert.Equal(14, Avaliacao.PrazoParaAvaliar.TotalDays);
+    }
+
+    [Fact]
+    public async Task Avaliar_NoDecimoTerceiroDia_AindaEAceito()
+    {
+        var consulta = Atendimento(diasAtras: 13);
+
+        var avaliacao = await CriarServico().AvaliarAsync(
+            consulta.Id, new CriarAvaliacaoDto { Nota = 5 });
+
+        Assert.Equal(5, avaliacao.Nota);
+    }
+
+    // ── Invalidação por cancelamento (RN-059) ────────────────────────────────
+
+    [Fact]
+    public async Task Invalidacao_TiraANotaDoCalculoSemApagarALinha()
+    {
+        var consulta = Atendimento();
+        var avaliacao = Nota(1, consulta.Id);
+
+        _repo.Setup(r => r.ObterDaConsultaAsync(consulta.Id)).ReturnsAsync(avaliacao);
+        _repo.Setup(r => r.ObterDoVeterinarioAsync(_vet.Id)).ReturnsAsync([avaliacao, Nota(5), Nota(5)]);
+
+        var invalidou = await CriarServico().InvalidarPorCancelamentoAsync(consulta.Id);
+
+        Assert.True(invalidou);
+        Assert.False(avaliacao.Valida);
+
+        // A media passa a contar so as duas validas: (5 + 5) / 2
+        Assert.Equal(5.00m, _vet.NotaMedia);
+        Assert.Equal(2, _vet.NumAvaliacoes);
+
+        // Apagar o registro permitiria limpar uma nota ruim provocando o cancelamento
+        Assert.NotNull(avaliacao.MotivoDaInvalidacao);
+    }
+
+    [Fact]
+    public async Task Invalidacao_SemAvaliacao_NaoFazNada()
+    {
+        var consulta = Atendimento();
+        _repo.Setup(r => r.ObterDaConsultaAsync(consulta.Id)).ReturnsAsync((Avaliacao?)null);
+
+        Assert.False(await CriarServico().InvalidarPorCancelamentoAsync(consulta.Id));
+    }
+
+    [Fact]
+    public async Task Invalidacao_DuasVezes_NaoRepete()
+    {
+        var consulta = Atendimento();
+        var avaliacao = NotaInvalidada(2);
+
+        _repo.Setup(r => r.ObterDaConsultaAsync(consulta.Id)).ReturnsAsync(avaliacao);
+
+        Assert.False(await CriarServico().InvalidarPorCancelamentoAsync(consulta.Id));
+    }
+
+    [Fact]
+    public async Task Reputacao_IgnoraAvaliacaoInvalidada()
+    {
+        var consulta = Atendimento();
+        _repo.Setup(r => r.ObterDoVeterinarioAsync(_vet.Id)).ReturnsAsync(
+            [NotaInvalidada(1), Nota(4), Nota(4)]);
+
+        await CriarServico().AvaliarAsync(consulta.Id, new CriarAvaliacaoDto { Nota = 4 });
+
+        // Protege o ativo central de notoriedade: cancelar nao pode ser um jeito de
+        // apagar nota ruim, mas a nota cancelada tambem nao pode continuar contando
+        Assert.Equal(4.00m, _vet.NotaMedia);
+        Assert.Equal(2, _vet.NumAvaliacoes);
+    }
+
+    [Fact]
+    public void Invalidacao_SemMotivo_NaoEAceita()
+    {
+        var avaliacao = Nota(1);
+
+        Assert.Throws<ArgumentException>(() => avaliacao.Invalidar("   "));
+    }
+
+    // ── Pendentes (RN-055) ───────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Pendentes_TrazemOAtendimentoAindaNaoAvaliado()
+    {
+        var consulta = Atendimento(diasAtras: 3);
+
+        _consultaRepo.Setup(r => r.ObterRealizadasDoTutorDesdeAsync(_tutorId, It.IsAny<DateTime>()))
+            .ReturnsAsync([consulta]);
+
+        var pendentes = (await CriarServico().ObterPendentesAsync()).ToList();
+
+        var pendente = Assert.Single(pendentes);
+        Assert.Equal(consulta.Id, pendente.ConsultaId);
+
+        // O prazo restante da urgencia ao aviso
+        Assert.Equal(11, pendente.DiasRestantes);
+    }
+
+    [Fact]
+    public async Task Pendentes_OmitemOQueJaFoiAvaliado()
+    {
+        var consulta = Atendimento(diasAtras: 3);
+
+        _consultaRepo.Setup(r => r.ObterRealizadasDoTutorDesdeAsync(_tutorId, It.IsAny<DateTime>()))
+            .ReturnsAsync([consulta]);
+
+        _repo.Setup(r => r.ObterDaConsultaAsync(consulta.Id)).ReturnsAsync(Nota(5, consulta.Id));
+
+        Assert.Empty(await CriarServico().ObterPendentesAsync());
+    }
+
+    [Fact]
+    public async Task Pendentes_SemTokenDeResponsavel_SaoRecusadas()
+    {
+        _usuario.SetupGet(u => u.TutorId).Returns((Guid?)null);
+
+        await Assert.ThrowsAsync<AcessoNegadoException>(() => CriarServico().ObterPendentesAsync());
     }
 }

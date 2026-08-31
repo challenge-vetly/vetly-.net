@@ -27,4 +27,10 @@ public interface IConsultaRepository : IRepositoryBase<Consulta>
     /// (RN-106) — agregação precisa do conjunto inteiro, não de uma página.
     /// </summary>
     Task<IEnumerable<Consulta>> ObterNoPeriodoAsync(DateTime inicio, DateTime fim);
+
+    /// <summary>
+    /// Consultas realizadas de um Responsável desde uma data. É a base da lista de
+    /// avaliações pendentes (RN-055).
+    /// </summary>
+    Task<IEnumerable<Consulta>> ObterRealizadasDoTutorDesdeAsync(Guid tutorId, DateTime desde);
 }

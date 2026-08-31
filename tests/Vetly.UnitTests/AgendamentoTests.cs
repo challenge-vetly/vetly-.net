@@ -25,6 +25,7 @@ public class AgendamentoTests
     private readonly Mock<IAgendaRepository> _agendaRepo = new();
     private readonly Mock<IFilaDeJobs> _fila = new();
     private readonly Mock<IFidelidadeService> _fidelidade = new();
+    private readonly Mock<IAvaliacaoService> _avaliacoes = new();
     private readonly Mock<IUsuarioAtual> _usuario = new();
 
     private readonly Guid _tutorId = Guid.NewGuid();
@@ -59,7 +60,7 @@ public class AgendamentoTests
         new(_repo.Object, _pagamentoRepo.Object, _documentoRepo.Object, _animalRepo.Object,
             _vetRepo.Object, _empresaRepo.Object,
             [new ReembolsoIntegralStrategy(), new ReembolsoParcialStrategy(), new SemReembolsoStrategy()],
-            _usuario.Object, _agendaRepo.Object, _fila.Object, _fidelidade.Object);
+            _usuario.Object, _agendaRepo.Object, _fila.Object, _fidelidade.Object, _avaliacoes.Object);
 
     private Pagamento Pagamento(decimal valor = 200m)
     {

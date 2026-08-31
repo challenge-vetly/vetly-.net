@@ -43,9 +43,36 @@ public class AvaliacaoDto
     public string? Comentario { get; set; }
 
     public bool ComentarioModerado { get; set; }
+
+    /// <summary>
+    /// Falso quando a consulta avaliada foi cancelada ou reembolsada: a avaliação sai
+    /// do cálculo da nota, mas continua no histórico (RN-059).
+    /// </summary>
+    public bool Valida { get; set; }
     public string? RespostaDoVeterinario { get; set; }
     public DateTime? RespondidaEm { get; set; }
     public DateTime CriadaEm { get; set; }
+}
+
+/// <summary>
+/// Um atendimento esperando avaliação (RN-055).
+///
+/// O prazo aparece na resposta porque é ele que dá urgência ao aviso: "faltam 3 dias"
+/// move mais que "avalie quando puder".
+/// </summary>
+public class AvaliacaoPendenteDto
+{
+    public Guid ConsultaId { get; set; }
+    public Guid AnimalId { get; set; }
+    public Guid VeterinarioId { get; set; }
+    public string VeterinarioNome { get; set; } = string.Empty;
+
+    public DateTime DataDoAtendimento { get; set; }
+
+    /// <summary>Até quando a avaliação é aceita — 14 dias após o atendimento.</summary>
+    public DateTime PrazoAte { get; set; }
+
+    public int DiasRestantes { get; set; }
 }
 
 /// <summary>Reputação de um veterinário (RN-057).</summary>

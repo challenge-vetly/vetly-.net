@@ -42,6 +42,15 @@ public class AvaliacaoConfiguration : IEntityTypeConfiguration<Avaliacao>
             .HasColumnType("VARCHAR2(1000)").HasColumnName("RESPOSTA_VETERINARIO");
 
         builder.Property(a => a.RespondidaEm).HasColumnName("RESPONDIDA_EM");
+        // RN-059: avaliacao de consulta cancelada sai do calculo, mas a linha fica.
+        // Apagar registro de reputacao abriria caminho para gestao de nota via
+        // cancelamento.
+        builder.Property(a => a.Valida)
+            .HasColumnType("NUMBER(1)").HasColumnName("VALIDA").IsRequired();
+
+        builder.Property(a => a.MotivoDaInvalidacao)
+            .HasColumnType("VARCHAR2(200)").HasColumnName("MOTIVO_INVALIDACAO");
+
         builder.Property(a => a.CriadaEm).HasColumnName("CRIADA_EM").IsRequired();
 
         // Uma avaliação por consulta: o índice é a invariante, não otimização. Sem ele,

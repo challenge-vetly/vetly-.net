@@ -17,6 +17,19 @@ public interface IAvaliacaoService
     /// <summary>Reputação de um veterinário, com distribuição das notas (RN-057).</summary>
     Task<ReputacaoDto> ObterReputacaoAsync(Guid veterinarioId);
 
+    /// <summary>
+    /// Consultas realizadas dentro da janela de 14 dias que ainda não foram avaliadas
+    /// (RN-055). É o que o app mostra como "avalie seu atendimento".
+    /// </summary>
+    Task<IEnumerable<AvaliacaoPendenteDto>> ObterPendentesAsync();
+
+    /// <summary>
+    /// Tira do cálculo da nota a avaliação de uma consulta cancelada ou reembolsada
+    /// (RN-059). A linha permanece — apagar registro de reputação abriria caminho
+    /// para gestão de nota via cancelamento.
+    /// </summary>
+    Task<bool> InvalidarPorCancelamentoAsync(Guid consultaId);
+
     /// <summary>Resposta pública do veterinário à avaliação. Uma só (RN-055).</summary>
     Task<AvaliacaoDto> ResponderAsync(Guid avaliacaoId, ResponderAvaliacaoDto dto);
 

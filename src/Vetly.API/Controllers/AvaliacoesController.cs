@@ -24,7 +24,8 @@ public class AvaliacoesController : ControllerBase
     /// <summary>Avalia um atendimento realizado (RN-055).</summary>
     /// <remarks>
     /// Somente consulta com status <c>Realizada</c> pode ser avaliada, e o prazo e de
-    /// 30 dias — avaliacao muito posterior mede memoria, nao atendimento.
+    /// <b>14 dias</b> — a janela do Airbnb, referencia de marketplace bilateral com
+    /// reputacao. Avaliacao muito posterior mede memoria, nao atendimento.
     ///
     /// Segunda avaliacao da mesma consulta devolve 409. A nota nao e editavel depois
     /// de enviada: corrigir avaliacao seria abrir a porta para pressao sobre quem
@@ -46,6 +47,21 @@ public class AvaliacoesController : ControllerBase
             nameof(ObterReputacao), new { veterinarioId = avaliacao.VeterinarioId }, avaliacao);
     }
 
+    /// <summary>Atendimentos esperando avaliacao (RN-055).</summary>
+    /// <remarks>
+    /// So consulta realizada dentro da janela de 14 dias e ainda sem avaliacao.
+    /// O prazo restante vai na resposta porque e ele que da urgencia ao aviso:
+    /// "faltam 3 dias" move mais que "avalie quando puder".
+    ///
+    /// O escopo vem do token: sao os atendimentos do proprio Responsavel.
+    /// </remarks>
+    [HttpGet("pendentes")]
+    [ProducesResponseType(typeof(IEnumerable<AvaliacaoPendenteDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> ObterPendentes() =>
+        Ok(await _service.ObterPendentesAsync());
+
     /// <summary>Reputacao de um veterinario, com a distribuicao das notas (RN-057).</summary>
     /// <remarks>
     /// <c>notaPublica</c> e falso abaixo de 3 avaliacoes: uma nota 5 vinda de uma unica
@@ -54,6 +70,10 @@ public class AvaliacoesController : ControllerBase
     ///
     /// Comentario moderado vem nulo, mas a nota continua contando na media — esconder o
     /// texto nao pode virar um jeito de apagar uma avaliacao ruim.
+    ///
+    /// Avaliacao de consulta cancelada ou reembolsada tem <c>valida = false</c> e sai
+    /// do calculo, mas continua no historico (RN-059): apagar registro de reputacao
+    /// abriria caminho para gestao de nota via cancelamento.
     /// </remarks>
     [HttpGet("veterinario/{veterinarioId:guid}")]
     [ProducesResponseType(typeof(ReputacaoDto), StatusCodes.Status200OK)]

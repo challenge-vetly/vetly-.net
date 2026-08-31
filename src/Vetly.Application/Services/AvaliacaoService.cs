@@ -140,6 +140,65 @@ public class AvaliacaoService : IAvaliacaoService
         return Mapear(avaliacao);
     }
 
+    /// <inheritdoc/>
+    public async Task<bool> InvalidarPorCancelamentoAsync(Guid consultaId)
+    {
+        var avaliacao = await _repo.ObterDaConsultaAsync(consultaId);
+
+        if (avaliacao is null || !avaliacao.Valida)
+            return false;
+
+        avaliacao.Invalidar("Consulta cancelada ou reembolsada.");
+
+        _repo.Atualizar(avaliacao);
+        await _repo.SalvarAsync();
+
+        // A nota do profissional volta ao que era antes desta avaliacao
+        await RecalcularReputacaoAsync(avaliacao.VeterinarioId);
+
+        return true;
+    }
+
+    /// <inheritdoc/>
+    public async Task<IEnumerable<AvaliacaoPendenteDto>> ObterPendentesAsync()
+    {
+        var tutorId = _usuario.TutorId
+            ?? throw new AcessoNegadoException("RN-106",
+                "As avaliacoes pendentes sao do Responsavel. Entre com um cadastro de Responsavel.");
+
+        var agora = DateTime.UtcNow;
+        var desde = agora.Subtract(Avaliacao.PrazoParaAvaliar);
+
+        // Consulta realizada dentro da janela e ainda sem avaliacao: e o que o app
+        // mostra como "avalie seu atendimento" (RN-055).
+        var realizadas = await _consultaRepo.ObterRealizadasDoTutorDesdeAsync(tutorId, desde);
+
+        var pendentes = new List<AvaliacaoPendenteDto>();
+
+        foreach (var consulta in realizadas.OrderByDescending(c => c.EncerradaEm ?? c.DataHora))
+        {
+            if (await _repo.ObterDaConsultaAsync(consulta.Id) is not null)
+                continue;
+
+            var referencia = consulta.EncerradaEm ?? consulta.DataHora;
+            var vet = await _vetRepo.ObterPorIdAsync(consulta.VeterinarioId);
+
+            pendentes.Add(new AvaliacaoPendenteDto
+            {
+                ConsultaId = consulta.Id,
+                AnimalId = consulta.AnimalId,
+                VeterinarioId = consulta.VeterinarioId,
+                VeterinarioNome = vet?.Nome ?? "Profissional nao encontrado",
+                DataDoAtendimento = referencia,
+                PrazoAte = referencia.Add(Avaliacao.PrazoParaAvaliar),
+                DiasRestantes = Math.Max(0,
+                    (int)Math.Ceiling((referencia.Add(Avaliacao.PrazoParaAvaliar) - agora).TotalDays))
+            });
+        }
+
+        return pendentes;
+    }
+
     /// <summary>Mínimo de avaliações para a nota valer publicamente (RN-057).</summary>
     private const int MinimoDeAvaliacoes = 3;
 
@@ -157,7 +216,12 @@ public class AvaliacaoService : IAvaliacaoService
         if (vet is null)
             return;
 
-        var avaliacoes = (await _repo.ObterDoVeterinarioAsync(veterinarioId)).ToList();
+        // RN-059: avaliacao de consulta cancelada ou reembolsada sai do calculo.
+        // Protege o ativo central de notoriedade — sem isso, cancelar viraria uma
+        // forma de apagar nota ruim.
+        var avaliacoes = (await _repo.ObterDoVeterinarioAsync(veterinarioId))
+            .Where(a => a.Valida)
+            .ToList();
 
         var media = avaliacoes.Count == 0
             ? 0m
@@ -178,6 +242,7 @@ public class AvaliacaoService : IAvaliacaoService
         Nota = a.Nota,
         Comentario = a.ComentarioPublico(),
         ComentarioModerado = a.ComentarioModerado,
+        Valida = a.Valida,
         RespostaDoVeterinario = a.RespostaDoVeterinario,
         RespondidaEm = a.RespondidaEm,
         CriadaEm = a.CriadaEm
