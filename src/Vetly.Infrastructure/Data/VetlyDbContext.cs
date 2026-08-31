@@ -71,8 +71,11 @@ public class VetlyDbContext : DbContext
     /// <summary>Avaliações dos atendimentos (RN-055/RN-057).</summary>
     public DbSet<Avaliacao> Avaliacoes => Set<Avaliacao>();
 
-    /// <summary>Extrato append-only de pontos de fidelidade (RN-051/RN-052).</summary>
+    /// <summary>Extrato de pontos de fidelidade (RN-047 a RN-052).</summary>
     public DbSet<MovimentoDePontos> MovimentosDePontos => Set<MovimentoDePontos>();
+
+    /// <summary>Cupons emitidos no resgate de pontos (RN-053/RN-054).</summary>
+    public DbSet<CupomResgate> CuponsDeResgate => Set<CupomResgate>();
 
     /// <summary>Obrigações recorrentes de cuidado do animal (RN-045/RN-046).</summary>
     public DbSet<ObrigacaoPet> ObrigacoesDoPet => Set<ObrigacaoPet>();

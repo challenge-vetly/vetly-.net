@@ -79,14 +79,29 @@ public class Pagamento
 
     // ── Fidelidade (RN-051) ──────────────────────────────────────────────────
 
-    /// <summary>Pontos de fidelidade resgatados nesta cobrança (RN-051).</summary>
+    /// <summary>Cupom de resgate aplicado a esta cobrança (RN-053).</summary>
+    public Guid? CupomId { get; private set; }
+
+    /// <summary>Pontos de fidelidade que o cupom debitou.</summary>
     public int? PontosResgatados { get; private set; }
 
-    /// <summary>
-    /// Desconto em reais concedido pelo resgate (RN-051). Sai da comissão da
-    /// plataforma, não do repasse ao prestador.
-    /// </summary>
+    /// <summary>Desconto em reais concedido pelo resgate (RN-049).</summary>
     public decimal? ValorDoDesconto { get; private set; }
+
+    /// <summary>
+    /// Parte do desconto absorvida pela Vetly, conforme a faixa da RN-051.
+    /// Sai da comissão.
+    /// </summary>
+    public decimal? DescontoVetly { get; private set; }
+
+    /// <summary>
+    /// Parte do desconto absorvida pelo prestador, conforme a faixa da RN-051.
+    /// Sai do repasse.
+    /// </summary>
+    public decimal? DescontoPrestador { get; private set; }
+
+    /// <summary>Faixa de financiamento aplicada ao desconto (RN-051).</summary>
+    public FaixaDeFinanciamento? FaixaDoDesconto { get; private set; }
 
     /// <summary>
     /// O que o Responsável de fato paga: o valor bruto menos o desconto do resgate.
@@ -197,16 +212,24 @@ public class Pagamento
     }
 
     /// <summary>
-    /// Aplica o desconto de um resgate de pontos (RN-051).
+    /// Aplica o desconto de um cupom de fidelidade (RN-051).
     ///
     /// O desconto NAO reduz <see cref="Valor"/>: o bruto continua sendo o preco do
-    /// servico, e e sobre ele que o repasse ao prestador e calculado. O que o
-    /// Responsavel paga e <see cref="ValorCobrado"/>.
+    /// servico. O que o Responsavel paga e <see cref="ValorCobrado"/>, e o custo do
+    /// desconto e <b>repartido entre Vetly e prestador pela faixa da RN-051</b> —
+    /// ate R$ 10 a Vetly banca sozinha; acima disso o prestador participa, porque e
+    /// ele quem captura a recorrencia que o resgate grande representa.
     ///
-    /// A separacao decide quem paga a fidelidade. Se o desconto reduzisse o bruto, o
-    /// prestador estaria custeando um programa que nao ofereceu.
+    /// Guardar as duas partes separadas, e nao so o total, e o que permite ao
+    /// consolidado financeiro dizer de qual bolso saiu cada centavo.
     /// </summary>
-    public void AplicarDesconto(int pontosResgatados, decimal valorDoDesconto)
+    public void AplicarDesconto(
+        Guid cupomId,
+        int pontosResgatados,
+        decimal valorDoDesconto,
+        decimal descontoVetly,
+        decimal descontoPrestador,
+        FaixaDeFinanciamento faixa)
     {
         if (pontosResgatados <= 0 || valorDoDesconto <= 0)
             throw new ArgumentOutOfRangeException(nameof(valorDoDesconto),
@@ -216,8 +239,16 @@ public class Pagamento
             throw new ArgumentOutOfRangeException(nameof(valorDoDesconto),
                 "O desconto não pode passar do valor da cobrança.");
 
+        if (descontoVetly + descontoPrestador != valorDoDesconto)
+            throw new ArgumentException(
+                "As partes da incidência devem fechar o valor do desconto.", nameof(descontoVetly));
+
+        CupomId = cupomId;
         PontosResgatados = pontosResgatados;
         ValorDoDesconto = valorDoDesconto;
+        DescontoVetly = descontoVetly;
+        DescontoPrestador = descontoPrestador;
+        FaixaDoDesconto = faixa;
     }
 
     /// <summary>

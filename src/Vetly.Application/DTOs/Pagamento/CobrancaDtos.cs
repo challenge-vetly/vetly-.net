@@ -22,14 +22,11 @@ public class CobrancaCriadaRespostaDto
     /// <summary>O que o Responsável de fato paga, já com o desconto do resgate.</summary>
     public decimal ValorCobrado { get; set; }
 
-    /// <summary>Pontos de fidelidade resgatados nesta cobrança (RN-051).</summary>
-    public int? PontosResgatados { get; set; }
-
     /// <summary>
-    /// Desconto concedido pelo resgate. Sai da comissão da plataforma: o repasse ao
-    /// prestador é o mesmo com ou sem resgate (RN-051/RN-072).
+    /// Desconto de fidelidade aplicado, com a divisão do custo (RN-051). Nulo quando
+    /// não houve cupom.
     /// </summary>
-    public decimal? ValorDoDesconto { get; set; }
+    public DescontoDeFidelidadeDto? DescontoFidelidade { get; set; }
 
     /// <summary>Repartição apurada da transação (RN-070).</summary>
     public SplitDto Split { get; set; } = new();
@@ -42,6 +39,28 @@ public class CobrancaCriadaRespostaDto
 
     /// <summary>Como pagar, no formato que o provedor devolveu.</summary>
     public InstrucoesDePagamentoDto Instrucoes { get; set; } = new();
+}
+
+/// <summary>
+/// Desconto de fidelidade aplicado à cobrança e como o custo foi repartido (RN-051).
+///
+/// As duas partes aparecem separadas porque saem de bolsos diferentes: a da Vetly
+/// reduz a comissão, a do prestador reduz o repasse. Mostrar só o total esconderia
+/// quem pagou pela promoção.
+/// </summary>
+public class DescontoDeFidelidadeDto
+{
+    public Guid CupomId { get; set; }
+    public int PontosResgatados { get; set; }
+
+    /// <summary>Valor do desconto em reais (RN-049).</summary>
+    public decimal Valor { get; set; }
+
+    /// <summary>Faixa que definiu a divisão: até R$ 10 · R$ 10,01–30 · acima de R$ 30.</summary>
+    public Domain.Enums.FaixaDeFinanciamento? Faixa { get; set; }
+
+    public decimal AbsorvidoVetly { get; set; }
+    public decimal AbsorvidoPrestador { get; set; }
 }
 
 /// <summary>Repartição da transação entre plataforma e prestador (RN-070/RN-072).</summary>

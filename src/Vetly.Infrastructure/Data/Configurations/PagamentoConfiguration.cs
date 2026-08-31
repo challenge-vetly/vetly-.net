@@ -97,8 +97,22 @@ public class PagamentoConfiguration : IEntityTypeConfiguration<Pagamento>
 
         // ── Fidelidade (RN-051) ──────────────────────────────────────────────
 
+        builder.Property(p => p.CupomId)
+            .HasColumnType("CHAR(36)").HasColumnName("CUPOM_ID");
+
         builder.Property(p => p.PontosResgatados)
             .HasColumnType("NUMBER(10)").HasColumnName("PONTOS_RESGATADOS");
+
+        // As duas partes da incidencia (RN-051) sao colunas proprias: guardar so o
+        // total esconderia de qual bolso saiu cada centavo
+        builder.Property(p => p.DescontoVetly)
+            .HasColumnType("NUMBER(18,2)").HasColumnName("DESCONTO_VETLY");
+
+        builder.Property(p => p.DescontoPrestador)
+            .HasColumnType("NUMBER(18,2)").HasColumnName("DESCONTO_PRESTADOR");
+
+        builder.Property(p => p.FaixaDoDesconto)
+            .HasConversion<int?>().HasColumnName("FAIXA_DESCONTO");
 
         // O desconto e coluna propria, e nao um VALOR ja reduzido: o bruto continua
         // sendo o preco do servico, e e sobre ele que o repasse ao prestador foi

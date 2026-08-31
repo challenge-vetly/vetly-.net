@@ -4,61 +4,103 @@ using Vetly.Domain.Entities;
 namespace Vetly.Application.Interfaces;
 
 /// <summary>
-/// Programa de fidelidade: pontos por consulta realizada e desconto no resgate
-/// (RN-051/RN-052).
+/// Programa de fidelidade (RN-046 a RN-054): pontos por serviço pago e por obrigação
+/// cumprida, tier com multiplicador, resgate em cupom e expiração FIFO.
 /// </summary>
 public interface IFidelidadeService
 {
-    /// <summary>Saldo do Responsável — a soma dos lançamentos, não um campo guardado.</summary>
+    /// <summary>Saldo, tier e o que vence — a soma dos lançamentos, não um campo.</summary>
     Task<SaldoDePontosDto> ObterSaldoAsync(Guid tutorId);
 
     /// <summary>Extrato de pontos, do mais recente ao mais antigo.</summary>
     Task<IEnumerable<MovimentoDePontosDto>> ObterExtratoAsync(Guid tutorId);
 
     /// <summary>
-    /// Credita pontos por uma consulta realizada e paga (RN-052). Devolve nulo quando
-    /// não há o que creditar — consulta não realizada, pagamento não confirmado, ou
-    /// crédito já lançado.
+    /// Credita 1 ponto por real do serviço pago, com o multiplicador do tier
+    /// (RN-047/RN-048). Devolve nulo quando não há o que creditar.
     /// </summary>
     Task<MovimentoDePontosDto?> CreditarPorConsultaAsync(Guid consultaId);
 
     /// <summary>
-    /// Apura o desconto de um resgate sobre uma cobrança, sem gravar nada (RN-051).
-    ///
-    /// O <paramref name="teto"/> é o limite do desconto — na prática, a comissão da
-    /// plataforma naquela cobrança. A Vetly banca a própria fidelidade, mas não paga
-    /// para atender, e o prestador recebe o repasse cheio de todo jeito.
+    /// Credita os 50 pontos fixos da obrigação cumprida no prazo (RN-047). É o crédito
+    /// que paga comportamento de cuidado, e não gasto.
     /// </summary>
-    Task<DescontoAplicadoDto> ApurarDescontoAsync(
-        Guid tutorId, int pontos, decimal valorDaCobranca, decimal teto);
+    Task<MovimentoDePontosDto?> CreditarPorObrigacaoAsync(Guid tutorId, Guid obrigacaoId, string descricao);
 
-    /// <summary>Lança o débito do resgate depois que a cobrança foi criada (RN-051).</summary>
-    Task RegistrarResgateAsync(Guid tutorId, int pontos, decimal valorEmReais, Guid pagamentoId);
+    /// <summary>
+    /// Calcula o desconto e a divisão Vetly ↔ prestador sem gravar nada
+    /// (RN-017/RN-051). É o que o app mostra antes de o Responsável confirmar.
+    /// </summary>
+    Task<SimulacaoDeResgateDto> SimularResgateAsync(Guid tutorId, SimularResgateDto dto);
 
-    /// <summary>Baixa os créditos vencidos. Devolve quantos pontos expiraram.</summary>
+    /// <summary>
+    /// Debita os pontos em FIFO, emite o cupom e grava a divisão da incidência
+    /// (RN-018/RN-050/RN-053).
+    /// </summary>
+    Task<CupomDto> ResgatarAsync(Guid tutorId, SimularResgateDto dto);
+
+    /// <summary>Cupons do Responsável, do mais recente ao mais antigo.</summary>
+    Task<IEnumerable<CupomDto>> ObterCuponsAsync(Guid tutorId);
+
+    /// <summary>Um cupom, com o código que o app renderiza como QR.</summary>
+    Task<CupomDto> ObterCupomAsync(Guid cupomId);
+
+    /// <summary>
+    /// Marca o cupom como consumido depois de aplicado a uma cobrança (RN-054): um
+    /// cupom vale para uma transação, e reaplicá-lo empilharia desconto sobre a
+    /// mesma margem.
+    /// </summary>
+    Task MarcarCupomComoUsadoAsync(Guid cupomId);
+
+    /// <summary>
+    /// Estorna os pontos de uma consulta cancelada ou reembolsada (RN-052). Devolve
+    /// quantos pontos foram estornados.
+    /// </summary>
+    Task<int> EstornarPorConsultaAsync(Guid consultaId);
+
+    /// <summary>Baixa créditos e cupons vencidos. Devolve quantos pontos expiraram.</summary>
     Task<int> ExpirarVencidosAsync();
 }
 
 /// <summary>
-/// Repositório do extrato de pontos (RN-051/RN-052).
+/// Repositório do extrato de pontos e dos cupons (RN-047 a RN-054).
 ///
-/// Append-only por contrato: só adicionar e ler. Saldo é a soma dos lançamentos, e um
-/// extrato que pode ser reescrito não sustenta o saldo que mostra.
+/// O extrato é append-only, com uma exceção deliberada: <see cref="Atualizar"/> existe
+/// para o campo <c>Restante</c> do lote, que é o mecanismo do FIFO. O <b>valor</b> do
+/// lançamento nunca muda — só quanto dele já foi consumido.
 /// </summary>
 public interface IFidelidadeRepository
 {
     Task<IEnumerable<MovimentoDePontos>> ObterDoTutorAsync(Guid tutorId);
 
-    /// <summary>Crédito já lançado para uma consulta, se houver. É como se evita creditar duas vezes.</summary>
+    /// <summary>Lotes de crédito com saldo, para o consumo FIFO (RN-050).</summary>
+    Task<IEnumerable<MovimentoDePontos>> ObterLotesComSaldoAsync(Guid tutorId);
+
+    /// <summary>Crédito já lançado para uma consulta. É como se evita creditar duas vezes.</summary>
     Task<MovimentoDePontos?> ObterCreditoDaConsultaAsync(Guid consultaId);
 
-    /// <summary>
-    /// Créditos vencidos que ainda não tiveram lançamento de baixa. A ausência da baixa
-    /// é o que marca o que falta processar — a tabela não tem coluna de "já tratado".
-    /// </summary>
+    /// <summary>Estorno já lançado para uma consulta (RN-052).</summary>
+    Task<MovimentoDePontos?> ObterEstornoDaConsultaAsync(Guid consultaId);
+
+    /// <summary>Crédito já lançado para uma obrigação cumprida (RN-047).</summary>
+    Task<MovimentoDePontos?> ObterCreditoDaObrigacaoAsync(Guid obrigacaoId);
+
+    /// <summary>Lotes vencidos que ainda têm saldo a baixar (RN-050).</summary>
     Task<IEnumerable<MovimentoDePontos>> ObterCreditosVencidosSemBaixaAsync(DateTime agora);
 
     Task AdicionarAsync(MovimentoDePontos movimento);
+
+    /// <summary>Persiste o consumo do lote. Só o <c>Restante</c> muda.</summary>
+    void Atualizar(MovimentoDePontos movimento);
+
+    Task<CupomResgate?> ObterCupomAsync(Guid cupomId);
+    Task<IEnumerable<CupomResgate>> ObterCuponsDoTutorAsync(Guid tutorId);
+
+    /// <summary>Cupons emitidos que passaram da validade (RN-053).</summary>
+    Task<IEnumerable<CupomResgate>> ObterCuponsVencidosAsync(DateTime agora);
+
+    Task AdicionarCupomAsync(CupomResgate cupom);
+    void AtualizarCupom(CupomResgate cupom);
 
     Task<int> SalvarAsync();
 }

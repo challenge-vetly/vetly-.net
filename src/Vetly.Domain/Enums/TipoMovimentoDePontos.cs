@@ -18,5 +18,11 @@ public enum TipoMovimentoDePontos
     Expiracao = 3,
 
     /// <summary>Correção lançada pela operação.</summary>
-    Ajuste = 4
+    Ajuste = 4,
+
+    /// <summary>
+    /// Pontos desfeitos por cancelamento ou reembolso da consulta que os gerou
+    /// (RN-052). Separado de <c>Ajuste</c> porque tem causa própria e auditável.
+    /// </summary>
+    Estorno = 5
 }

@@ -85,12 +85,11 @@ public class PagamentoService : IPagamentoService
         // O split e calculado pela Vetly, nunca pelo provedor (RN-051/RN-070)
         var split = await ApurarSplitAsync(pagamento);
 
-        // RN-051: o desconto do resgate sai da comissao da plataforma, e nao do bruto.
-        // O repasse ja foi calculado sobre o valor cheio e nao se mexe nele — fazer o
-        // prestador custear um programa de fidelidade que ele nao ofereceu seria tirar
-        // dinheiro de terceiro.
-        if (dto.PontosAResgatar > 0)
-            split = await AplicarResgateAsync(pagamento, split, dto.PontosAResgatar);
+        // RN-051: o desconto do cupom e repartido entre Vetly e prestador pela faixa
+        // do valor. Nao reduz o bruto: reduz a comissao e o repasse, cada um na sua
+        // parte.
+        if (dto.CupomId is { } cupomId)
+            split = await AplicarCupomAsync(pagamento, split, cupomId);
 
         var chave = pagamento.Id.ToString();
         var cobranca = await _adaptador.CriarCobrancaAsync(
@@ -109,17 +108,23 @@ public class PagamentoService : IPagamentoService
 
         var partes = cobranca.Instrucoes.Split(SeparadorDaInstrucao);
 
-        if (pagamento.PontosResgatados is { } resgatados && pagamento.ValorDoDesconto is { } desconto)
-            await _fidelidade.RegistrarResgateAsync(pagamento.TutorId, resgatados, desconto, pagamento.Id);
-
         return new CobrancaCriadaRespostaDto
         {
             Id = pagamento.Id,
             StatusPagamento = pagamento.StatusPagamento,
             Valor = pagamento.Valor,
             ValorCobrado = pagamento.ValorCobrado,
-            PontosResgatados = pagamento.PontosResgatados,
-            ValorDoDesconto = pagamento.ValorDoDesconto,
+            DescontoFidelidade = pagamento.CupomId is { } cupom
+                ? new DescontoDeFidelidadeDto
+                {
+                    CupomId = cupom,
+                    PontosResgatados = pagamento.PontosResgatados ?? 0,
+                    Valor = pagamento.ValorDoDesconto ?? 0m,
+                    Faixa = pagamento.FaixaDoDesconto,
+                    AbsorvidoVetly = pagamento.DescontoVetly ?? 0m,
+                    AbsorvidoPrestador = pagamento.DescontoPrestador ?? 0m
+                }
+                : null,
             Split = new SplitDto
             {
                 Plano = split.Plano,
@@ -278,21 +283,37 @@ public class PagamentoService : IPagamentoService
     /// comissão: a Vetly banca a fidelidade que oferece, mas não paga para atender.
     /// O repasse ao prestador não muda em nenhum dos casos (RN-072).
     /// </summary>
-    private async Task<ResultadoDoSplit> AplicarResgateAsync(
-        Pagamento pagamento, ResultadoDoSplit split, int pontos)
+    private async Task<ResultadoDoSplit> AplicarCupomAsync(
+        Pagamento pagamento, ResultadoDoSplit split, Guid cupomId)
     {
-        var desconto = await _fidelidade.ApurarDescontoAsync(
-            pagamento.TutorId, pontos, pagamento.Valor, split.Comissao);
+        var cupom = await _fidelidade.ObterCupomAsync(cupomId);
 
-        pagamento.AplicarDesconto(desconto.PontosResgatados, desconto.ValorDoDesconto);
 
-        var comissaoLiquida = split.Comissao - desconto.ValorDoDesconto;
+        if (cupom.Status != StatusCupom.Emitido || cupom.ExpiraEm <= DateTime.UtcNow)
+            throw new BusinessRuleException("RN-053",
+                "Este cupom nao esta mais valido.");
+
+        if (cupom.Desconto > pagamento.Valor)
+            throw new BusinessRuleException("RN-054",
+                "O desconto do cupom excede o valor da cobranca.");
+
+        // A parte de cada um sai do proprio bolso: a da Vetly, da comissao; a do
+        // prestador, do repasse. Somadas, fecham o desconto — e o bruto continua
+        // sendo o preco do servico.
+        pagamento.AplicarDesconto(
+            cupom.Id, cupom.PontosDebitados, cupom.Desconto,
+            cupom.DescontoVetly, cupom.DescontoPrestador, cupom.Faixa);
+
+        var comissao = split.Comissao - cupom.DescontoVetly;
+        var repasse = split.Repasse - cupom.DescontoPrestador;
 
         pagamento.RegistrarSplit(
-            split.Plano, split.TakeRate, comissaoLiquida, split.Repasse,
+            split.Plano, split.TakeRate, comissao, repasse,
             pagamento.DestinatarioRepasseId ?? Guid.Empty);
 
-        return split with { Comissao = comissaoLiquida };
+        await _fidelidade.MarcarCupomComoUsadoAsync(cupom.Id);
+
+        return split with { Comissao = comissao, Repasse = repasse };
     }
 
     /// <summary>Apura e grava o split do pagamento, quando ele tem consulta vinculada.</summary>
