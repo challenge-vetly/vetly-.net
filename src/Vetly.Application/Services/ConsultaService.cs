@@ -25,6 +25,7 @@ public class ConsultaService : IConsultaService
     private readonly IEnumerable<ICancelamentoStrategy> _strategies;
     private readonly IUsuarioAtual _usuario;
     private readonly IAgendaRepository _agendaRepo;
+    private readonly IFilaDeJobs _fila;
 
     public ConsultaService(
         IConsultaRepository repo,
@@ -35,7 +36,8 @@ public class ConsultaService : IConsultaService
         IEmpresaRepository empresaRepo,
         IEnumerable<ICancelamentoStrategy> strategies,
         IUsuarioAtual usuario,
-        IAgendaRepository agendaRepo)
+        IAgendaRepository agendaRepo,
+        IFilaDeJobs fila)
     {
         _repo = repo;
         _pagamentoRepo = pagamentoRepo;
@@ -46,6 +48,7 @@ public class ConsultaService : IConsultaService
         _strategies = strategies;
         _usuario = usuario;
         _agendaRepo = agendaRepo;
+        _fila = fila;
     }
 
     /// <summary>
@@ -271,6 +274,9 @@ public class ConsultaService : IConsultaService
         _pagamentoRepo.Atualizar(pagamento);
         await _repo.SalvarAsync();
 
+        // O horario volta a valer, e quem esta na fila de espera precisa saber (RN-037)
+        await LiberarHorarioAsync(consulta);
+
         return resultado;
     }
 
@@ -355,6 +361,25 @@ public class ConsultaService : IConsultaService
         consulta.ValidarDiagnostico();
         _repo.Atualizar(consulta);
         await _repo.SalvarAsync();
+    }
+
+    /// <summary>
+    /// Devolve o horario da consulta a disponibilidade e avisa a lista de espera.
+    /// Toda entrada em "livre" dispara a promocao do primeiro da fila (RN-037).
+    /// </summary>
+    private async Task LiberarHorarioAsync(Consulta consulta)
+    {
+        if (consulta.SlotId is not { } slotId)
+            return;
+
+        var slot = await _agendaRepo.ObterSlotAsync(slotId);
+        if (slot is null) return;
+
+        slot.Liberar();
+        _agendaRepo.AtualizarSlot(slot);
+        await _agendaRepo.SalvarAsync();
+
+        await _fila.EnfileirarAsync(TipoJob.PromoverListaEspera, slot.Id.ToString());
     }
 
     /// <summary>

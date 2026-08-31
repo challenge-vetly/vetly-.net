@@ -11,11 +11,13 @@ using Vetly.Application.Strategies.Cancelamento;
 using Vetly.Application.Strategies.Split;
 using Vetly.Infrastructure.Adapters;
 using Vetly.Infrastructure.Data;
+using Vetly.Infrastructure.Jobs;
 using Vetly.Infrastructure.Repositories;
 using Vetly.Infrastructure.Security;
 using Vetly.API.Middlewares;
 using Vetly.API.HealthChecks;
 using Vetly.API.Filters;
+using Vetly.API.Jobs;
 using Vetly.API.Security;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
@@ -112,6 +114,7 @@ builder.Services.AddScoped<IDispositivoRepository, DispositivoRepository>();
 builder.Services.AddScoped<IAgendaRepository, AgendaRepository>();
 builder.Services.AddScoped<IBuscaRepository, BuscaRepository>();
 builder.Services.AddScoped<IListaEsperaRepository, ListaEsperaRepository>();
+builder.Services.AddScoped<IFilaDeJobs, FilaDeJobs>();
 
 // ── Escopo do usuário da requisição (RN-105/RN-106) ──────────────────────────
 // Os serviços leem identidade e escopo daqui, nunca de parametro vindo do cliente.
@@ -123,6 +126,7 @@ builder.Services.AddScoped<IUsuarioAtual, UsuarioAtual>();
 builder.Services.AddSingleton<ISenhaHasher, Pbkdf2SenhaHasher>();
 builder.Services.AddSingleton<IGeradorDeTokenJwt, GeradorDeTokenJwt>();
 builder.Services.AddSingleton<IGeradorDeSenhaTemporaria, GeradorDeSenhaTemporaria>();
+builder.Services.AddScoped<ITokenDeServico, TokenDeServico>();
 
 // ── Adaptadores de dependência externa (C2) ──────────────────────────────────
 // Trocar de fornecedor = trocar o registro aqui, sem tocar em serviço nenhum (§5).
@@ -202,6 +206,17 @@ builder.Services.AddHttpClient<IOllamaService, OllamaService>(client =>
     client.Timeout = TimeSpan.FromSeconds(
         builder.Configuration.GetValue<int>("Ollama:TimeoutSeconds", 120));
 });
+
+// ── Worker de negocio (§11) ──────────────────────────────────────────────────
+// Um BackgroundService no mesmo host, sobre o Oracle que ja existe: nenhum broker
+// novo. Handlers e rotinas entram por DI — o worker nao conhece nenhum deles.
+builder.Services.AddScoped<IJobHandler, PromoverListaEsperaHandler>();
+builder.Services.AddScoped<IJobHandler, ConfirmarPagamentoSimuladoHandler>();
+
+builder.Services.AddScoped<IRotinaPeriodica, ExpirarLocksDeCheckout>();
+builder.Services.AddScoped<IRotinaPeriodica, LimparIdempotenciaVencida>();
+
+builder.Services.AddHostedService<VetlyBackgroundService>();
 
 // ── Health Checks ────────────────────────────────────────────────────────────
 // Registrado depois das dependencias (DbContext e HttpClient do Ollama) para que

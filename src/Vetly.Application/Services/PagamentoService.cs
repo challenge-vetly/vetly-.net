@@ -17,6 +17,7 @@ public class PagamentoService : IPagamentoService
     private readonly IEmpresaRepository _empresaRepo;
     private readonly IPagamentoAdapter _adaptador;
     private readonly IAgendaRepository _agendaRepo;
+    private readonly IFilaDeJobs _fila;
     private readonly IEnumerable<ISplitFinanceiroStrategy> _splitStrategies;
     private readonly IUsuarioAtual _usuario;
 
@@ -27,6 +28,7 @@ public class PagamentoService : IPagamentoService
         IEmpresaRepository empresaRepo,
         IPagamentoAdapter adaptador,
         IAgendaRepository agendaRepo,
+        IFilaDeJobs fila,
         IEnumerable<ISplitFinanceiroStrategy> splitStrategies,
         IUsuarioAtual usuario)
     {
@@ -36,6 +38,7 @@ public class PagamentoService : IPagamentoService
         _empresaRepo = empresaRepo;
         _adaptador = adaptador;
         _agendaRepo = agendaRepo;
+        _fila = fila;
         _splitStrategies = splitStrategies;
         _usuario = usuario;
     }
@@ -87,6 +90,12 @@ public class PagamentoService : IPagamentoService
 
         await _repo.AdicionarAsync(pagamento);
         await _repo.SalvarAsync();
+
+        // O adaptador simulado devolve o evento que um provedor mandaria; enfileira-lo
+        // faz o webhook chegar sozinho, com o atraso de um provedor de verdade.
+        // O adaptador real nao devolve evento nenhum: quem manda e o provedor.
+        if (cobranca.EventoSimulado is { } evento)
+            await _fila.EnfileirarAsync(TipoJob.ConfirmarPagamentoSimulado, evento, cobranca.AtrasoDoEvento);
 
         var partes = cobranca.Instrucoes.Split(SeparadorDaInstrucao);
 

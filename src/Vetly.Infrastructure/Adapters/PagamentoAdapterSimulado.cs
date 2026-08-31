@@ -20,6 +20,9 @@ public class PagamentoAdapterSimulado : IPagamentoAdapter
 {
     private const string PrefixoDaReferencia = "sim_";
 
+    /// <summary>Atraso com que o provedor simulado entrega o evento de status.</summary>
+    public static readonly TimeSpan AtrasoDoEvento = TimeSpan.FromSeconds(2);
+
     private readonly ILogger<PagamentoAdapterSimulado> _logger;
 
     public PagamentoAdapterSimulado(ILogger<PagamentoAdapterSimulado> logger) => _logger = logger;
@@ -33,9 +36,14 @@ public class PagamentoAdapterSimulado : IPagamentoAdapter
             "Cobranca simulada criada | referencia={Referencia} valor={Valor} meio={Meio} chave={Chave}",
             referencia, req.Valor, req.Meio, req.ChaveIdempotencia);
 
-        // Nunca confirmada aqui: quem confirma e o webhook (vetly-tech §7.5)
+        // O provedor simulado "manda" o evento alguns segundos depois, como um real faria.
+        // O pagamento nao pode confirmar dentro da requisicao que criou a cobranca: o fluxo
+        // perderia a forma assincrona que precisa ter quando um gateway real entrar.
+        var desfecho = RecusaProgramada(req.Valor) ? StatusPagamento.Recusado : StatusPagamento.Confirmado;
+        var evento = $"{{\"referenciaExterna\":\"{referencia}\",\"status\":\"{desfecho}\"}}";
+
         return Task.FromResult(new CobrancaCriadaDto(
-            referencia, MontarInstrucoes(req), StatusPagamento.Pendente));
+            referencia, MontarInstrucoes(req), StatusPagamento.Pendente, evento, AtrasoDoEvento));
     }
 
     /// <inheritdoc/>
@@ -95,10 +103,15 @@ public class PagamentoAdapterSimulado : IPagamentoAdapter
     /// <summary>Referência derivada do pagamento — a mesma cobrança sempre dá a mesma.</summary>
     public static string ReferenciaDe(Guid pagamentoId) => $"{PrefixoDaReferencia}{pagamentoId}";
 
+    /// <summary>
+    /// Convencao do documento: valor terminado em ,99 exercita a trilha de recusa sem
+    /// depender de sorte.
+    /// </summary>
+    private static bool RecusaProgramada(decimal valor) => decimal.Round(valor % 1m, 2) == 0.99m;
+
     private static string MontarInstrucoes(CriarCobrancaRequest req)
     {
-        // Convencao do documento: valor terminado em ,99 exercita a trilha de recusa
-        var recusaProgramada = decimal.Round(req.Valor % 1m, 2) == 0.99m;
+        var recusaProgramada = RecusaProgramada(req.Valor);
 
         var codigo = $"vetly-sim-{req.PagamentoId.ToString()[..8]}";
 
