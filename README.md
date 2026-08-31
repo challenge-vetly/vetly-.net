@@ -12,7 +12,7 @@ O Vetly é uma API REST para gestão de clínicas veterinárias, cobrindo todo o
 | Autenticação | JWT Bearer |
 | Documentação | Scalar (tema DeepSpace) em `/scalar/v1` |
 | IA | Ollama local (modelo `llama3.1`) |
-| Testes | xUnit + Moq (614 testes verdes) |
+| Testes | xUnit + Moq (630 testes verdes) |
 
 ## Padrões aplicados
 
@@ -320,6 +320,18 @@ A API **nunca proxia os bytes**: registra a mídia e o app fala direto com o sto
 
 Áudio de consulta é a única mídia com prazo: 30 dias para reprocessamento e depois some (P-06). Conteúdo clínico não expira, por guarda regulatória.
 
+### Painel do veterinário
+
+| Método | Rota | Descrição |
+|---|---|---|
+| GET | `/api/dashboard/veterinario` | Agenda do dia, pendências e números do mês (`?data=`) (RN-105) |
+
+**Não é relatório: é o que precisa da atenção dele agora.** A ordem das seções segue a ordem em que as coisas travam — pendência de documentação bloqueia pagamento, agenda define o dia, números do mês são contexto.
+
+`TemPendencia` conta só o que trava dinheiro ou documento: consulta iniciada e nunca encerrada, rascunho sem decisão, documento que exige assinatura e não a tem. Avaliação sem resposta aparece no painel mas **não** acende o aviso — responder é desejável, não bloqueante. A agenda marca o animal sem peso cadastrado, porque descobrir isso durante a consulta é tarde (RN-081), e omite consulta cancelada: o painel serve para conduzir o dia.
+
+Não há id de veterinário na rota — o escopo vem do token, e nem o Admin pede o painel de outro por aqui.
+
 ### Notificações
 
 | Método | Rota | Descrição |
@@ -462,6 +474,7 @@ Sem parâmetros valem página 1 e 20 itens. O tamanho é limitado a 100 por pág
 | RN-037 | Vaga liberada é oferecida ao primeiro da fila com prioridade de 15 min; vencida, passa ao próximo | `ItemListaEspera` + `PromoverProximoAsync` |
 | RN-026 | Endereço persistido no próprio registro, com latitude/longitude **derivadas dele** pela geocodificação — o payload do cliente é ignorado | `Endereco` + `IGeocodificacaoAdapter` |
 | RN-033/RN-057 | Nota só é pública a partir de 3 avaliações; `PUBLICADO_EM` ancora o selo "Novo na Vetly" por 30 dias | `Veterinario.TemNotaPublica` + `PublicarNoMatching` |
+| RN-105 | O painel é sempre do próprio veterinário e destaca só o que trava dinheiro ou documento; avaliação sem resposta não conta como pendência bloqueante | `DashboardService.ObterDoVeterinarioAsync` |
 | RN-092 | Notificação é gravada antes de enviada e sobrevive ao push perdido; token recusado como inválido desativa o dispositivo, falha de provedor não | `Notificacao` + `NotificacaoService` + `IPushAdapter` |
 | RN-094/RN-095 | Régua diária transforma obrigação vencendo em um aviso por animal, com intervalo mínimo de 7 dias, e cria o lembrete que aciona a clínica após 3 tentativas | `AvisarObrigacoesVencendo` + `LembreteAgendado` |
 | RN-055 | Só o Responsável atendido avalia, uma vez por consulta e em até 30 dias; índice único garante a invariante sob concorrência | `Avaliacao` + `AvaliacaoService` |

@@ -259,6 +259,7 @@ builder.Services.AddScoped<IObrigacaoService, ObrigacaoService>();
 builder.Services.AddScoped<IFidelidadeService, FidelidadeService>();
 builder.Services.AddScoped<IAvaliacaoService, AvaliacaoService>();
 builder.Services.AddScoped<INotificacaoService, NotificacaoService>();
+builder.Services.AddScoped<IDashboardService, DashboardService>();
 builder.Services.AddScoped<IListaEsperaService, ListaEsperaService>();
 
 // ── Factories (IEnumerable<IDocumentoFactory> — resolvidas pelo DI) ──────────
