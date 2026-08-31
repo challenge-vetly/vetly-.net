@@ -120,6 +120,19 @@ builder.Services.AddScoped<ICapturaRepository, CapturaRepository>();
 builder.Services.AddScoped<IAuditoriaIaRepository, AuditoriaIaRepository>();
 builder.Services.AddSingleton<IGeradorDePdf, GeradorDePdfSimples>();
 
+// Assinatura de documentos (RN-087): no MVP, o nome digitado pelo profissional.
+// Em producao, certificado ICP-Brasil vinculado ao CRMV — troca-se a implementacao
+// desta porta sem mexer no fluxo em volta.
+var adaptadorAssinatura = builder.Configuration["Adaptadores:Assinatura"] ?? "NomeDigitado";
+builder.Services.AddScoped<IAssinaturaAdapter>(sp => adaptadorAssinatura switch
+{
+    "NomeDigitado" => new AssinaturaAdapterNomeDigitado(
+        sp.GetRequiredService<ILogger<AssinaturaAdapterNomeDigitado>>()),
+
+    _ => throw new InvalidOperationException(
+        $"Adaptador de assinatura '{adaptadorAssinatura}' nao reconhecido. Valor valido: NomeDigitado.")
+});
+
 // ── Escopo do usuário da requisição (RN-105/RN-106) ──────────────────────────
 // Os serviços leem identidade e escopo daqui, nunca de parametro vindo do cliente.
 builder.Services.AddHttpContextAccessor();

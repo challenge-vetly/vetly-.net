@@ -125,6 +125,21 @@ public class Documento
     public void Assinar() => AssinadoDigitalmente = true;
 
     /// <summary>
+    /// Indica se este tipo de documento precisa de assinatura para valer (RN-087).
+    ///
+    /// Receita e atestado precisam: saem da plataforma e fazem uma afirmacao em nome
+    /// de um profissional habilitado — sem assinatura, quem os recebe nao tem como
+    /// saber de quem vieram. Prontuario e o registro interno do atendimento, e a nota
+    /// fiscal e recibo: nenhum dos dois faz essa afirmacao para fora, e exigir
+    /// assinatura neles travaria consultas que nao prescreveram nada.
+    /// </summary>
+    public bool ExigeAssinatura() =>
+        TipoDocumento is TipoDocumento.ReceitaVeterinaria or TipoDocumento.Atestado;
+
+    /// <summary>Verdadeiro quando o documento precisa de assinatura e ainda não a tem.</summary>
+    public bool PendenteDeAssinatura() => ExigeAssinatura() && !AssinadoDigitalmente;
+
+    /// <summary>
     /// Registra a assinatura com o método e o carimbo produzidos pelo adaptador de
     /// assinatura (RN-087). No MVP o método é o nome digitado, que não habilita
     /// dispensação externa de controlados.

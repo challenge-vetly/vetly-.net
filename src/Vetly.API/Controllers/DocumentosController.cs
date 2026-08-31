@@ -65,16 +65,26 @@ public class DocumentosController : ControllerBase
         return CreatedAtAction(nameof(ObterPorId), new { id = doc.Id }, doc);
     }
 
-    /// <summary>Assina digitalmente um documento (RN-087).</summary>
+    /// <summary>Assina o documento pelo adaptador de assinatura (RN-087).</summary>
+    /// <remarks>
+    /// Somente o veterinario que conduziu o atendimento assina seus documentos; fora
+    /// do escopo devolve 403 (RN-105). Documento ja assinado devolve 409.
+    ///
+    /// No MVP a assinatura e o nome digitado, conferido contra o nome registrado. O
+    /// carimbo entra no corpo do documento e diz como ele foi assinado — inclusive que
+    /// nao habilita dispensacao de controlado fora da plataforma. Omitir isso seria
+    /// deixar o documento parecer mais do que e.
+    /// </remarks>
     [HttpPost("{id:guid}/assinar")]
-    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(DocumentoDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
     [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
-    public async Task<IActionResult> Assinar(Guid id)
-    {
-        await _service.AssinarAsync(id);
-        return NoContent();
-    }
+    public async Task<IActionResult> Assinar(Guid id, [FromBody] AssinaturaRequest request) =>
+        Ok(await _service.AssinarAsync(id, request.NomeCompleto));
 
     /// <summary>Cria uma versao corrigida de um documento (RN-088/RN-089).</summary>
     [HttpPost("{id:guid}/correcao")]
@@ -132,6 +142,17 @@ public class DocumentosController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> ObterBoardDoPet(Guid animalId) =>
         Ok(await _service.ObterDoBoardDoPetAsync(animalId));
+}
+
+/// <summary>Payload da assinatura (RN-087).</summary>
+public sealed class AssinaturaRequest
+{
+    /// <summary>
+    /// Nome completo do veterinario, digitado no ato de assinar. E conferido contra o
+    /// nome registrado — assinar em nome de outro profissional e o que a conferencia
+    /// existe para impedir.
+    /// </summary>
+    public string? NomeCompleto { get; set; }
 }
 
 /// <summary>Payload para correcao de documento.</summary>
