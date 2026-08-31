@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Vetly.Application.DTOs.Agenda;
 using Vetly.Application.DTOs.Veterinario;
+using Vetly.API.Filters;
 using Vetly.Application.Interfaces;
 
 namespace Vetly.API.Controllers;
@@ -20,6 +21,34 @@ public class VeterinariosController : ControllerBase
         _service = service;
         _agenda = agenda;
     }
+
+    /// <summary>
+    /// Extrato dos atendimentos realizados pelo proprio veterinario (RN-024).
+    /// </summary>
+    /// <remarks>
+    /// E a unica rota de negocio que o veterinario desativado continua alcancando, e o
+    /// formato segue disso: <b>sem nome de Responsavel, sem nome de animal, sem
+    /// conteudo clinico</b>. O que ele precisa e do registro financeiro do proprio
+    /// trabalho — conferir repasses, fechar a contabilidade, sustentar uma eventual
+    /// disputa. Nada disso exige saber de quem era o pet, e dado clinico aqui seria
+    /// dado vazando por uma porta que a RN-022 fechou.
+    ///
+    /// Nao ha id de veterinario na rota: o escopo vem do token, e o extrato e sempre o
+    /// do proprio profissional (RN-105).
+    ///
+    /// Sem periodo informado, os ultimos 12 meses. Consulta cancelada ou expirada
+    /// aparece na lista, para conferencia, mas nao soma dinheiro que nao existiu.
+    /// </remarks>
+    [HttpGet("me/extrato")]
+    [PermitidoAoVetDesativado]
+    [ProducesResponseType(typeof(ExtratoDoVeterinarioDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ObterExtrato(
+        [FromQuery] DateTime? inicio = null, [FromQuery] DateTime? fim = null) =>
+        Ok(await _service.ObterExtratoAsync(inicio, fim));
 
     /// <summary>Retorna todos os veterinarios ativos.</summary>
     [HttpGet]

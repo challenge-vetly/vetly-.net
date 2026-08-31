@@ -204,6 +204,48 @@ public class AuthVeterinarioTests : IClassFixture<VetlyWebApplicationFactory>
     }
 
     [Fact]
+    public async Task VetDesativado_AlcancaOExtratoDosProprioAtendimentos()
+    {
+        var vet = await CadastrarVetAsync();
+        var admin = await TokenDeAdminAsync();
+        await EnviarAsync(HttpMethod.Delete, $"/api/veterinarios/{vet.Id}", admin);
+
+        var login = await _client.PostAsync("/api/auth/login", Corpo(
+            $$"""{"email":"{{vet.Email}}","senha":"{{vet.SenhaTemporaria}}"}"""));
+        var token = (await login.Content.ReadFromJsonAsync<JsonElement>(Json)).GetProperty("token").GetString()!;
+
+        var extrato = await EnviarAsync(HttpMethod.Get, "/api/veterinarios/me/extrato", token);
+
+        // E exatamente o que a RN-024 garante ao profissional desligado
+        Assert.Equal(HttpStatusCode.OK, extrato.StatusCode);
+
+        var corpo = await extrato.Content.ReadFromJsonAsync<JsonElement>(Json);
+        Assert.Equal(vet.Id, corpo.GetProperty("veterinarioId").GetGuid());
+        Assert.False(corpo.GetProperty("cadastroAtivo").GetBoolean());
+    }
+
+    [Fact]
+    public async Task VetDesativado_NaoAlcancaOsProntuariosNemDepoisDoExtrato()
+    {
+        var vet = await CadastrarVetAsync();
+        var admin = await TokenDeAdminAsync();
+        await EnviarAsync(HttpMethod.Delete, $"/api/veterinarios/{vet.Id}", admin);
+
+        var login = await _client.PostAsync("/api/auth/login", Corpo(
+            $$"""{"email":"{{vet.Email}}","senha":"{{vet.SenhaTemporaria}}"}"""));
+        var token = (await login.Content.ReadFromJsonAsync<JsonElement>(Json)).GetProperty("token").GetString()!;
+
+        await EnviarAsync(HttpMethod.Get, "/api/veterinarios/me/extrato", token);
+
+        // O extrato nao reabre o resto: a RN-024 e restritiva por natureza
+        var consultas = await EnviarAsync(HttpMethod.Get, "/api/consultas", token);
+        var documentos = await EnviarAsync(HttpMethod.Get, $"/api/documentos/animal/{Guid.NewGuid()}", token);
+
+        Assert.Equal(HttpStatusCode.Forbidden, consultas.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, documentos.StatusCode);
+    }
+
+    [Fact]
     public async Task Perfil_DoVet_ListaAsPendenciasDele()
     {
         var vet = await CadastrarVetAsync();

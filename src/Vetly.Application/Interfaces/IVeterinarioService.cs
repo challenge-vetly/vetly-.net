@@ -31,4 +31,13 @@ public interface IVeterinarioService
     /// indisponibilidade do conselho.
     /// </summary>
     Task<ResultadoCrmvDto> RevalidarCrmvAsync(Guid id);
+
+    /// <summary>
+    /// Extrato dos atendimentos realizados pelo próprio profissional (RN-024).
+    ///
+    /// É a única coisa que o veterinário desativado continua alcançando, e por isso
+    /// não carrega dado de Responsável, de animal, nem conteúdo clínico: o que ele
+    /// precisa é do registro financeiro do próprio trabalho.
+    /// </summary>
+    Task<ExtratoDoVeterinarioDto> ObterExtratoAsync(DateTime? inicio, DateTime? fim);
 }

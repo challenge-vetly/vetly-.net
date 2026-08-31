@@ -22,10 +22,14 @@ public class VeterinarioServiceTests
     private readonly Mock<ISenhaHasher> _hasherMock = new();
     private readonly Mock<IGeradorDeSenhaTemporaria> _geradorDeSenhaMock = new();
     private readonly Mock<IGeocodificacaoAdapter> _geocodificacaoMock = new();
+    private readonly Mock<IConsultaRepository> _consultaRepoMock = new();
+    private readonly Mock<IPagamentoRepository> _pagamentoRepoMock = new();
+    private readonly Mock<IUsuarioAtual> _usuarioMock = new();
 
     private VeterinarioService CriarServico() =>
         new(_repoMock.Object, _crmvAdapterMock.Object, _hasherMock.Object,
-            _geradorDeSenhaMock.Object, _geocodificacaoMock.Object);
+            _geradorDeSenhaMock.Object, _geocodificacaoMock.Object,
+            _consultaRepoMock.Object, _pagamentoRepoMock.Object, _usuarioMock.Object);
 
     /// <summary>Configura a resposta da geocodificacao para o proximo endereco (RN-026).</summary>
     private void GeocodificacaoResolve(decimal lat = -23.561414m, decimal lng = -46.655881m, bool revisar = false) =>
