@@ -1,4 +1,5 @@
 using Moq;
+using Vetly.Application.DTOs.Fidelidade;
 using Vetly.Application.DTOs.Pagamento;
 using Vetly.Application.Exceptions;
 using Vetly.Application.Interfaces;
@@ -45,11 +46,13 @@ public class PagamentoWebhookTests
             .ReturnsAsync(new CobrancaCriadaDto(Referencia, "PixSimulado|vetly-sim-abc123", StatusPagamento.Pendente));
     }
 
+    private readonly Mock<IFidelidadeService> _fidelidade = new();
+
     private PagamentoService CriarServico() =>
         new(_repo.Object, _vetRepo.Object, _consultaRepo.Object, _empresaRepo.Object,
             _adaptador.Object, _agendaRepo.Object, _fila.Object,
             [new SplitBasicoStrategy(), new SplitProfissionalStrategy(), new SplitEnterpriseStrategy()],
-            _usuario.Object);
+            _fidelidade.Object, _usuario.Object);
 
     /// <summary>Monta consulta em checkout, com horario travado e pagamento pendente.</summary>
     private (Pagamento Pagamento, Consulta Consulta, Slot Slot) CenarioEmCheckout()
@@ -112,6 +115,112 @@ public class PagamentoWebhookTests
         Assert.Equal("PixSimulado", resposta.Instrucoes.Tipo);
         Assert.Equal("vetly-sim-abc123", resposta.Instrucoes.Codigo);
         Assert.Equal("Simulada", resposta.Liquidacao);
+    }
+
+    // ── Resgate de pontos no checkout (RN-051) ───────────────────────────────
+
+    /// <summary>Prepara o resgate que o servico de fidelidade devolveria.</summary>
+    private void ResgateDe(int pontos, decimal desconto) =>
+        _fidelidade
+            .Setup(f => f.ApurarDescontoAsync(
+                It.IsAny<Guid>(), pontos, It.IsAny<decimal>(), It.IsAny<decimal>()))
+            .ReturnsAsync(new DescontoAplicadoDto
+            {
+                PontosResgatados = pontos,
+                ValorDoDesconto = desconto,
+                ValorFinal = 200m - desconto
+            });
+
+    [Fact]
+    public async Task Resgate_SaiDaComissaoDaPlataformaENaoDoRepasse()
+    {
+        var (_, consulta, _) = CenarioEmCheckout();
+        ResgateDe(pontos: 1000, desconto: 10m);
+
+        Pagamento? criado = null;
+        _repo.Setup(r => r.AdicionarAsync(It.IsAny<Pagamento>()))
+            .Callback<Pagamento>(p => criado = p).Returns(Task.CompletedTask);
+
+        var resposta = await CriarServico().CriarCobrancaAsync(new CriarPagamentoDto
+        {
+            TutorId = consulta.TutorId,
+            ConsultaId = consulta.Id,
+            Valor = 200m,
+            MeioPagamento = MeioPagamento.Pix,
+            PontosAResgatar = 1000
+        });
+
+        // Plano Profissional: 12% de 200 = 24 de comissao, 176 de repasse.
+        // O desconto de 10 sai da comissao; o repasse nao muda.
+        Assert.Equal(14m, resposta.Split.ComissaoVetly);
+        Assert.Equal(176m, resposta.Split.Repasse);
+        Assert.Equal(176m, criado!.Repasse);
+
+        // Fazer o prestador custear um programa que ele nao ofereceu seria tirar
+        // dinheiro de terceiro
+        Assert.Equal(200m, criado.Valor);
+        Assert.Equal(190m, criado.ValorCobrado);
+    }
+
+    [Fact]
+    public async Task Resgate_CobraDoProvedorApenasOValorComDesconto()
+    {
+        var (_, consulta, _) = CenarioEmCheckout();
+        ResgateDe(pontos: 1000, desconto: 10m);
+
+        CriarCobrancaRequest? pedido = null;
+        _adaptador
+            .Setup(a => a.CriarCobrancaAsync(It.IsAny<CriarCobrancaRequest>()))
+            .Callback<CriarCobrancaRequest>(r => pedido = r)
+            .ReturnsAsync(new CobrancaCriadaDto(Referencia, "PixSimulado|vetly-sim-abc123", StatusPagamento.Pendente));
+
+        await CriarServico().CriarCobrancaAsync(new CriarPagamentoDto
+        {
+            TutorId = consulta.TutorId,
+            ConsultaId = consulta.Id,
+            Valor = 200m,
+            MeioPagamento = MeioPagamento.Pix,
+            PontosAResgatar = 1000
+        });
+
+        // O Responsavel paga o liquido; o bruto continua sendo o preco do servico
+        Assert.Equal(190m, pedido!.Value.Valor);
+    }
+
+    [Fact]
+    public async Task Resgate_LancaODebitoDepoisDeCriarACobranca()
+    {
+        var (_, consulta, _) = CenarioEmCheckout();
+        ResgateDe(pontos: 1000, desconto: 10m);
+
+        await CriarServico().CriarCobrancaAsync(new CriarPagamentoDto
+        {
+            TutorId = consulta.TutorId,
+            ConsultaId = consulta.Id,
+            Valor = 200m,
+            MeioPagamento = MeioPagamento.Pix,
+            PontosAResgatar = 1000
+        });
+
+        _fidelidade.Verify(f => f.RegistrarResgateAsync(
+            consulta.TutorId, 1000, 10m, It.IsAny<Guid>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task SemResgate_NaoConsultaAFidelidade()
+    {
+        var (_, consulta, _) = CenarioEmCheckout();
+
+        await CriarServico().CriarCobrancaAsync(new CriarPagamentoDto
+        {
+            TutorId = consulta.TutorId,
+            ConsultaId = consulta.Id,
+            Valor = 200m,
+            MeioPagamento = MeioPagamento.Pix
+        });
+
+        _fidelidade.Verify(f => f.ApurarDescontoAsync(
+            It.IsAny<Guid>(), It.IsAny<int>(), It.IsAny<decimal>(), It.IsAny<decimal>()), Times.Never);
     }
 
     [Fact]

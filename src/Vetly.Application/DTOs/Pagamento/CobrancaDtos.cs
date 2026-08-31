@@ -16,7 +16,20 @@ public class CobrancaCriadaRespostaDto
 
     public StatusPagamento StatusPagamento { get; set; }
 
+    /// <summary>Valor bruto do serviço, antes de qualquer desconto.</summary>
     public decimal Valor { get; set; }
+
+    /// <summary>O que o Responsável de fato paga, já com o desconto do resgate.</summary>
+    public decimal ValorCobrado { get; set; }
+
+    /// <summary>Pontos de fidelidade resgatados nesta cobrança (RN-051).</summary>
+    public int? PontosResgatados { get; set; }
+
+    /// <summary>
+    /// Desconto concedido pelo resgate. Sai da comissão da plataforma: o repasse ao
+    /// prestador é o mesmo com ou sem resgate (RN-051/RN-072).
+    /// </summary>
+    public decimal? ValorDoDesconto { get; set; }
 
     /// <summary>Repartição apurada da transação (RN-070).</summary>
     public SplitDto Split { get; set; } = new();

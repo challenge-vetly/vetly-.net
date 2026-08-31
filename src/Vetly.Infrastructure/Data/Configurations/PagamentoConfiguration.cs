@@ -95,6 +95,20 @@ public class PagamentoConfiguration : IEntityTypeConfiguration<Pagamento>
         builder.Property(p => p.DestinatarioRepasseId)
             .HasColumnType("CHAR(36)").HasColumnName("DESTINATARIO_REPASSE_ID");
 
+        // ── Fidelidade (RN-051) ──────────────────────────────────────────────
+
+        builder.Property(p => p.PontosResgatados)
+            .HasColumnType("NUMBER(10)").HasColumnName("PONTOS_RESGATADOS");
+
+        // O desconto e coluna propria, e nao um VALOR ja reduzido: o bruto continua
+        // sendo o preco do servico, e e sobre ele que o repasse ao prestador foi
+        // calculado. Guardar so o liquido apagaria de quem saiu o dinheiro.
+        builder.Property(p => p.ValorDoDesconto)
+            .HasColumnType("NUMBER(18,2)").HasColumnName("VALOR_DO_DESCONTO");
+
+        // ValorCobrado e calculado (Valor - desconto): nao vai ao banco
+        builder.Ignore(p => p.ValorCobrado);
+
         builder.HasIndex(p => p.ConsultaId).HasDatabaseName("IX_PAGAMENTO_CONSULTA");
     }
 }

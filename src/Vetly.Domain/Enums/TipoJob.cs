@@ -33,5 +33,11 @@ public enum TipoJob
     /// Estrutura a transcrição da consulta em prontuário pela IA (RN-080).
     /// Enfileirado quando todos os trechos tiveram desfecho e a janela já fechou.
     /// </summary>
-    EstruturarConsulta = 5
+    EstruturarConsulta = 5,
+
+    /// <summary>
+    /// Credita os pontos de fidelidade de uma consulta realizada (RN-052).
+    /// Enfileirado quando o veterinário encerra o atendimento.
+    /// </summary>
+    CreditarPontosDaConsulta = 6
 }

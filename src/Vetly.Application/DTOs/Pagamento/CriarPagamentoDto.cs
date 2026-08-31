@@ -18,4 +18,11 @@ public class CriarPagamentoDto
 
     [Required]
     public MeioPagamento MeioPagamento { get; set; }
+
+    /// <summary>
+    /// Pontos de fidelidade a resgatar nesta cobrança (RN-051). O desconto sai da
+    /// comissão da plataforma: o prestador recebe o repasse cheio de todo jeito.
+    /// </summary>
+    [Range(0, int.MaxValue, ErrorMessage = "Os pontos a resgatar não podem ser negativos.")]
+    public int PontosAResgatar { get; set; }
 }
