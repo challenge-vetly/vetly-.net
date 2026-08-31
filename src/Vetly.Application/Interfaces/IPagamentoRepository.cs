@@ -23,4 +23,10 @@ public interface IPagamentoRepository : IRepositoryBase<Pagamento>
 
     /// <summary>Retorna o pagamento vinculado a uma consulta, se existir.</summary>
     Task<Pagamento?> ObterPorConsultaAsync(Guid consultaId);
+
+    /// <summary>
+    /// Pagamentos confirmados num período. É a base do consolidado financeiro e da
+    /// liquidação: cobrança pendente ou recusada não entra em fechamento (RN-071).
+    /// </summary>
+    Task<IEnumerable<Pagamento>> ObterConfirmadosNoPeriodoAsync(DateTime inicio, DateTime fim);
 }
