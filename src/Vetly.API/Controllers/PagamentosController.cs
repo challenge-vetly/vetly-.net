@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Vetly.API.Filters;
 using Vetly.Application.DTOs.Comum;
 using Vetly.Application.DTOs.Pagamento;
 using Vetly.Application.Interfaces;
@@ -44,6 +45,7 @@ public class PagamentosController : ControllerBase
     /// <c>GET /api/pagamentos/{id}/status</c> para acompanhar.
     /// </remarks>
     [HttpPost]
+    [Idempotente]
     [ProducesResponseType(typeof(CobrancaCriadaRespostaDto), StatusCodes.Status202Accepted)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]

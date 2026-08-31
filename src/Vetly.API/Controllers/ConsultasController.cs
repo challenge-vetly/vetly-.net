@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Vetly.API.Filters;
 using Vetly.Application.DTOs.Cancelamento;
 using Vetly.Application.DTOs.Comum;
 using Vetly.Application.DTOs.Consulta;
@@ -45,6 +46,7 @@ public class ConsultasController : ControllerBase
     /// Horario ja reservado por outra pessoa devolve 409: e so escolher outro.
     /// </remarks>
     [HttpPost("checkout")]
+    [Idempotente]
     [ProducesResponseType(typeof(CheckoutCriadoDto), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -90,6 +92,7 @@ public class ConsultasController : ControllerBase
 
     /// <summary>Cancela uma consulta aplicando a Strategy de reembolso (RN-014/RN-041/RN-042).</summary>
     [HttpDelete("{id:guid}")]
+    [Idempotente]
     [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]

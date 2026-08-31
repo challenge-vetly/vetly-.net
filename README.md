@@ -12,7 +12,7 @@ O Vetly é uma API REST para gestão de clínicas veterinárias, cobrindo todo o
 | Autenticação | JWT Bearer |
 | Documentação | Scalar (tema DeepSpace) em `/scalar/v1` |
 | IA | Ollama local (modelo `llama3.1`) |
-| Testes | xUnit + Moq (335 testes verdes) |
+| Testes | xUnit + Moq (341 testes verdes) |
 
 ## Padrões aplicados
 
@@ -27,6 +27,7 @@ O Vetly é uma API REST para gestão de clínicas veterinárias, cobrindo todo o
 | Value Object | `Crmv` — imutável, valida regex `^\d{4,6}-[A-Z]{2}$` |
 | ProblemDetails | `ExceptionHandlingMiddleware` retorna RFC 7807 em todos os erros |
 | Enums como string | `JsonStringEnumConverter` — o JSON trafega `"Presencial"`, não `1` (entrada e saída) |
+| Idempotência | `IdempotencyFilter` + `TB_IDEMPOTENCIA`: rotas marcadas com `[Idempotente]` exigem `Idempotency-Key` e reaproveitam a resposta por 24h |
 | Adapter / Port | Dependências externas entram por porta na `Application` e implementação `*Simulado` na `Infrastructure`, escolhida por configuração (`Adaptadores:*`) — trocar de fornecedor é trocar o registro no DI |
 
 ---
