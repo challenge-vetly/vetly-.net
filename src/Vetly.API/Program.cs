@@ -122,6 +122,7 @@ builder.Services.AddScoped<IColmeiaRepository, ColmeiaRepository>();
 builder.Services.AddScoped<IObrigacaoRepository, ObrigacaoRepository>();
 builder.Services.AddScoped<IFidelidadeRepository, FidelidadeRepository>();
 builder.Services.AddScoped<IAvaliacaoRepository, AvaliacaoRepository>();
+builder.Services.AddScoped<INotificacaoRepository, NotificacaoRepository>();
 builder.Services.AddSingleton<IGeradorDePdf, GeradorDePdfSimples>();
 
 // Assinatura de documentos (RN-087): no MVP, o nome digitado pelo profissional.
@@ -201,6 +202,17 @@ switch (adaptadorStt)
             $"Adaptador de STT '{adaptadorStt}' nao reconhecido. Valores validos: Simulado, NodeRed.");
 }
 
+// Push (RN-092): no MVP, simulado. Trocar por APNs ou FCM e trocar o registro desta
+// porta — a diferenca entre provedores nao chega ao servico de notificacoes.
+var adaptadorPush = builder.Configuration["Adaptadores:Push"] ?? "Simulado";
+builder.Services.AddScoped<IPushAdapter>(sp => adaptadorPush switch
+{
+    "Simulado" => new PushAdapterSimulado(sp.GetRequiredService<ILogger<PushAdapterSimulado>>()),
+
+    _ => throw new InvalidOperationException(
+        $"Adaptador de push '{adaptadorPush}' nao reconhecido. Valor valido: Simulado.")
+});
+
 var adaptadorPagamento = builder.Configuration["Adaptadores:Pagamento"] ?? "Simulado";
 switch (adaptadorPagamento)
 {
@@ -246,6 +258,7 @@ builder.Services.AddScoped<IColmeiaService, ColmeiaService>();
 builder.Services.AddScoped<IObrigacaoService, ObrigacaoService>();
 builder.Services.AddScoped<IFidelidadeService, FidelidadeService>();
 builder.Services.AddScoped<IAvaliacaoService, AvaliacaoService>();
+builder.Services.AddScoped<INotificacaoService, NotificacaoService>();
 builder.Services.AddScoped<IListaEsperaService, ListaEsperaService>();
 
 // ── Factories (IEnumerable<IDocumentoFactory> — resolvidas pelo DI) ──────────
@@ -287,6 +300,8 @@ builder.Services.AddScoped<IJobHandler, CreditarPontosHandler>();
 builder.Services.AddScoped<IRotinaPeriodica, ExpirarLocksDeCheckout>();
 builder.Services.AddScoped<IRotinaPeriodica, LimparIdempotenciaVencida>();
 builder.Services.AddScoped<IRotinaPeriodica, ExpirarPontosVencidos>();
+builder.Services.AddScoped<IRotinaPeriodica, EnviarNotificacoesPendentes>();
+builder.Services.AddScoped<IRotinaPeriodica, AvisarObrigacoesVencendo>();
 
 builder.Services.AddHostedService<VetlyBackgroundService>();
 
