@@ -3,6 +3,7 @@ using Vetly.Application.DTOs.Comum;
 using Vetly.Application.DTOs.Consulta;
 using Vetly.Application.Interfaces;
 using Vetly.Domain.Entities;
+using Vetly.Domain.Enums;
 using Vetly.Infrastructure.Data;
 
 namespace Vetly.Infrastructure.Repositories;
@@ -76,6 +77,16 @@ public class ConsultaRepository : RepositoryBase<Consulta>, IConsultaRepository
 
         return new ResultadoPaginado<Consulta>(itens, total, paginacao);
     }
+
+    /// <inheritdoc/>
+    public async Task<IEnumerable<Consulta>> ObterRealizadasDoTutorDesdeAsync(Guid tutorId, DateTime desde) =>
+        await _dbSet
+            .AsNoTracking()
+            .Where(c => c.TutorId == tutorId
+                        && c.Status == StatusConsulta.Realizada
+                        && c.DataHora >= desde)
+            .OrderByDescending(c => c.DataHora)
+            .ToListAsync();
 
     /// <inheritdoc/>
     public async Task<IEnumerable<Consulta>> ObterNoPeriodoAsync(DateTime inicio, DateTime fim) =>

@@ -12,7 +12,7 @@ O Vetly é uma API REST para gestão de clínicas veterinárias, cobrindo todo o
 | Autenticação | JWT Bearer |
 | Documentação | Scalar (tema DeepSpace) em `/scalar/v1` |
 | IA | Ollama local (modelo `llama3.1`) |
-| Testes | xUnit + Moq (715 testes verdes) |
+| Testes | xUnit + Moq (725 testes verdes) |
 
 ## Padrões aplicados
 
@@ -394,12 +394,15 @@ O envio sai da requisição, numa rotina de um minuto: o Responsável não pode 
 
 | Método | Rota | Descrição |
 |---|---|---|
+| GET | `/api/avaliacoes/pendentes` | Atendimentos esperando avaliação, com o prazo (RN-055) |
 | POST | `/api/avaliacoes/consulta/{id}` | Avalia um atendimento realizado (RN-055) |
 | GET | `/api/avaliacoes/veterinario/{id}` | Reputação, com distribuição das notas (RN-057) |
 | POST | `/api/avaliacoes/{id}/resposta` | Resposta pública do veterinário — uma só |
 | POST | `/api/avaliacoes/{id}/moderar` | Esconde o comentário; a nota continua contando |
 
-**Só avalia quem foi atendido, e só uma vez por consulta.** É o que separa reputação de campanha: sem o vínculo com um atendimento realizado, a nota vira número que qualquer um pode empurrar. O prazo é de 30 dias — avaliação muito posterior mede memória, não atendimento — e a nota não é editável depois de enviada, porque corrigir avaliação abriria a porta para pressão sobre quem avaliou. O índice único em `CONSULTA_ID` é a invariante: sem ele, duas requisições simultâneas passariam pela verificação e gravariam as duas.
+**Só avalia quem foi atendido, e só uma vez por consulta.** É o que separa reputação de campanha: sem o vínculo com um atendimento realizado, a nota vira número que qualquer um pode empurrar. O prazo é de **14 dias** — a janela do Airbnb, referência de marketplace bilateral com reputação; avaliação muito posterior mede memória, não atendimento. A nota não é editável depois de enviada, porque corrigir avaliação abriria a porta para pressão sobre quem avaliou. O índice único em `CONSULTA_ID` é a invariante: sem ele, duas requisições simultâneas passariam pela verificação e gravariam as duas.
+
+**Cancelar uma consulta invalida a avaliação dela (RN-059)**, mas não a apaga: a nota sai do cálculo e a linha permanece com o motivo. A diferença importa — deletar permitiria a um prestador limpar uma avaliação ruim provocando o cancelamento, e a auditoria não teria como notar.
 
 A **moderação esconde o comentário e preserva a nota**. O contrário transformaria a moderação em ferramenta para apagar crítica, e há um teste que fixa isso. Moderar exige motivo: moderação sem motivo não se audita.
 
@@ -531,7 +534,8 @@ Sem parâmetros valem página 1 e 20 itens. O tamanho é limitado a 100 por pág
 | RN-105 | O painel é sempre do próprio veterinário e destaca só o que trava dinheiro ou documento; avaliação sem resposta não conta como pendência bloqueante | `DashboardService.ObterDoVeterinarioAsync` |
 | RN-092 | Notificação é gravada antes de enviada e sobrevive ao push perdido; token recusado como inválido desativa o dispositivo, falha de provedor não | `Notificacao` + `NotificacaoService` + `IPushAdapter` |
 | RN-094/RN-095 | Régua diária transforma obrigação vencendo em um aviso por animal, com intervalo mínimo de 7 dias, e cria o lembrete que aciona a clínica após 3 tentativas | `AvisarObrigacoesVencendo` + `LembreteAgendado` |
-| RN-055 | Só o Responsável atendido avalia, uma vez por consulta e em até 30 dias; índice único garante a invariante sob concorrência | `Avaliacao` + `AvaliacaoService` |
+| RN-055 | Só o Responsável atendido avalia, uma vez por consulta e em até **14 dias**; índice único garante a invariante sob concorrência | `Avaliacao` + `AvaliacaoService` |
+| RN-059 | Cancelamento invalida a avaliação — sai do cálculo da nota, mas a linha fica com o motivo | `Avaliacao.Invalidar` + `AvaliacaoService.InvalidarPorCancelamentoAsync` |
 | RN-057 | Reputação recalculada a partir das avaliações; abaixo de 3 a nota não é pública nem entra no score, e comentário moderado não tira a nota da média | `AvaliacaoService.RecalcularReputacaoAsync` + `Veterinario.TemNotaPublica` |
 | RN-047 | Serviço pago rende 1 ponto por real; obrigação cumprida **no prazo** rende 50 pontos fixos — cumprir atrasado não credita | `MovimentoDePontos.PorServicoPago` / `PorObrigacaoCumprida` |
 | RN-048 | Tier por acúmulo de 12 meses (Bronze/Prata/Ouro) com multiplicador 1,0/1,25/1,5 aplicado no crédito; o tier conta o creditado, não o saldo | `RegrasDeFidelidade.TierPara` |

@@ -27,11 +27,12 @@ public class ConsultaServiceTests
     private readonly Mock<IAgendaRepository> _agendaRepoMock = new();
     private readonly Mock<IFilaDeJobs> _filaMock = new();
     private readonly Mock<IFidelidadeService> _fidelidadeMock = new();
+    private readonly Mock<IAvaliacaoService> _avaliacoesMock = new();
 
     private ConsultaService CriarServico(params ICancelamentoStrategy[] strategies) =>
         new(_repoMock.Object, _pagamentoRepoMock.Object, _documentoRepoMock.Object,
             _animalRepoMock.Object, _vetRepoMock.Object, _empresaRepoMock.Object,
-            strategies, _usuarioMock.Object, _agendaRepoMock.Object, _filaMock.Object, _fidelidadeMock.Object);
+            strategies, _usuarioMock.Object, _agendaRepoMock.Object, _filaMock.Object, _fidelidadeMock.Object, _avaliacoesMock.Object);
 
     /// <summary>Por padrao os testes rodam como Admin, que enxerga todo o escopo.</summary>
     public ConsultaServiceTests() => _usuarioMock.SetupGet(u => u.EhAdmin).Returns(true);

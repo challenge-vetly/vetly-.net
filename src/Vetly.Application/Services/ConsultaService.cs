@@ -28,6 +28,7 @@ public class ConsultaService : IConsultaService
     private readonly IAgendaRepository _agendaRepo;
     private readonly IFilaDeJobs _fila;
     private readonly IFidelidadeService _fidelidade;
+    private readonly IAvaliacaoService _avaliacoes;
 
     public ConsultaService(
         IConsultaRepository repo,
@@ -40,7 +41,8 @@ public class ConsultaService : IConsultaService
         IUsuarioAtual usuario,
         IAgendaRepository agendaRepo,
         IFilaDeJobs fila,
-        IFidelidadeService fidelidade)
+        IFidelidadeService fidelidade,
+        IAvaliacaoService avaliacoes)
     {
         _repo = repo;
         _pagamentoRepo = pagamentoRepo;
@@ -53,6 +55,7 @@ public class ConsultaService : IConsultaService
         _agendaRepo = agendaRepo;
         _fila = fila;
         _fidelidade = fidelidade;
+        _avaliacoes = avaliacoes;
     }
 
     /// <summary>
@@ -282,6 +285,11 @@ public class ConsultaService : IConsultaService
         // o credito e desfeito — senao o programa teria pago por um atendimento que
         // nao aconteceu.
         await _fidelidade.EstornarPorConsultaAsync(consulta.Id);
+
+        // RN-059: a avaliacao de uma consulta cancelada sai do calculo da nota. Sem
+        // isso, o cancelamento deixaria no perfil do profissional a nota de um
+        // atendimento que nao aconteceu.
+        await _avaliacoes.InvalidarPorCancelamentoAsync(consulta.Id);
 
         // O horario volta a valer, e quem esta na fila de espera precisa saber (RN-037)
         await LiberarHorarioAsync(consulta);
