@@ -118,6 +118,7 @@ builder.Services.AddScoped<IFilaDeJobs, FilaDeJobs>();
 builder.Services.AddScoped<IMidiaRepository, MidiaRepository>();
 builder.Services.AddScoped<ICapturaRepository, CapturaRepository>();
 builder.Services.AddScoped<IAuditoriaIaRepository, AuditoriaIaRepository>();
+builder.Services.AddScoped<IColmeiaRepository, ColmeiaRepository>();
 builder.Services.AddSingleton<IGeradorDePdf, GeradorDePdfSimples>();
 
 // Assinatura de documentos (RN-087): no MVP, o nome digitado pelo profissional.
@@ -238,6 +239,7 @@ builder.Services.AddScoped<IMidiaService, MidiaService>();
 builder.Services.AddScoped<ICapturaService, CapturaService>();
 builder.Services.AddScoped<IRascunhoService, RascunhoService>();
 builder.Services.AddScoped<IProntuarioService, ProntuarioService>();
+builder.Services.AddScoped<IColmeiaService, ColmeiaService>();
 builder.Services.AddScoped<IListaEsperaService, ListaEsperaService>();
 
 // ── Factories (IEnumerable<IDocumentoFactory> — resolvidas pelo DI) ──────────

@@ -16,9 +16,11 @@ namespace Vetly.UnitTests;
 public class AnimalServiceTests
 {
     private readonly Mock<IAnimalRepository> _repoMock = new();
+    private readonly Mock<IColmeiaService> _colmeiaMock = new();
     private readonly Mock<IUsuarioAtual> _usuarioMock = new();
 
-    private AnimalService CriarServico() => new(_repoMock.Object, _usuarioMock.Object);
+    private AnimalService CriarServico() =>
+        new(_repoMock.Object, _colmeiaMock.Object, _usuarioMock.Object);
 
     /// <summary>Por padrao os testes rodam como Admin, que enxerga todo o escopo.</summary>
     public AnimalServiceTests() => _usuarioMock.SetupGet(u => u.EhAdmin).Returns(true);

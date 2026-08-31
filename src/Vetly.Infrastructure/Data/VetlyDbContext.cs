@@ -65,6 +65,12 @@ public class VetlyDbContext : DbContext
     /// <summary>Trilha append-only das decisões sobre conteúdo de IA (RN-082).</summary>
     public DbSet<LogAuditoriaIa> LogsDeAuditoriaIa => Set<LogAuditoriaIa>();
 
+    /// <summary>Autorizações do Responsável na colmeia (RN-090).</summary>
+    public DbSet<AcessoColmeia> AcessosDaColmeia => Set<AcessoColmeia>();
+
+    /// <summary>Trilha append-only dos acessos feitos pela colmeia (RN-090).</summary>
+    public DbSet<LogAcessoColmeia> LogsDeAcessoDaColmeia => Set<LogAcessoColmeia>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(VetlyDbContext).Assembly);

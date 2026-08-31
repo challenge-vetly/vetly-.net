@@ -4,6 +4,7 @@ using Vetly.Application.DTOs.Prontuario;
 using Vetly.Application.Exceptions;
 using Vetly.Application.Interfaces;
 using Vetly.Domain.Entities;
+using Vetly.Domain.Enums;
 using Vetly.Domain.ValueObjects;
 
 namespace Vetly.Application.Services;
@@ -12,11 +13,13 @@ namespace Vetly.Application.Services;
 public class AnimalService : IAnimalService
 {
     private readonly IAnimalRepository _repo;
+    private readonly IColmeiaService _colmeia;
     private readonly IUsuarioAtual _usuario;
 
-    public AnimalService(IAnimalRepository repo, IUsuarioAtual usuario)
+    public AnimalService(IAnimalRepository repo, IColmeiaService colmeia, IUsuarioAtual usuario)
     {
         _repo = repo;
+        _colmeia = colmeia;
         _usuario = usuario;
     }
 
@@ -69,10 +72,21 @@ public class AnimalService : IAnimalService
         if (_usuario.EhTutor && _usuario.TutorId == animal.TutorId)
             return;
 
-        if (_usuario.EhVeterinario && _usuario.VeterinarioId is { } vetId &&
-            await _repo.VeterinarioAtendeAnimalAsync(vetId, animal.Id))
+        if (_usuario.EhVeterinario && _usuario.VeterinarioId is { } vetId)
         {
-            return;
+            if (await _repo.VeterinarioAtendeAnimalAsync(vetId, animal.Id))
+                return;
+
+            // Colmeia: o veterinario de fora alcanca o historico se o Responsavel
+            // autorizou, e o acesso — permitido ou negado — fica registrado (RN-090).
+            var autorizado = await _colmeia.PodeAcessarAsync(
+                vetId, animal.Id, EscopoAcessoColmeia.HistoricoCompleto);
+
+            await _colmeia.RegistrarAcessoAsync(
+                animal.Id, EscopoAcessoColmeia.HistoricoCompleto, autorizado, "AnimalService");
+
+            if (autorizado)
+                return;
         }
 
         throw new AcessoNegadoException("RN-105", "Este animal nao pertence ao seu escopo de acesso.");
