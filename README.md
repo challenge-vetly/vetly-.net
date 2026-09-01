@@ -12,7 +12,7 @@ O Vetly é uma API REST para gestão de clínicas veterinárias, cobrindo todo o
 | Autenticação | JWT Bearer |
 | Documentação | Scalar (tema DeepSpace) em `/scalar/v1` |
 | IA | Ollama local (modelo `llama3.1`) |
-| Testes | xUnit + Moq (738 testes verdes) |
+| Testes | xUnit + Moq (885 testes verdes: 698 unitários + 187 de integração) |
 
 ## Padrões aplicados
 
@@ -189,7 +189,15 @@ curl http://localhost:5099/health/ready
 | GET | `/api/animais/{id}/exames` | Exames do animal |
 | POST | `/api/animais` | Cadastrar — exige `pesoKg`; aceita sexo, castrado, alergias, condições pré-existentes e carteira de vacinação |
 | PUT | `/api/animais/{id}` | Atualizar — mesmos campos do cadastro |
+| PUT | `/api/animais/{id}/peso` | Registra o peso aferido no atendimento (RN-081) |
+| PATCH | `/api/animais/{id}/historico/{registroId}/ocultar` | Esconde um registro do board do Responsável (RN-068) |
 | DELETE | `/api/animais/{id}` | Desativar (soft delete) |
+
+**Alterar o cadastro é do dono; ler o prontuário, de quem atende.** São escopos distintos, e confundi-los deixaria um veterinário que atendeu uma vez renomear o pet ou desativá-lo. **O peso é a exceção prevista** e tem caminho próprio: o profissional o afere durante a consulta, e sem ele a IA não sugere dose (RN-081).
+
+**Ocultar não é apagar (RN-068).** O registro sai do board do Responsável e continua existindo para o veterinário, o Admin e a auditoria — um histórico que some da vista de quem prescreve seria perigoso, não discreto. **Registro que menciona alerta ativo ou alergia do animal não é ocultável:** esconder uma alergia do próprio dono é o oposto do que o board existe para fazer, e o risco aparece quando o animal chega desacordado num plantão que não é o de sempre. A guarda vale só na direção de esconder — voltar a exibir é sempre aceito.
+
+O board já nasce preenchido: `POST /api/animais` deriva as obrigações da carteira de vacinação informada (RN-046). Cadastrar o pet e informar as vacinas é, para quem cadastra, a mesma ação. Falha na derivação não desfaz o cadastro — perder o pet recém-cadastrado por causa do board seria trocar o essencial pelo acessório.
 
 ### Tutores
 | Método | Rota | Descrição |
@@ -224,12 +232,13 @@ curl http://localhost:5099/health/ready
 | POST | `/api/consultas/{id}/iniciar` | Abre a janela de captura — a consulta começa aqui (RN-008) |
 | POST | `/api/consultas/{id}/captura/segmentos` | Recebe um trecho de áudio e enfileira a transcrição — 202 (RN-009) |
 | GET | `/api/consultas/{id}/captura` | Situação da captura, com o texto já transcrito (RN-009) |
-| POST | `/api/consultas/{id}/encerrar` | Fecha a janela e marca a consulta como `Realizada` (RN-008/RN-038) |
+| POST | `/api/consultas/{id}/encerrar` | Fecha a janela de captura e marca a consulta como `Realizada` (RN-008/RN-038) |
 | GET | `/api/consultas/{id}/rascunho` | Prontuário estruturado pela IA — rascunho até o vet decidir (RN-080/RN-082) |
 | PUT | `/api/consultas/{id}/validar-diagnostico` | Decisão sobre o rascunho: `Aprovado`, `Corrigido` ou `NaoAprovado` (RN-082) |
 | POST | `/api/consultas/{id}/prontuario-manual` | Prontuário escrito à mão, sem IA no caminho (RN-085) |
 | GET | `/api/consultas/{id}/auditoria-ia` | Trilha append-only das decisões sobre conteúdo de IA (RN-082) |
-| POST | `/api/consultas/{id}/finalizar` | Finalizar — exige receita assinada (RN-087) |
+| POST | `/api/consultas/{id}/finalizar` | Fecho documental — exige o que já foi emitido assinado (RN-087) |
+| POST | `/api/consultas/{id}/retorno` | Agenda o retorno, confirmado e sem cobrança nova (RN-013) |
 | GET | `/api/consultas/{id}/redistribuicao/candidatos` | Veterinários que poderiam assumir a consulta (RN-025) |
 | POST | `/api/consultas/{id}/redistribuir` | Passa a consulta a outro veterinário (RN-025) |
 | DELETE | `/api/consultas/{id}` | Cancelar + Strategy de reembolso (RN-014/RN-041/RN-042) |
@@ -386,13 +395,19 @@ Não há id de veterinário na rota — o escopo vem do token, e nem o Admin ped
 | Método | Rota | Descrição |
 |---|---|---|
 | GET | `/api/notificacoes/tutor/{id}` | Caixa de entrada do Responsável (`?apenasNaoLidas=`) (RN-092) |
+| GET | `/api/notificacoes/preferencias` | O que o Responsável escolheu receber (RN-093) |
+| PUT | `/api/notificacoes/preferencias` | Liga ou desliga as comunicações promocionais (RN-093) |
 | POST | `/api/notificacoes/{id}/lida` | Registra que o Responsável abriu no app |
+
+**Promoção é opt-in, e é a única preferência que existe (RN-093).** Aviso de consulta, documento publicado e obrigação vencendo são o serviço contratado — oferecê-los como preferência faria o app poder deixar de avisar sobre a saúde do animal. A escolha é gravada no registro de consentimento de LGPD, e não numa coluna própria: duas fontes para a mesma vontade acabariam discordando, e a que vale juridicamente é o consentimento. O escopo vem do token; não há parâmetro de Responsável nessas rotas, e não pode haver.
 
 **A notificação é gravada antes de ser enviada.** O app precisa de uma caixa de entrada que sobrevive ao push perdido — aparelho desligado, token trocado, permissão negada — e o histórico do que foi comunicado é o que permite responder "avisamos?" depois. `NaoEntregue` não é o fim da linha: a notificação segue visível na caixa, porque push perdido não pode significar aviso perdido.
 
 O envio sai da requisição, numa rotina de um minuto: o Responsável não pode esperar o APNs responder para que a consulta seja confirmada. Token que o provedor recusa como inválido **desativa o dispositivo** — app desinstalado e token rotacionado são o caso comum, não a exceção; falha do provedor, ao contrário, não desativa nada. O push passa por `IPushAdapter`, escolhido por `Adaptadores:Push`.
 
 **A régua de lembretes** (rotina diária) transforma obrigação vencendo em aviso: sem ela, o board de obrigações é uma tela que só quem abre o app descobre — e quem já esqueceu da vacina é exatamente quem não abre. É **um aviso por animal, não por obrigação**, e nomeia a mais urgente em vez de dizer "você tem pendências", porque aviso genérico não move ninguém. Há intervalo mínimo de 7 dias entre dois avisos do mesmo animal: avisar de hora em hora sobre a mesma vacina transformaria cuidado em incômodo, e o Responsável desligaria a notificação inteira. Cada aviso cria também o `LembreteAgendado` que sustenta a régua — três tentativas sem resposta acionam o alerta à clínica (RN-095).
+
+**A régua avança sozinha nos marcos de 7, 3 e 1 dia** antes do evento (rotina `AgendarTentativasDaRegua`). Sem ela, a régua nascia e parava: o alerta à clínica depende de três tentativas, e as tentativas nunca aconteciam. Os marcos são decrescentes de propósito — sete dias é planejamento, três é lembrete, um dia é urgência; três avisos iguais na mesma semana teriam a mesma frequência com menos utilidade. É **um degrau por execução**, para que uma régua que ficou parada não vire três notificações no mesmo minuto. Evento já vencido continua avançando: é aí que a régua mais importa.
 
 ### Avaliações
 
@@ -517,6 +532,118 @@ As listagens grandes (`GET /api/consultas`, `GET /api/pagamentos`) aceitam `?pag
 ```
 
 Sem parâmetros valem página 1 e 20 itens. O tamanho é limitado a 100 por página — valores fora da faixa são normalizados, não rejeitados.
+
+## Correções de segurança
+
+Uma revisão completa do fluxo de comunicação da API encontrou brechas em que a regra
+existia no documento e não no código, ou existia num serviço e não no outro. O que
+segue é o que mudou e por quê — cada item tem teste que falha se a correção for
+desfeita.
+
+### Escopo por linha (RN-105/RN-106)
+
+O conflito **C-07** — qualquer usuário autenticado listava dados de todo mundo — foi
+fechado na onda 2 para tutores, animais, consultas e pagamentos. A revisão encontrou
+oito rotas que a correção não alcançou:
+
+- **Exames** chegavam ao Responsável sem passar pela liberação do veterinário
+  (RN-104), tanto em `GET /api/exames` quanto em `GET /api/animais/{id}/exames`. Ler o
+  próprio exame não liberado responde **403 com RN-104**, e não 404: o Responsável sabe
+  que o exame existe — foi ele quem o pediu; o que ainda não existe para ele é o
+  resultado interpretado.
+- **Internações** eram abertas e encerradas por qualquer autenticado.
+- **Empresas** eram criadas sem passar pelo Admin — uma clínica entraria no matching
+  sem validação nenhuma.
+- **Lembretes** eram agendados por qualquer profissional sobre o pet de outro, e a
+  régua termina em push no telefone do Responsável.
+- **A agenda do veterinário** vinha do id da rota: bastava trocar um Guid na URL para
+  ler a agenda alheia. O id passa a vir do token.
+- **Documentos** eram lidos e emitidos sem guarda; agora passam por escopo com
+  fallback de colmeia, e **toda leitura por veterinário vira log de acesso, inclusive a
+  do próprio autor** — registrar só o acesso "de fora" deixaria metade da história fora
+  do registro que sustenta a colmeia juridicamente (RN-067).
+- **O plano do veterinário** podia ser trocado pelo próprio: o plano decide a comissão
+  (RN-070), e isso era deixá-lo baixar a própria comissão. Passa a ser ato do Admin.
+- **O cadastro do animal** era editável por quem o atendia. Ler prontuário é trabalho
+  clínico; reescrever cadastro não é.
+
+### Concorrência no horário (RN-035)
+
+A guarda em memória do slot resolvia a corrida dentro de uma requisição, não entre
+duas: dois processos liam o mesmo horário `Livre` no mesmo milissegundo, os dois
+passavam pela guarda e o último a gravar vencia — dois animais no mesmo horário.
+`ESTADO` e `LOCK_CONSULTA_ID` viraram **tokens de concorrência**, e a colisão é
+traduzida em **409** na fronteira do repositório, para que a camada de aplicação siga
+sem conhecer o ORM.
+
+O webhook de pagamento passa a mexer **apenas no slot que a consulta está segurando**.
+Ele é assíncrono e pode chegar depois de o lock expirar: confirmar ali daria o horário
+ao pagamento atrasado, e liberar ali derrubaria a reserva de quem chegou legitimamente
+depois — nos dois casos a vítima é quem não errou nada.
+
+### A cobrança deixa de aceitar o que o cliente manda (RN-006/RN-032)
+
+`POST /api/pagamentos` aceitava do cliente as três coisas que o servidor tem de decidir
+sozinho: **quem paga, quanto paga e por qual atendimento**. Passa a validar tudo antes
+de qualquer coisa sair para o provedor — o Responsável vem do token, a consulta tem de
+existir, ser dele e estar em `EmCheckout` ou `Confirmada`, não pode haver outra cobrança
+em aberto, o lock do horário tem de continuar valendo, e **o valor vem de
+`Servico.Valor`, nunca do corpo**. Aceitar o valor do cliente é aceitar que ele pague o
+que quiser.
+
+O cupom ganhou dois limites: a parte da Vetly não pode passar da própria comissão — um
+cupom grande numa consulta barata produzia comissão negativa, a plataforma pagando para
+que a consulta acontecesse (RN-051) — e cupom não se aplica a internação, que não passa
+pelo split que financia o desconto. Pagamento recusado **devolve o cupom à vigência**:
+o desconto não foi usado, e manter o cupom queimado cobraria os pontos por um benefício
+que ninguém recebeu (RN-053).
+
+### O callback de transcrição prova de qual trecho está respondendo (RN-009)
+
+O token de serviço no cabeçalho autentica o fluxo de transcrição como um todo.
+`SegmentoAudio.CallbackTokenHash` era gravado no despacho e **nunca conferido**: quem
+conhecesse o token de serviço podia escrever texto no prontuário de qualquer consulta,
+bastando acertar um id de segmento. O callback passa a exigir o token daquele segmento,
+comparado em **tempo fixo** — comparar hash com `==` vaza pelo tempo de resposta quantos
+caracteres iniciais estavam certos, e quem pode repetir a chamada transforma isso em
+adivinhação caractere a caractere.
+
+### A IA não contorna o consentimento (RN-064/RN-066)
+
+O contexto da estruturação passa a levar pré-sintomas, alertas de segurança e histórico
+— este último **pelo mesmo filtro de colmeia da leitura humana**. Uma IA que lesse o
+histórico inteiro quando o profissional não pode lê-lo seria uma forma indireta de
+contornar o consentimento: o texto voltaria ao veterinário dentro do rascunho, sem nunca
+ter passado pela guarda. O acesso da IA também vira log — quem lê em nome do
+veterinário continua sendo o veterinário.
+
+### Encerrar e finalizar deixam de ser o mesmo evento (P-01/RN-087)
+
+`EncerrarAsync` marcava `Realizada` **e** `Finalizada` de uma vez. A consulta nascia
+finalizada com documento nenhum emitido, e a exigência da RN-087 nunca chegava a ser
+cobrada de verdade — no instante em que era avaliada, não havia documento algum. São
+dois momentos: encerrar é o profissional dizendo que terminou de atender; finalizar é o
+fim do trabalho documental que vem depois.
+
+### Higiene de dependências
+
+`Microsoft.OpenApi` 2.0.0, trazida por transitividade pelo
+`Microsoft.AspNetCore.OpenApi`, tem CVE aberto (GHSA-v5pm-xwqc-g5wc) e foi **pinada
+acima da versão vulnerável** por referência direta — a única forma de subir uma
+dependência indireta. `dotnet build -warnaserror` fica limpo, e é assim que ele deve
+continuar: o pass com `-warnaserror` foi o que revelou `TutoresController._pagamentos`
+nunca atribuído, um `NullReferenceException` esperando em
+`GET /api/tutores/{id}/carteira`.
+
+### O que continua valendo
+
+Credencial, connection string e chave JWT **não vão para o repositório**: o arranjo com
+`appsettings.Development.local.json` no `.gitignore` segue sendo o caminho.
+`POST /api/auth/token` emite JWT sem senha e por isso responde **404 fora de
+Development**, marcada `[Obsolete]` — emitir token sem credencial em produção seria uma
+porta aberta. O login responde **exatamente a mesma coisa** para e-mail inexistente,
+senha errada e conta desativada: distinguir os casos entregaria a lista de contas
+existentes.
 
 ## Regras de Negócio
 

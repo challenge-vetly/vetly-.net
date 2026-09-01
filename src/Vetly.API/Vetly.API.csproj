@@ -7,6 +7,11 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.7" />
+    <!-- Pinado acima da versao com CVE aberto (GHSA-v5pm-xwqc-g5wc): o
+         Microsoft.AspNetCore.OpenApi 10.0.7 traz a 2.0.0 por transitividade, e
+         referencia direta e a unica forma de subir uma dependencia indireta. Mesma
+         major, entao sem quebra de contrato. -->
+    <PackageReference Include="Microsoft.OpenApi" Version="2.12.2" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.7" />
     <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.7" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.7">

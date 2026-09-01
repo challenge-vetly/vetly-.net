@@ -108,8 +108,12 @@ public class LimparIdempotenciaVencida : IRotinaPeriodica
     {
         var agora = DateTime.UtcNow;
 
+        // A ordenacao nao e enfeite: sem ela o Take pega uma fatia arbitraria a cada
+        // ciclo, e um registro pode ficar rodando de lote em lote sem nunca sair. Pelo
+        // vencimento, o mais antigo sai primeiro e a limpeza progride de verdade.
         var vencidos = await _context.RegistrosDeIdempotencia
             .Where(r => r.ExpiraEm < agora)
+            .OrderBy(r => r.ExpiraEm)
             .Take(LotePorCiclo)
             .ToListAsync(cancellationToken);
 
