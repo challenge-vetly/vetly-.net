@@ -14,4 +14,7 @@ public class CriarInternacaoDto
     [Required]
     [Range(0, double.MaxValue, ErrorMessage = "O valor da caução deve ser positivo.")]
     public decimal ValorCaucao { get; set; }
+
+    /// <summary>Meio da cobrança da caução (RN-101).</summary>
+    public Domain.Enums.MeioPagamento MeioPagamento { get; set; } = Domain.Enums.MeioPagamento.Pix;
 }

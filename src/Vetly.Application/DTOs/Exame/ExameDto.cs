@@ -8,6 +8,9 @@ public class ExameDto
     public Guid VeterinarioId { get; set; }
     public string TipoSolicitacao { get; set; } = string.Empty;
     public string? Resultado { get; set; }
+
+    /// <summary>Mídias do laudo — PDF e imagens (RN-104).</summary>
+    public List<Guid> MidiaIds { get; set; } = [];
     public bool LiberadoAoTutor { get; set; }
     public DateTime DataSolicitacao { get; set; }
     public DateTime? DataResultado { get; set; }

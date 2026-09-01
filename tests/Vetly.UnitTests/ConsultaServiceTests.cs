@@ -28,11 +28,12 @@ public class ConsultaServiceTests
     private readonly Mock<IFilaDeJobs> _filaMock = new();
     private readonly Mock<IFidelidadeService> _fidelidadeMock = new();
     private readonly Mock<IAvaliacaoService> _avaliacoesMock = new();
+    private readonly Mock<IColmeiaService> _colmeiaMock = new();
 
     private ConsultaService CriarServico(params ICancelamentoStrategy[] strategies) =>
         new(_repoMock.Object, _pagamentoRepoMock.Object, _documentoRepoMock.Object,
             _animalRepoMock.Object, _vetRepoMock.Object, _empresaRepoMock.Object,
-            strategies, _usuarioMock.Object, _agendaRepoMock.Object, _filaMock.Object, _fidelidadeMock.Object, _avaliacoesMock.Object);
+            strategies, _usuarioMock.Object, _agendaRepoMock.Object, _filaMock.Object, _fidelidadeMock.Object, _avaliacoesMock.Object, _colmeiaMock.Object);
 
     /// <summary>Por padrao os testes rodam como Admin, que enxerga todo o escopo.</summary>
     public ConsultaServiceTests() => _usuarioMock.SetupGet(u => u.EhAdmin).Returns(true);
@@ -55,13 +56,19 @@ public class ConsultaServiceTests
         return vet.Id;
     }
 
-    private static CriarConsultaDto CriarDto(Guid pagamentoId) => new()
+    /// <summary>
+    /// O pedido de agendamento de emergencia. O <paramref name="tutorId"/> e explicito
+    /// porque o servico agora exige que o pagamento pertenca a quem esta sendo
+    /// atendido — sem isso, uma consulta poderia ser confirmada com a cobranca paga
+    /// por outra pessoa (RN-006).
+    /// </summary>
+    private static CriarConsultaDto CriarDto(Guid pagamentoId, Guid? tutorId = null) => new()
     {
         DataHora = DateTime.UtcNow.AddDays(1),
         Modalidade = ModalidadeAtendimento.Presencial,
         VeterinarioId = Guid.NewGuid(),
         AnimalId = Guid.NewGuid(),
-        TutorId = Guid.NewGuid(),
+        TutorId = tutorId ?? Guid.NewGuid(),
         PagamentoId = pagamentoId
     };
 
@@ -69,8 +76,10 @@ public class ConsultaServiceTests
     public async Task AgendarAsync_PagamentoConfirmado_RetornaConsultaDto()
     {
         var pagamentoId = Guid.NewGuid();
+        var tutorId = Guid.NewGuid();
+
         // Pagamento sem consultaId — cenário real: tutor paga antes de agendar
-        var pagamento = new Pagamento(Guid.NewGuid(), 200m, MeioPagamento.Pix);
+        var pagamento = new Pagamento(tutorId, 200m, MeioPagamento.Pix);
         pagamento.Confirmar();
 
         _pagamentoRepoMock.Setup(r => r.ObterPorIdAsync(pagamentoId)).ReturnsAsync(pagamento);
@@ -79,7 +88,7 @@ public class ConsultaServiceTests
         _pagamentoRepoMock.Setup(r => r.Atualizar(It.IsAny<Pagamento>()));
         _pagamentoRepoMock.Setup(r => r.SalvarAsync()).ReturnsAsync(1);
 
-        var resultado = await CriarServico().AgendarAsync(CriarDto(pagamentoId));
+        var resultado = await CriarServico().AgendarAsync(CriarDto(pagamentoId, tutorId));
 
         Assert.NotEqual(Guid.Empty, resultado.Id);
         Assert.Equal(StatusPagamento.Confirmado, resultado.StatusPagamento);
@@ -600,7 +609,8 @@ public class ConsultaServiceTests
     public async Task AgendarAsync_PagamentoConfirmado_VinculaPagamentoAConsulta()
     {
         var pagamentoId = Guid.NewGuid();
-        var pagamento = new Pagamento(Guid.NewGuid(), 200m, MeioPagamento.Pix);
+        var tutorId = Guid.NewGuid();
+        var pagamento = new Pagamento(tutorId, 200m, MeioPagamento.Pix);
         pagamento.Confirmar();
 
         _pagamentoRepoMock.Setup(r => r.ObterPorIdAsync(pagamentoId)).ReturnsAsync(pagamento);
@@ -609,7 +619,7 @@ public class ConsultaServiceTests
         _pagamentoRepoMock.Setup(r => r.Atualizar(It.IsAny<Pagamento>()));
         _pagamentoRepoMock.Setup(r => r.SalvarAsync()).ReturnsAsync(1);
 
-        var resultado = await CriarServico().AgendarAsync(CriarDto(pagamentoId));
+        var resultado = await CriarServico().AgendarAsync(CriarDto(pagamentoId, tutorId));
 
         Assert.Equal(resultado.Id, pagamento.ConsultaId);
         _pagamentoRepoMock.Verify(r => r.Atualizar(pagamento), Times.Once);
@@ -621,4 +631,311 @@ public class ConsultaServiceTests
     // ConsultaService e passou a ser a decisao em tres caminhos, registrada na trilha
     // de auditoria. O comportamento continua coberto — diagnostico validado ao
     // aprovar, e CONSULTA-003 em consulta cancelada.
+
+    // ── RN-105/RN-106: escopo do que cada um alcanca ────────────────────────
+
+    private void ComoVeterinario(Guid veterinarioId)
+    {
+        _usuarioMock.SetupGet(u => u.EhAdmin).Returns(false);
+        _usuarioMock.SetupGet(u => u.EhVeterinario).Returns(true);
+        _usuarioMock.SetupGet(u => u.VeterinarioId).Returns(veterinarioId);
+    }
+
+    private void ComoTutor(Guid tutorId)
+    {
+        _usuarioMock.SetupGet(u => u.EhAdmin).Returns(false);
+        _usuarioMock.SetupGet(u => u.EhTutor).Returns(true);
+        _usuarioMock.SetupGet(u => u.TutorId).Returns(tutorId);
+    }
+
+    private static Consulta CriarConsulta(Guid veterinarioId, Guid animalId, Guid tutorId) =>
+        new(DateTime.UtcNow.AddDays(1), ModalidadeAtendimento.Presencial, veterinarioId, animalId, tutorId);
+
+    private static Animal CriarAnimalDe(Guid tutorId) =>
+        new("Thor", "Canino", "Golden Retriever",
+            new DateTime(2023, 4, 10, 0, 0, 0, DateTimeKind.Utc), tutorId);
+
+    [Fact]
+    public async Task ObterPorVeterinarioAsync_VetPedindoAgendaDeOutro_LancaAcessoNegadoRN105()
+    {
+        ComoVeterinario(Guid.NewGuid());
+
+        var ex = await Assert.ThrowsAsync<AcessoNegadoException>(
+            () => CriarServico().ObterPorVeterinarioAsync(Guid.NewGuid()));
+
+        // Aceitar o id da rota deixaria qualquer profissional listar a agenda alheia
+        // trocando um Guid na URL
+        Assert.Equal("RN-105", ex.Codigo);
+    }
+
+    [Fact]
+    public async Task ObterPorVeterinarioAsync_ComoTutor_LancaAcessoNegadoRN106()
+    {
+        ComoTutor(Guid.NewGuid());
+
+        var ex = await Assert.ThrowsAsync<AcessoNegadoException>(
+            () => CriarServico().ObterPorVeterinarioAsync(Guid.NewGuid()));
+
+        Assert.Equal("RN-106", ex.Codigo);
+    }
+
+    [Fact]
+    public async Task CancelarAsync_PorTerceiro_LancaAcessoNegadoRN105()
+    {
+        var consulta = CriarConsulta(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
+        consulta.ConfirmarPagamento();
+
+        _repoMock.Setup(r => r.ObterPorIdAsync(consulta.Id)).ReturnsAsync(consulta);
+        ComoTutor(Guid.NewGuid()); // um Responsavel qualquer, que nao e o da consulta
+
+        var ex = await Assert.ThrowsAsync<AcessoNegadoException>(
+            () => CriarServico().CancelarAsync(consulta.Id));
+
+        Assert.Equal("RN-105", ex.Codigo);
+        Assert.False(consulta.Cancelada);
+    }
+
+    [Fact]
+    public async Task CancelarAsync_ConsultaJaRealizada_LancaConflitoDeEstadoRN038()
+    {
+        var consulta = CriarConsulta(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
+        consulta.ConfirmarPagamento();
+        consulta.Finalizar();
+
+        _repoMock.Setup(r => r.ObterPorIdAsync(consulta.Id)).ReturnsAsync(consulta);
+
+        var ex = await Assert.ThrowsAsync<ConflitoDeEstadoException>(
+            () => CriarServico().CancelarAsync(consulta.Id));
+
+        // 409 e nao 422: o pedido esta correto, o estado e que nao comporta.
+        // Cancelar o que ja aconteceu reembolsaria um atendimento prestado (RN-038).
+        Assert.Equal("RN-038", ex.Codigo);
+        Assert.False(consulta.Cancelada);
+    }
+
+    [Fact]
+    public async Task CancelarAsync_CheckoutNaoPago_NaoEstornaEDevolveOHorario()
+    {
+        var consulta = CriarConsulta(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
+        var pagamento = new Pagamento(consulta.TutorId, 200m, MeioPagamento.Pix);
+
+        _repoMock.Setup(r => r.ObterPorIdAsync(consulta.Id)).ReturnsAsync(consulta);
+        _repoMock.Setup(r => r.Atualizar(It.IsAny<Consulta>()));
+        _repoMock.Setup(r => r.SalvarAsync()).ReturnsAsync(1);
+        _pagamentoRepoMock.Setup(r => r.ObterPorConsultaAsync(consulta.Id)).ReturnsAsync(pagamento);
+        _pagamentoRepoMock.Setup(r => r.Atualizar(It.IsAny<Pagamento>()));
+        _pagamentoRepoMock.Setup(r => r.SalvarAsync()).ReturnsAsync(1);
+
+        var resultado = await CriarServico().CancelarAsync(consulta.Id);
+
+        // Checkout abandonado nao tem o que estornar: o dinheiro nunca entrou. Passar
+        // pela Strategy produziria um "reembolso" de valor que ninguem pagou.
+        Assert.Equal(0m, resultado.ValorReembolso);
+        Assert.Equal("Checkout nao pago", resultado.EstrategiaAplicada);
+        Assert.Equal(StatusPagamento.Recusado, pagamento.StatusPagamento);
+        Assert.True(consulta.Cancelada);
+    }
+
+    [Fact]
+    public async Task FinalizarAsync_PorOutroVeterinario_LancaAcessoNegadoRN105()
+    {
+        var consulta = CriarConsulta(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
+
+        _repoMock.Setup(r => r.ObterPorIdAsync(consulta.Id)).ReturnsAsync(consulta);
+        ComoVeterinario(Guid.NewGuid());
+
+        var ex = await Assert.ThrowsAsync<AcessoNegadoException>(
+            () => CriarServico().FinalizarAsync(consulta.Id));
+
+        // O fecho documental e ato do profissional que assina (RN-087)
+        Assert.Equal("RN-105", ex.Codigo);
+        Assert.False(consulta.Finalizada);
+    }
+
+    [Fact]
+    public async Task AgendarAsync_PagamentoDeOutroResponsavel_LancaBusinessRuleRN006()
+    {
+        var pagamentoId = Guid.NewGuid();
+        var pagamento = new Pagamento(Guid.NewGuid(), 200m, MeioPagamento.Pix);
+        pagamento.Confirmar();
+
+        _pagamentoRepoMock.Setup(r => r.ObterPorIdAsync(pagamentoId)).ReturnsAsync(pagamento);
+
+        var ex = await Assert.ThrowsAsync<BusinessRuleException>(
+            () => CriarServico().AgendarAsync(CriarDto(pagamentoId, Guid.NewGuid())));
+
+        // Sem esta guarda, uma consulta seria confirmada com a cobranca paga por
+        // outra pessoa
+        Assert.Equal("RN-006", ex.Codigo);
+        _repoMock.Verify(r => r.AdicionarAsync(It.IsAny<Consulta>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task AgendarAsync_PagamentoDeInternacao_LancaBusinessRuleRN101()
+    {
+        var pagamentoId = Guid.NewGuid();
+        var tutorId = Guid.NewGuid();
+        var pagamento = new Pagamento(tutorId, 400m, MeioPagamento.Pix, internacaoId: Guid.NewGuid());
+        pagamento.Confirmar();
+
+        _pagamentoRepoMock.Setup(r => r.ObterPorIdAsync(pagamentoId)).ReturnsAsync(pagamento);
+
+        var ex = await Assert.ThrowsAsync<BusinessRuleException>(
+            () => CriarServico().AgendarAsync(CriarDto(pagamentoId, tutorId)));
+
+        // Caucao e saldo de internacao sao outro ciclo de cobranca: reaproveita-los
+        // daria uma consulta paga por engano (RN-101)
+        Assert.Equal("RN-101", ex.Codigo);
+    }
+
+    // ── RN-064/RN-066/RN-067: briefing e a colmeia ──────────────────────────
+
+    [Fact]
+    public async Task ObterBriefingAsync_PorOutroVeterinario_LancaAcessoNegadoRN105()
+    {
+        var consulta = CriarConsulta(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
+
+        _repoMock.Setup(r => r.ObterPorIdAsync(consulta.Id)).ReturnsAsync(consulta);
+        ComoVeterinario(Guid.NewGuid());
+
+        var ex = await Assert.ThrowsAsync<AcessoNegadoException>(
+            () => CriarServico().ObterBriefingAsync(consulta.Id));
+
+        Assert.Equal("RN-105", ex.Codigo);
+    }
+
+    [Fact]
+    public async Task ObterBriefingAsync_SemColmeia_MostraApenasOProprioHistoricoERegistraOAcesso()
+    {
+        var vetId = Guid.NewGuid();
+        var tutorId = Guid.NewGuid();
+        var animal = CriarAnimalDe(tutorId);
+        var consulta = CriarConsulta(vetId, animal.Id, tutorId);
+
+        var minha = CriarConsulta(vetId, animal.Id, tutorId);
+        var deOutro = CriarConsulta(Guid.NewGuid(), animal.Id, tutorId);
+
+        _repoMock.Setup(r => r.ObterPorIdAsync(consulta.Id)).ReturnsAsync(consulta);
+        _repoMock.Setup(r => r.ObterPorAnimalAsync(animal.Id)).ReturnsAsync([consulta, minha, deOutro]);
+        _animalRepoMock.Setup(r => r.ObterPorIdAsync(animal.Id)).ReturnsAsync(animal);
+        _animalRepoMock.Setup(r => r.ObterExamesAsync(animal.Id)).ReturnsAsync([]);
+        _colmeiaMock.Setup(c => c.PodeAcessarAsync(vetId, animal.Id, EscopoAcessoColmeia.HistoricoCompleto))
+            .ReturnsAsync(false);
+        ComoVeterinario(vetId);
+
+        var briefing = await CriarServico().ObterBriefingAsync(consulta.Id);
+
+        // Sem consentimento de rede o vet ve apenas o que ele mesmo produziu (RN-066)
+        Assert.False(briefing.HistoricoCompleto);
+        Assert.Single(briefing.HistoricoResumido);
+        Assert.Equal(minha.Id, briefing.HistoricoResumido[0].Id);
+
+        // RN-067: saber que alguem olhou e viu pouco tambem e informacao do
+        // Responsavel — o acesso restrito tambem vira log
+        _colmeiaMock.Verify(c => c.RegistrarAcessoAsync(
+            animal.Id, EscopoAcessoColmeia.HistoricoCompleto, false, It.IsAny<string>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task ObterBriefingAsync_ComColmeia_MostraOHistoricoInteiro()
+    {
+        var vetId = Guid.NewGuid();
+        var tutorId = Guid.NewGuid();
+        var animal = CriarAnimalDe(tutorId);
+        var consulta = CriarConsulta(vetId, animal.Id, tutorId);
+
+        var minha = CriarConsulta(vetId, animal.Id, tutorId);
+        var deOutro = CriarConsulta(Guid.NewGuid(), animal.Id, tutorId);
+
+        _repoMock.Setup(r => r.ObterPorIdAsync(consulta.Id)).ReturnsAsync(consulta);
+        _repoMock.Setup(r => r.ObterPorAnimalAsync(animal.Id)).ReturnsAsync([consulta, minha, deOutro]);
+        _animalRepoMock.Setup(r => r.ObterPorIdAsync(animal.Id)).ReturnsAsync(animal);
+        _animalRepoMock.Setup(r => r.ObterExamesAsync(animal.Id)).ReturnsAsync([]);
+        _colmeiaMock.Setup(c => c.PodeAcessarAsync(vetId, animal.Id, EscopoAcessoColmeia.HistoricoCompleto))
+            .ReturnsAsync(true);
+        ComoVeterinario(vetId);
+
+        var briefing = await CriarServico().ObterBriefingAsync(consulta.Id);
+
+        Assert.True(briefing.HistoricoCompleto);
+        Assert.Equal(2, briefing.HistoricoResumido.Count);
+        _colmeiaMock.Verify(c => c.RegistrarAcessoAsync(
+            animal.Id, EscopoAcessoColmeia.HistoricoCompleto, true, It.IsAny<string>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task ObterBriefingAsync_LevaPreSintomasPesoEAlergias()
+    {
+        var vetId = Guid.NewGuid();
+        var tutorId = Guid.NewGuid();
+        var animal = CriarAnimalDe(tutorId);
+        animal.RegistrarPeso(31.5m);
+        animal.DefinirPerfilClinico(alergias: ["Dipirona"], condicoesPreexistentes: ["Displasia leve"]);
+
+        var consulta = CriarConsulta(vetId, animal.Id, tutorId);
+        var midia = Guid.NewGuid();
+        consulta.RegistrarPreSintomas(
+            """{"queixaPrincipal":"Vomito ha 2 dias","duracaoEmDias":2,"sinaisObservados":["Apatia"]}""",
+            [midia]);
+
+        _repoMock.Setup(r => r.ObterPorIdAsync(consulta.Id)).ReturnsAsync(consulta);
+        _repoMock.Setup(r => r.ObterPorAnimalAsync(animal.Id)).ReturnsAsync([consulta]);
+        _animalRepoMock.Setup(r => r.ObterPorIdAsync(animal.Id)).ReturnsAsync(animal);
+        _animalRepoMock.Setup(r => r.ObterExamesAsync(animal.Id)).ReturnsAsync([]);
+        _colmeiaMock.Setup(c => c.PodeAcessarAsync(vetId, animal.Id, EscopoAcessoColmeia.HistoricoCompleto))
+            .ReturnsAsync(true);
+        ComoVeterinario(vetId);
+
+        var briefing = await CriarServico().ObterBriefingAsync(consulta.Id);
+
+        // RN-005/RN-036: a unica fonte de contexto previo vinda do Responsavel
+        Assert.NotNull(briefing.PreSintomas);
+        Assert.Equal("Vomito ha 2 dias", briefing.PreSintomas!.QueixaPrincipal);
+        Assert.Equal(2, briefing.PreSintomas.DuracaoEmDias);
+        Assert.Equal([midia], briefing.PreSintomasMidias);
+
+        // RN-081: sem peso a IA nao sugere dose; ve-lo antes de comecar permite
+        // resolver a falta em vez de descobri-la no meio do atendimento
+        Assert.Equal(31.5m, briefing.PesoKg);
+        Assert.Equal(["Dipirona"], briefing.Alergias);
+        Assert.Equal(["Displasia leve"], briefing.CondicoesPreexistentes);
+    }
+
+    [Fact]
+    public async Task ObterBriefingAsync_PreSintomasCorrompidos_NaoDerrubamOBriefing()
+    {
+        var vetId = Guid.NewGuid();
+        var tutorId = Guid.NewGuid();
+        var animal = CriarAnimalDe(tutorId);
+        var consulta = CriarConsulta(vetId, animal.Id, tutorId);
+        consulta.RegistrarPreSintomas("{isto nao e json valido");
+
+        _repoMock.Setup(r => r.ObterPorIdAsync(consulta.Id)).ReturnsAsync(consulta);
+        _repoMock.Setup(r => r.ObterPorAnimalAsync(animal.Id)).ReturnsAsync([consulta]);
+        _animalRepoMock.Setup(r => r.ObterPorIdAsync(animal.Id)).ReturnsAsync(animal);
+        _animalRepoMock.Setup(r => r.ObterExamesAsync(animal.Id)).ReturnsAsync([]);
+        _colmeiaMock.Setup(c => c.PodeAcessarAsync(vetId, animal.Id, EscopoAcessoColmeia.HistoricoCompleto))
+            .ReturnsAsync(true);
+        ComoVeterinario(vetId);
+
+        var briefing = await CriarServico().ObterBriefingAsync(consulta.Id);
+
+        // O vet perde um campo, e nao a consulta inteira
+        Assert.Null(briefing.PreSintomas);
+        Assert.Equal(consulta.Id, briefing.ConsultaId);
+    }
+
+    [Fact]
+    public async Task ObterPorAnimalAsync_TutorDeOutroAnimal_LancaAcessoNegadoRN105()
+    {
+        var animal = CriarAnimalDe(Guid.NewGuid());
+
+        _animalRepoMock.Setup(r => r.ObterPorIdAsync(animal.Id)).ReturnsAsync(animal);
+        ComoTutor(Guid.NewGuid());
+
+        var ex = await Assert.ThrowsAsync<AcessoNegadoException>(
+            () => CriarServico().ObterPorAnimalAsync(animal.Id));
+
+        Assert.Equal("RN-105", ex.Codigo);
+    }
 }

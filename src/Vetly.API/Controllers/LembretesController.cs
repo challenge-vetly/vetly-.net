@@ -20,6 +20,7 @@ public class LembretesController : ControllerBase
 
     /// <summary>Agenda um lembrete para um tutor sobre evento do animal (vacina, retorno, medicacao…).</summary>
     [HttpPost]
+    [Authorize(Policy = "VeterinarioOuAdmin")]
     [ProducesResponseType(typeof(LembreteDto), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> Agendar([FromBody] CriarLembreteDto dto)
@@ -30,6 +31,7 @@ public class LembretesController : ControllerBase
 
     /// <summary>Registra uma tentativa de contato. Apos 3 tentativas sem resposta, alerta e enviado a clinica (RN-095).</summary>
     [HttpPost("{id:guid}/tentativa")]
+    [Authorize(Policy = "VeterinarioOuAdmin")]
     [ProducesResponseType(typeof(LembreteDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]

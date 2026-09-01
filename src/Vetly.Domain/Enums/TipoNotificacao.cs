@@ -28,7 +28,22 @@ public enum TipoNotificacao
     HorarioDisponivel = 6,
 
     /// <summary>Pontos de fidelidade prestes a expirar (RN-051).</summary>
-    PontosExpirando = 7
+    PontosExpirando = 7,
+
+    /// <summary>Exame solicitado, com as orientações de preparo (RN-103).</summary>
+    ExameSolicitado = 8,
+
+    /// <summary>Atualização diária da internação (RN-100).</summary>
+    AtualizacaoInternacao = 9,
+
+    /// <summary>
+    /// Comunicação promocional. Exige opt-in específico e tem opt-out em um toque
+    /// (RN-093) — é o único tipo que o Responsável pode desligar.
+    /// </summary>
+    Promocao = 10,
+
+    /// <summary>Mudança no atendimento decidida pelo prestador (RN-025/RN-045).</summary>
+    CancelamentoPeloPrestador = 11
 }
 
 /// <summary>

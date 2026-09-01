@@ -16,6 +16,12 @@ public interface IAnimalService
     /// do avatar (RN-011/RN-020/RN-090/RN-096).
     /// </summary>
     Task<BoardDoPetDto> ObterBoardAsync(Guid animalId);
+
+    /// <summary>
+    /// Registra o peso aferido no atendimento (RN-081). É a única escrita que o
+    /// veterinário faz no cadastro do animal, e continua limitada aos que ele atende.
+    /// </summary>
+    Task<AnimalDto> RegistrarPesoAsync(Guid animalId, decimal pesoKg);
     Task<IEnumerable<ExameDto>> ObterExamesAsync(Guid animalId);
     Task<AnimalDto> CriarAsync(CriarAnimalDto dto);
     Task AtualizarAsync(Guid id, CriarAnimalDto dto);

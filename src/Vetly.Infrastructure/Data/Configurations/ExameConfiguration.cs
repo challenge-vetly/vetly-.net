@@ -39,6 +39,10 @@ public class ExameConfiguration : IEntityTypeConfiguration<Exame>
             .HasColumnType("CLOB")
             .HasColumnName("RESULTADO");
 
+        // Laudo em PDF ou imagem: lista de ids separada por ";" (RN-104)
+        builder.Property(e => e.MidiaIds)
+            .HasColumnType("VARCHAR2(2000)").HasColumnName("MIDIA_IDS");
+
         builder.Property(e => e.LiberadoAoTutor)
             .HasColumnType("NUMBER(1)")
             .HasColumnName("LIBERADO_AO_TUTOR");

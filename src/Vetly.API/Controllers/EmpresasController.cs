@@ -37,6 +37,7 @@ public class EmpresasController : ControllerBase
 
     /// <summary>Cadastra uma nova empresa.</summary>
     [HttpPost]
+    [Authorize(Policy = "ApenasAdmin")]
     [ProducesResponseType(typeof(EmpresaDto), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> Criar([FromBody] CriarEmpresaDto dto)
@@ -47,6 +48,7 @@ public class EmpresasController : ControllerBase
 
     /// <summary>Vincula um veterinario a uma empresa.</summary>
     [HttpPost("{id:guid}/veterinarios/{veterinarioId:guid}")]
+    [Authorize(Policy = "ApenasAdmin")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> VincularVeterinario(Guid id, Guid veterinarioId)
@@ -57,6 +59,7 @@ public class EmpresasController : ControllerBase
 
     /// <summary>Atualiza dados de uma empresa.</summary>
     [HttpPut("{id:guid}")]
+    [Authorize(Policy = "ApenasAdmin")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Atualizar(Guid id, [FromBody] CriarEmpresaDto dto)
@@ -67,6 +70,7 @@ public class EmpresasController : ControllerBase
 
     /// <summary>Desativa uma empresa.</summary>
     [HttpDelete("{id:guid}")]
+    [Authorize(Policy = "ApenasAdmin")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Desativar(Guid id)

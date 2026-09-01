@@ -59,6 +59,22 @@ public class Exame
     }
 
     /// <summary>Registra o resultado do exame e marca a data de conclusão.</summary>
+    /// <summary>
+    /// Midias do laudo (PDF, imagem), separadas por ";" (RN-104).
+    ///
+    /// Resultado de exame raramente e so texto: o laudo vem em PDF e a imagem vem do
+    /// equipamento. Guardar so o texto obrigaria o veterinario a transcrever o que ja
+    /// existe em arquivo, e a transcricao e onde o dado se perde.
+    /// </summary>
+    [MaxLength(2000)]
+    public string? MidiaIds { get; private set; }
+
+    /// <summary>Ids das midias do laudo, ja separados.</summary>
+    public IReadOnlyList<Guid> Midias() =>
+        string.IsNullOrWhiteSpace(MidiaIds) || MidiaIds == ";"
+            ? []
+            : [.. MidiaIds.Split(';', StringSplitOptions.RemoveEmptyEntries).Select(Guid.Parse)];
+
     public void RegistrarResultado(string resultado)
     {
         Resultado = resultado;
@@ -69,6 +85,19 @@ public class Exame
     /// Libera o resultado para visualização pelo tutor.
     /// Lança exceção se o resultado ainda não foi registrado.
     /// </summary>
+    /// <summary>
+    /// Anexa as midias do laudo ao resultado (RN-104).
+    ///
+    /// ";" em vez de vazio: no Oracle a string vazia E NULL, e distinguir "laudo sem
+    /// anexo" de "ainda nao informado" importa na leitura.
+    /// </summary>
+    public void AnexarMidias(IEnumerable<Guid>? midias)
+    {
+        var lista = midias?.ToList() ?? [];
+
+        MidiaIds = lista.Count == 0 ? ";" : string.Join(';', lista);
+    }
+
     public void LiberarAoTutor()
     {
         if (string.IsNullOrWhiteSpace(Resultado))

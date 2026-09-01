@@ -1,3 +1,5 @@
+using Vetly.Application.DTOs.Notificacao;
+using Microsoft.Extensions.Logging;
 using System.Text.Json;
 using Vetly.Application.DTOs.Captura;
 using Vetly.Application.DTOs.Documento;
@@ -27,10 +29,12 @@ public class DocumentoService : IDocumentoService
     private readonly IPagamentoRepository _pagamentoRepo;
     private readonly IAuditoriaIaRepository _auditoria;
     private readonly IMidiaRepository _midiaRepo;
+    private readonly INotificacaoService _notificacoes;
     private readonly IStorageAdapter _storage;
     private readonly IGeradorDePdf _pdf;
     private readonly IAssinaturaAdapter _assinatura;
     private readonly IColmeiaService _colmeia;
+    private readonly ILogger<DocumentoService> _logger;
     private readonly IUsuarioAtual _usuario;
     private readonly IEnumerable<IDocumentoFactory> _factories;
 
@@ -45,10 +49,12 @@ public class DocumentoService : IDocumentoService
         IPagamentoRepository pagamentoRepo,
         IAuditoriaIaRepository auditoria,
         IMidiaRepository midiaRepo,
+        INotificacaoService notificacoes,
         IStorageAdapter storage,
         IGeradorDePdf pdf,
         IAssinaturaAdapter assinatura,
         IColmeiaService colmeia,
+        ILogger<DocumentoService> logger,
         IUsuarioAtual usuario,
         IEnumerable<IDocumentoFactory> factories)
     {
@@ -60,10 +66,12 @@ public class DocumentoService : IDocumentoService
         _pagamentoRepo = pagamentoRepo;
         _auditoria = auditoria;
         _midiaRepo = midiaRepo;
+        _notificacoes = notificacoes;
         _storage = storage;
         _pdf = pdf;
         _assinatura = assinatura;
         _colmeia = colmeia;
+        _logger = logger;
         _usuario = usuario;
         _factories = factories;
     }
@@ -71,6 +79,11 @@ public class DocumentoService : IDocumentoService
     /// <inheritdoc/>
     public async Task<IEnumerable<DocumentoDto>> ObterPorConsultaAsync(Guid consultaId)
     {
+        var consulta = await _consultaRepo.ObterPorIdAsync(consultaId)
+            ?? throw new NotFoundException("Consulta", consultaId);
+
+        await GarantirLeituraAsync(consulta);
+
         var docs = await _repo.ObterPorConsultaAsync(consultaId);
 
         return docs.Select(MapearParaDto);
@@ -82,14 +95,72 @@ public class DocumentoService : IDocumentoService
         var doc = await _repo.ObterPorIdAsync(id)
             ?? throw new NotFoundException("Documento", id);
 
+        if (doc.ConsultaId is { } consultaId)
+        {
+            var consulta = await _consultaRepo.ObterPorIdAsync(consultaId);
+
+            if (consulta is not null)
+                await GarantirLeituraAsync(consulta);
+        }
+
         return MapearParaDto(doc);
+    }
+
+    /// <summary>
+    /// Quem le um documento clinico (RN-090/RN-105/RN-106): o Responsavel dono do
+    /// animal, o veterinario que conduziu o atendimento, o Admin, e o veterinario de
+    /// fora com colmeia vigente no escopo de documentos.
+    ///
+    /// Toda leitura por veterinario vira entrada no log de acesso (RN-067) — inclusive
+    /// a do proprio autor. E o registro que sustenta a colmeia juridicamente, e
+    /// registrar so o acesso "de fora" deixaria metade da historia fora.
+    /// </summary>
+    private async Task GarantirLeituraAsync(Consulta consulta)
+    {
+        if (_usuario.EhAdmin)
+            return;
+
+        if (_usuario.EhTutor && _usuario.TutorId == consulta.TutorId)
+            return;
+
+        if (_usuario.EhVeterinario && _usuario.VeterinarioId is { } vetId)
+        {
+            var doProprioAtendimento = vetId == consulta.VeterinarioId;
+
+            var autorizado = doProprioAtendimento || await _colmeia.PodeAcessarAsync(
+                vetId, consulta.AnimalId, EscopoAcessoColmeia.Documentos);
+
+            await _colmeia.RegistrarAcessoAsync(
+                consulta.AnimalId, EscopoAcessoColmeia.Documentos, autorizado,
+                "GET /api/documentos");
+
+            if (autorizado)
+                return;
+        }
+
+        throw new AcessoNegadoException("RN-105", "Este documento nao pertence ao seu escopo de acesso.");
+    }
+
+    /// <summary>
+    /// Quem emite, publica ou corrige documento e quem assina por ele: o veterinario
+    /// do atendimento, ou o Admin (RN-083/RN-087/RN-105).
+    /// </summary>
+    private async Task<Consulta> GarantirEscritaAsync(Guid consultaId)
+    {
+        var consulta = await _consultaRepo.ObterPorIdAsync(consultaId)
+            ?? throw new NotFoundException("Consulta", consultaId);
+
+        if (_usuario.EhAdmin || _usuario.VeterinarioId == consulta.VeterinarioId)
+            return consulta;
+
+        throw new AcessoNegadoException("RN-105",
+            "Somente o veterinario que conduziu o atendimento emite seus documentos.");
     }
 
     /// <inheritdoc/>
     public async Task<DocumentoDto> GerarAsync(Guid consultaId, TipoDocumento tipo, TipoAtestado? subtipo = null)
     {
-        var consulta = await _consultaRepo.ObterPorIdAsync(consultaId)
-            ?? throw new NotFoundException("Consulta", consultaId);
+        var consulta = await GarantirEscritaAsync(consultaId);
 
         if (!consulta.PodeGerarDocumentos())
             throw new BusinessRuleException("RN-082",
@@ -173,6 +244,9 @@ public class DocumentoService : IDocumentoService
         var doc = await _repo.ObterPorIdAsync(id)
             ?? throw new NotFoundException("Documento", id);
 
+        if (doc.ConsultaId is { } consultaDaCorrecao)
+            await GarantirEscritaAsync(consultaDaCorrecao);
+
         var horasDesdeGeracao = (DateTime.UtcNow - doc.DataGeracao).TotalHours;
 
         if (horasDesdeGeracao > 24 && string.IsNullOrWhiteSpace(justificativa))
@@ -200,6 +274,8 @@ public class DocumentoService : IDocumentoService
         var doc = await _repo.ObterPorIdAsync(id)
             ?? throw new NotFoundException("Documento", id);
 
+        var consulta = doc.ConsultaId is { } cid ? await GarantirEscritaAsync(cid) : null;
+
         if (string.IsNullOrWhiteSpace(doc.Conteudo))
             throw new BusinessRuleException("RN-090",
                 "Documento sem conteudo nao pode ser publicado no board do pet.");
@@ -213,6 +289,24 @@ public class DocumentoService : IDocumentoService
         doc.Publicar(DateTime.UtcNow);
         _repo.Atualizar(doc);
         await _repo.SalvarAsync();
+
+        // RN-011/RN-090/RN-091: publicar sem avisar deixaria o documento no board de
+        // alguem que nao sabe que ele chegou. O push e o que fecha o ciclo.
+        if (consulta is not null)
+        {
+            var animal = await _animalRepo.ObterPorIdAsync(consulta.AnimalId);
+
+            await _notificacoes.CriarAsync(new CriarNotificacaoDto
+            {
+                TutorId = consulta.TutorId,
+                Tipo = TipoNotificacao.DocumentoPublicado,
+                Titulo = "Novo documento disponivel",
+                Corpo = $"{doc.TipoDocumento} de {animal?.Nome ?? "seu pet"} ja esta no board.",
+                AnimalId = consulta.AnimalId,
+                ConsultaId = consulta.Id,
+                Destino = $"/animais/{consulta.AnimalId}/documentos"
+            });
+        }
 
         return MapearParaDto(doc);
     }
@@ -254,6 +348,17 @@ public class DocumentoService : IDocumentoService
         var doc = await _repo.ObterPorIdAsync(id)
             ?? throw new NotFoundException("Documento", id);
 
+        // Quem marca como lido e quem leu: o Responsavel. O veterinario marcando
+        // pelo app dele produziria um dado falso — "a orientacao chegou" quando nao
+        // chegou a ninguem.
+        if (doc.ConsultaId is { } consultaDaLeitura)
+        {
+            var consulta = await _consultaRepo.ObterPorIdAsync(consultaDaLeitura);
+
+            if (consulta is not null && !_usuario.EhAdmin && _usuario.TutorId != consulta.TutorId)
+                throw new AcessoNegadoException("RN-106", "Este documento nao pertence ao seu escopo de acesso.");
+        }
+
         if (doc.PublicadoEm is null)
             throw new BusinessRuleException("RN-090",
                 "Documento ainda nao publicado no board do pet.");
@@ -274,18 +379,32 @@ public class DocumentoService : IDocumentoService
     /// </summary>
     private async Task AnexarPdfAsync(Documento documento, ContextoDoDocumentoDto contexto)
     {
-        var midia = new Midia(TipoMidia.DocumentoPdf, "application/pdf", consultaId: contexto.ConsultaId);
+        // Falha ao renderizar nao perde o documento: o conteudo clinico ja esta
+        // gravado, e o PDF pode ser produzido depois. Derrubar a geracao inteira por
+        // causa do anexo faria o veterinario perder o atendimento que acabou de
+        // aprovar.
+        try
+        {
+            var midia = new Midia(TipoMidia.DocumentoPdf, "application/pdf", consultaId: contexto.ConsultaId);
 
-        var bytes = _pdf.Renderizar($"{documento.TipoDocumento} - {contexto.AnimalNome}", documento.Conteudo!);
+            var bytes = _pdf.Renderizar($"{documento.TipoDocumento} - {contexto.AnimalNome}", documento.Conteudo!);
 
-        await _storage.GravarAsync(midia.ChaveStorage, bytes, "application/pdf");
+            await _storage.GravarAsync(midia.ChaveStorage, bytes, "application/pdf");
 
-        midia.ConfirmarUpload(bytes.LongLength);
+            midia.ConfirmarUpload(bytes.LongLength);
 
-        await _midiaRepo.AdicionarAsync(midia);
-        await _midiaRepo.SalvarAsync();
+            await _midiaRepo.AdicionarAsync(midia);
+            await _midiaRepo.SalvarAsync();
 
-        documento.AnexarPdf(midia.Id);
+            documento.AnexarPdf(midia.Id);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "Falha ao renderizar o PDF do documento {TipoDocumento} da consulta {ConsultaId}. " +
+                "O documento segue sem PDF anexado.",
+                documento.TipoDocumento, contexto.ConsultaId);
+        }
     }
 
     /// <summary>

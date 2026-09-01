@@ -44,7 +44,7 @@ public class ExamesController : ControllerBase
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> RegistrarResultado(Guid id, [FromBody] RegistrarResultadoExameDto dto) =>
-        Ok(await _service.RegistrarResultadoAsync(id, dto.Resultado));
+        Ok(await _service.RegistrarResultadoAsync(id, dto.Resultado, dto.MidiaIds));
 
     /// <summary>Libera o resultado do exame ao tutor (requer resultado registrado).</summary>
     [HttpPut("{id:guid}/liberar")]

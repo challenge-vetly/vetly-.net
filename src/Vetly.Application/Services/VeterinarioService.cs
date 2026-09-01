@@ -256,8 +256,20 @@ public class VeterinarioService : IVeterinarioService
         var vet = await _repo.ObterPorIdAsync(id)
             ?? throw new NotFoundException("Veterinario", id);
 
+        // RN-105: o profissional edita o proprio perfil; o Admin edita os da unidade.
+        // Ninguem edita o perfil de um terceiro.
+        var ehOProprio = _usuario.VeterinarioId == id;
+
+        if (!_usuario.EhAdmin && !ehOProprio)
+            throw new AcessoNegadoException("RN-105", "Este cadastro nao pertence ao seu escopo de acesso.");
+
         vet.AtualizarDados(dto.Nome, dto.UfAtuacao, dto.TitulacaoAcademica);
-        vet.AtualizarPlano(dto.Plano);
+
+        // O plano decide o take rate (RN-070) e libera a IA na consulta (RN-085): e
+        // decisao comercial da unidade, nao preferencia do profissional. Deixar o vet
+        // trocar o proprio plano seria deixa-lo baixar a propria comissao.
+        if (_usuario.EhAdmin)
+            vet.AtualizarPlano(dto.Plano);
 
         if (dto.Endereco is not null)
             vet.DefinirEndereco(MapearEndereco(dto.Endereco));

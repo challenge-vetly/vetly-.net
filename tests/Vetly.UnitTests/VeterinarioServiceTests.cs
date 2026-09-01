@@ -341,4 +341,73 @@ public class VeterinarioServiceTests
         Assert.Single(agendamentos);
         Assert.False(vet.Ativo);
     }
+
+    // ── RN-105: o cadastro profissional e de quem o exerce ──────────────────
+
+    private void ComoVeterinario(Guid veterinarioId)
+    {
+        _usuarioMock.SetupGet(u => u.EhAdmin).Returns(false);
+        _usuarioMock.SetupGet(u => u.EhVeterinario).Returns(true);
+        _usuarioMock.SetupGet(u => u.VeterinarioId).Returns(veterinarioId);
+    }
+
+    [Fact]
+    public async Task AtualizarAsync_VeterinarioAlterandoOutro_LancaAcessoNegadoRN105()
+    {
+        var alvo = CriarVeterinario();
+
+        _repoMock.Setup(r => r.ObterPorIdAsync(alvo.Id)).ReturnsAsync(alvo);
+        ComoVeterinario(Guid.NewGuid());
+
+        var dto = CriarDto();
+        dto.Nome = "Nome trocado";
+
+        var ex = await Assert.ThrowsAsync<AcessoNegadoException>(
+            () => CriarServico().AtualizarAsync(alvo.Id, dto));
+
+        Assert.Equal("RN-105", ex.Codigo);
+        Assert.Equal("Dr. Teste", alvo.Nome);
+    }
+
+    [Fact]
+    public async Task AtualizarAsync_VeterinarioTrocandoOProprioPlano_MantemOPlanoAtual()
+    {
+        var vet = CriarVeterinario();
+        var planoOriginal = vet.Plano;
+
+        _repoMock.Setup(r => r.ObterPorIdAsync(vet.Id)).ReturnsAsync(vet);
+        _repoMock.Setup(r => r.Atualizar(It.IsAny<Veterinario>()));
+        _repoMock.Setup(r => r.SalvarAsync()).ReturnsAsync(1);
+        ComoVeterinario(vet.Id);
+
+        var dto = CriarDto();
+        dto.Nome = "Novo nome";
+        dto.Plano = PlanoAssinatura.Enterprise;
+
+        await CriarServico().AtualizarAsync(vet.Id, dto);
+
+        // O plano decide a comissao (RN-070) e libera a IA (RN-085). Deixar o vet
+        // trocar o proprio plano seria deixa-lo baixar a propria comissao: e decisao
+        // comercial da unidade, nao preferencia do profissional.
+        Assert.Equal(planoOriginal, vet.Plano);
+        Assert.Equal("Novo nome", vet.Nome);
+    }
+
+    [Fact]
+    public async Task AtualizarAsync_AdminTrocandoOPlano_Aplica()
+    {
+        var vet = CriarVeterinario();
+
+        _repoMock.Setup(r => r.ObterPorIdAsync(vet.Id)).ReturnsAsync(vet);
+        _repoMock.Setup(r => r.Atualizar(It.IsAny<Veterinario>()));
+        _repoMock.Setup(r => r.SalvarAsync()).ReturnsAsync(1);
+        _usuarioMock.SetupGet(u => u.EhAdmin).Returns(true);
+
+        var dto = CriarDto();
+        dto.Plano = PlanoAssinatura.Enterprise;
+
+        await CriarServico().AtualizarAsync(vet.Id, dto);
+
+        Assert.Equal(PlanoAssinatura.Enterprise, vet.Plano);
+    }
 }
