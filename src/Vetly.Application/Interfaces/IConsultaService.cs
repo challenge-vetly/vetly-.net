@@ -46,6 +46,14 @@ public interface IConsultaService
     Task<RemarcacaoRealizadaDto> RemarcarAsync(Guid consultaId, RemarcarConsultaDto dto);
 
     /// <summary>
+    /// Agenda o retorno de um atendimento já realizado (RN-013/RN-090).
+    ///
+    /// Sem cobrança nova: o retorno é a segunda metade de um tratamento já pago. Quem
+    /// o marca é o profissional que conduziu o caso, ao fim da consulta.
+    /// </summary>
+    Task<RetornoAgendadoDto> AgendarRetornoAsync(Guid consultaId, AgendarRetornoDto dto);
+
+    /// <summary>
     /// Registra o não comparecimento do Responsável (RN-044). Sem reembolso, seguindo
     /// a faixa "menos de 2h ou no ato" da RN-014.
     /// </summary>

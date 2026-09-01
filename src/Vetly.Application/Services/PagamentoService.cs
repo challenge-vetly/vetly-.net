@@ -21,6 +21,7 @@ public class PagamentoService : IPagamentoService
     private readonly IEnumerable<ISplitFinanceiroStrategy> _splitStrategies;
     private readonly IFidelidadeService _fidelidade;
     private readonly IUsuarioAtual _usuario;
+    private readonly IColmeiaService _colmeia;
 
     public PagamentoService(
         IPagamentoRepository repo,
@@ -32,7 +33,8 @@ public class PagamentoService : IPagamentoService
         IFilaDeJobs fila,
         IEnumerable<ISplitFinanceiroStrategy> splitStrategies,
         IFidelidadeService fidelidade,
-        IUsuarioAtual usuario)
+        IUsuarioAtual usuario,
+        IColmeiaService colmeia)
     {
         _repo = repo;
         _vetRepo = vetRepo;
@@ -44,6 +46,7 @@ public class PagamentoService : IPagamentoService
         _splitStrategies = splitStrategies;
         _fidelidade = fidelidade;
         _usuario = usuario;
+        _colmeia = colmeia;
     }
 
     /// <summary>
@@ -373,6 +376,12 @@ public class PagamentoService : IPagamentoService
     }
 
     /// <summary>
+    /// Folga de colmeia depois do atendimento. Sete dias cobrem o laudo que sai depois
+    /// e a duvida do dia seguinte, sem virar acesso permanente.
+    /// </summary>
+    private const int DiasDeColmeiaAposOAtendimento = 7;
+
+    /// <summary>
     /// Propaga o desfecho do pagamento para a consulta e para o horario reservado.
     /// </summary>
     private async Task<Consulta?> AtualizarConsultaAsync(Pagamento pagamento, bool confirmada)
@@ -388,6 +397,18 @@ public class PagamentoService : IPagamentoService
 
         _consultaRepo.Atualizar(consulta);
         await _consultaRepo.SalvarAsync();
+
+        // RN-064: agendar com um profissional E autoriza-lo a ler o historico do animal.
+        // Exigir um segundo consentimento explicito para isso levaria o Responsavel a
+        // chegar na consulta com o veterinario as cegas — o problema que a colmeia
+        // existe para resolver. Escopo de atendimento e validade curta: acesso para
+        // atender, nao procuracao.
+        if (confirmada)
+        {
+            await _colmeia.AbrirParaAtendimentoAsync(
+                consulta.AnimalId, consulta.VeterinarioId,
+                consulta.DataHora.AddDays(DiasDeColmeiaAposOAtendimento));
+        }
 
         if (consulta.SlotId is { } slotId)
         {

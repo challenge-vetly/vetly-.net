@@ -307,6 +307,10 @@ builder.Services.AddScoped<IRotinaPeriodica, ExpirarPontosVencidos>();
 builder.Services.AddScoped<IRotinaPeriodica, EnviarNotificacoesPendentes>();
 builder.Services.AddScoped<IRotinaPeriodica, AvisarObrigacoesVencendo>();
 
+// RN-094/RN-095: sem esta rotina a regua nascia e parava — o alerta a clinica, que
+// depende de tres tentativas sem resposta, nunca chegava a disparar.
+builder.Services.AddScoped<IRotinaPeriodica, AgendarTentativasDaRegua>();
+
 builder.Services.AddHostedService<VetlyBackgroundService>();
 
 // ── Health Checks ────────────────────────────────────────────────────────────

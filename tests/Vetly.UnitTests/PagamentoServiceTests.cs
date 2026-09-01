@@ -26,11 +26,13 @@ public class PagamentoServiceTests
     private readonly Mock<IAgendaRepository> _agendaRepoMock = new();
     private readonly Mock<IFilaDeJobs> _filaMock = new();
     private readonly Mock<IFidelidadeService> _fidelidadeMock = new();
+    private readonly Mock<IColmeiaService> _colmeiaMock = new();
 
     private PagamentoService CriarServico(params ISplitFinanceiroStrategy[] strategies) =>
         new(_repoMock.Object, _vetRepoMock.Object, _consultaRepoMock.Object,
             _empresaRepoMock.Object, _adaptadorMock.Object, _agendaRepoMock.Object,
-            _filaMock.Object, strategies, _fidelidadeMock.Object, _usuarioMock.Object);
+            _filaMock.Object, strategies, _fidelidadeMock.Object, _usuarioMock.Object,
+            _colmeiaMock.Object);
 
     /// <summary>Todas as strategies de plano, como o DI as registra (RN-070).</summary>
     private static ISplitFinanceiroStrategy[] TodasAsStrategies() =>

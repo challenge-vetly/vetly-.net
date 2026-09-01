@@ -57,11 +57,14 @@ public class AgendamentoTests
         _agendaRepo.Setup(r => r.SalvarAsync()).ReturnsAsync(1);
     }
 
+    private readonly Mock<INotificacaoService> _notificacoes = new();
+
     private ConsultaService CriarServico() =>
         new(_repo.Object, _pagamentoRepo.Object, _documentoRepo.Object, _animalRepo.Object,
             _vetRepo.Object, _empresaRepo.Object,
             [new ReembolsoIntegralStrategy(), new ReembolsoParcialStrategy(), new SemReembolsoStrategy()],
-            _usuario.Object, _agendaRepo.Object, _fila.Object, _fidelidade.Object, _avaliacoes.Object, _colmeia.Object);
+            _usuario.Object, _agendaRepo.Object, _fila.Object, _fidelidade.Object, _avaliacoes.Object, _colmeia.Object,
+            _notificacoes.Object);
 
     private Pagamento Pagamento(decimal valor = 200m)
     {

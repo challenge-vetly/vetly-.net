@@ -85,6 +85,15 @@ public class Consulta
     public OrigemConsulta Origem { get; private set; }
 
     /// <summary>
+    /// Consulta que originou este retorno. Nulo em todo atendimento que não é retorno.
+    ///
+    /// Guardar o vínculo é o que permite responder "voltou depois do tratamento?" sem
+    /// adivinhar por proximidade de datas — e é o que amarra o retorno ao pagamento
+    /// que já cobriu o tratamento.
+    /// </summary>
+    public Guid? ConsultaOrigemId { get; private set; }
+
+    /// <summary>
     /// Quando o veterinário acionou "iniciar consulta". Abre a janela de captura da
     /// IA (RN-008/RN-079).
     /// </summary>
@@ -131,6 +140,30 @@ public class Consulta
             EmpresaId = empresaId,
             Origem = OrigemConsulta.Checkout
         };
+
+        return consulta;
+    }
+
+    /// <summary>
+    /// Cria o retorno de um atendimento já realizado (RN-013/RN-090).
+    ///
+    /// Nasce confirmada e sem cobrança: o retorno é a segunda metade de um atendimento
+    /// que já foi pago. Mantém animal, Responsável e profissional do original — trocar
+    /// qualquer um deles faria disso outra consulta, não um retorno.
+    /// </summary>
+    public static Consulta ParaRetorno(Consulta origem, DateTime dataHora, Guid slotId)
+    {
+        var consulta = new Consulta(
+            dataHora, origem.Modalidade, origem.VeterinarioId, origem.AnimalId, origem.TutorId)
+        {
+            SlotId = slotId,
+            ServicoId = origem.ServicoId,
+            EmpresaId = origem.EmpresaId,
+            Origem = OrigemConsulta.Retorno,
+            ConsultaOrigemId = origem.Id
+        };
+
+        consulta.ConfirmarPagamento();
 
         return consulta;
     }

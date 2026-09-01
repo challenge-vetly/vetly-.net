@@ -16,5 +16,15 @@ public enum OrigemConsulta
     /// Emergência presencial sem agendamento prévio: sem slot, sem lock, e o
     /// pagamento acontece no ato (RN-040).
     /// </summary>
-    Emergencia = 2
+    Emergencia = 2,
+
+    /// <summary>
+    /// Retorno do mesmo tratamento, agendado pelo profissional ao fim da consulta
+    /// (RN-013/RN-090).
+    ///
+    /// Não gera cobrança nova: o retorno é a segunda metade de um atendimento que já
+    /// foi pago. Cobrar por ele empurraria o Responsável a não voltar — e quem não
+    /// volta é justamente o caso que a régua de lembretes existe para alcançar.
+    /// </summary>
+    Retorno = 3
 }

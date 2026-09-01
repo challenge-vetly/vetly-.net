@@ -99,6 +99,24 @@ public class AcessoColmeia
     /// <summary>Verdadeiro quando a concessão vale neste instante.</summary>
     public bool Vigente(DateTime agora) => RevogadoEm is null && ExpiraEm > agora;
 
+    /// <summary>
+    /// Adia o vencimento da autorização (RN-090).
+    ///
+    /// Só adia — nunca encurta, e nunca ressuscita uma autorização revogada. Encurtar
+    /// por engano tiraria acesso que o Responsável concedeu; ressuscitar contornaria
+    /// uma revogação, que é a decisão mais explícita que ele pode tomar. O teto de um
+    /// ano continua valendo: autorização sem prazo é procuração em branco.
+    /// </summary>
+    public void Prorrogar(DateTime ate)
+    {
+        if (RevogadoEm is not null || ate <= ExpiraEm)
+            return;
+
+        var limite = ConcedidoEm.Add(ValidadeMaxima);
+
+        ExpiraEm = ate > limite ? limite : ate;
+    }
+
     /// <summary>Verdadeiro quando a concessão alcança o que está sendo pedido.</summary>
     public bool Alcanca(EscopoAcessoColmeia pedido) =>
         Escopo == EscopoAcessoColmeia.HistoricoCompleto || Escopo == pedido;

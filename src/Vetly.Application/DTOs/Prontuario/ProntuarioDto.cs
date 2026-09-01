@@ -13,4 +13,10 @@ public class ProntuarioDto
     public string? CrmvSolicitanteCorrecao { get; set; }
     public DateTime DataCriacao { get; set; }
     public bool ExigeJustificativa { get; set; }
+
+    /// <summary>
+    /// Oculto do board do Responsável (RN-068). O registro continua existindo, e o
+    /// veterinário continua vendo — o que muda é a tela de quem cuida do animal.
+    /// </summary>
+    public bool Oculto { get; set; }
 }

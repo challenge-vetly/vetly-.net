@@ -272,4 +272,51 @@ public class ColmeiaTests
         await Assert.ThrowsAsync<AcessoNegadoException>(
             () => CriarServico().ObterLogDoAnimalAsync(_animal.Id));
     }
+
+    // ── RN-064/RN-090: abertura automatica e prorrogacao ───────────────────
+
+    [Fact]
+    public void Prorrogar_SoAdia_NuncaEncurta()
+    {
+        var acesso = new AcessoColmeia(
+            Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(),
+            EscopoAcessoColmeia.HistoricoCompleto, TimeSpan.FromDays(30));
+
+        var original = acesso.ExpiraEm;
+
+        acesso.Prorrogar(DateTime.UtcNow.AddDays(5));
+
+        // Encurtar por engano tiraria acesso que o Responsavel concedeu
+        Assert.Equal(original, acesso.ExpiraEm);
+    }
+
+    [Fact]
+    public void Prorrogar_RespeitaOTetoDeUmAno()
+    {
+        var acesso = new AcessoColmeia(
+            Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(),
+            EscopoAcessoColmeia.HistoricoCompleto, TimeSpan.FromDays(30));
+
+        acesso.Prorrogar(DateTime.UtcNow.AddYears(5));
+
+        // Autorizacao sem prazo e procuracao em branco
+        Assert.True(acesso.ExpiraEm <= acesso.ConcedidoEm.Add(AcessoColmeia.ValidadeMaxima));
+    }
+
+    [Fact]
+    public void Prorrogar_NaoRessuscitaAutorizacaoRevogada()
+    {
+        var acesso = new AcessoColmeia(
+            Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(),
+            EscopoAcessoColmeia.HistoricoCompleto, TimeSpan.FromDays(30));
+
+        acesso.Revogar();
+        var expiraQuandoRevogado = acesso.ExpiraEm;
+
+        acesso.Prorrogar(DateTime.UtcNow.AddDays(90));
+
+        // Revogar e a decisao mais explicita que o Responsavel pode tomar
+        Assert.Equal(expiraQuandoRevogado, acesso.ExpiraEm);
+        Assert.False(acesso.Vigente(DateTime.UtcNow));
+    }
 }

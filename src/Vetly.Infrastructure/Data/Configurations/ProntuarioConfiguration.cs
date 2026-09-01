@@ -51,6 +51,11 @@ public class ProntuarioConfiguration : IEntityTypeConfiguration<Prontuario>
             .HasColumnType("VARCHAR2(15)")
             .HasColumnName("CRMV_SOLICITANTE_CORRECAO");
 
+        // NUMBER(1) e a convencao de booleano do projeto. Padrao 0: o historico que ja
+        // existe continua visivel, que e o estado correto do que ninguem escondeu.
+        builder.Property(p => p.Oculto)
+            .HasColumnType("NUMBER(1)").HasColumnName("OCULTO").IsRequired();
+
         builder.Property(p => p.DataCriacao)
             .HasColumnName("DATA_CRIACAO")
             .IsRequired();

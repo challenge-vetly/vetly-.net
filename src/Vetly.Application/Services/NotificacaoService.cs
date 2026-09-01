@@ -20,22 +20,105 @@ public class NotificacaoService : INotificacaoService
     private readonly IDispositivoRepository _dispositivoRepo;
     private readonly IPushAdapter _push;
     private readonly IUsuarioAtual _usuario;
+    private readonly ITutorRepository _tutorRepo;
 
     public NotificacaoService(
         INotificacaoRepository repo,
         IDispositivoRepository dispositivoRepo,
         IPushAdapter push,
-        IUsuarioAtual usuario)
+        IUsuarioAtual usuario,
+        ITutorRepository tutorRepo)
     {
         _repo = repo;
         _dispositivoRepo = dispositivoRepo;
         _push = push;
         _usuario = usuario;
+        _tutorRepo = tutorRepo;
     }
+
+    /// <inheritdoc/>
+    public async Task<PreferenciasDeNotificacaoDto> ObterPreferenciasAsync()
+    {
+        var tutor = await TutorDoTokenAsync();
+
+        return Mapear(tutor);
+    }
+
+    /// <inheritdoc/>
+    public async Task<PreferenciasDeNotificacaoDto> AtualizarPreferenciasAsync(AtualizarPreferenciasDto dto)
+    {
+        var tutor = await TutorDoTokenAsync();
+
+        // Escrever no registro de consentimento, e nao numa coluna de preferencia,
+        // mantem uma unica fonte da vontade do Responsavel — e e essa que vale
+        // juridicamente (RN-061/RN-093).
+        tutor.RegistrarConsentimento(
+            FinalidadeConsentimento.Promocoes, dto.AceitaPromocoes, DateTime.UtcNow);
+
+        _tutorRepo.Atualizar(tutor);
+        await _tutorRepo.SalvarAsync();
+
+        return Mapear(tutor);
+    }
+
+    /// <summary>
+    /// As preferências são do próprio Responsável. O id vem do token: aceitar um
+    /// parâmetro aqui deixaria qualquer um desligar as promoções de outro — ou, pior,
+    /// religá-las (RN-106).
+    /// </summary>
+    private async Task<Tutor> TutorDoTokenAsync()
+    {
+        if (_usuario.TutorId is not { } tutorId)
+            throw new AcessoNegadoException("RN-106",
+                "As preferencias de notificacao sao do Responsavel.");
+
+        return await _tutorRepo.ObterPorIdAsync(tutorId)
+            ?? throw new NotFoundException("Tutor", tutorId);
+    }
+
+    private static PreferenciasDeNotificacaoDto Mapear(Tutor tutor) => new()
+    {
+        TutorId = tutor.Id,
+        AceitaPromocoes = tutor.Consentiu(FinalidadeConsentimento.Promocoes),
+
+        // A mais recente das duas datas, e nao a maior por comparacao direta: em C#
+        // toda comparacao com null e falsa, entao "concessao > revogacao" devolveria
+        // a revogacao — nula — justo no caso em que a preferencia acabou de ser ligada
+        // pela primeira vez.
+        AtualizadoEm = MaisRecente(tutor.DataConcessaoPromocoes, tutor.DataRevogacaoPromocoes)
+    };
+
+    /// <summary>A mais recente de duas datas opcionais. Nula quando nenhuma existe.</summary>
+    private static DateTime? MaisRecente(DateTime? a, DateTime? b) =>
+        (a, b) switch
+        {
+            (null, null) => null,
+            (null, _) => b,
+            (_, null) => a,
+            _ => a > b ? a : b
+        };
 
     /// <inheritdoc/>
     public async Task<NotificacaoDto> CriarAsync(CriarNotificacaoDto dto)
     {
+        // RN-093: promocao e o unico tipo que o Responsavel desliga, e o padrao e
+        // desligado. Aviso de consulta, documento publicado e obrigacao vencendo nao
+        // sao opcionais — sao o servico que ele contratou, e desliga-los faria o app
+        // deixar de avisar sobre a saude do animal.
+        //
+        // O opt-in vive no consentimento de LGPD, e nao numa coluna propria: duas
+        // fontes para a mesma vontade acabariam discordando, e a que vale juridicamente
+        // e o registro de consentimento.
+        if (dto.Tipo == TipoNotificacao.Promocao)
+        {
+            var tutor = await _tutorRepo.ObterPorIdAsync(dto.TutorId)
+                ?? throw new NotFoundException("Tutor", dto.TutorId);
+
+            if (!tutor.Consentiu(FinalidadeConsentimento.Promocoes))
+                throw new BusinessRuleException("RN-093",
+                    "O Responsavel nao autorizou comunicacoes promocionais.");
+        }
+
         var notificacao = new Notificacao(
             dto.TutorId, dto.Tipo, dto.Titulo, dto.Corpo,
             dto.AgendadaPara, dto.AnimalId, dto.ConsultaId, dto.Destino);
