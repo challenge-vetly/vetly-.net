@@ -43,6 +43,11 @@ builder.Configuration
         optional: true,
         reloadOnChange: true);
 
+// Explicito e por ultimo: e daqui que vem a AZURE_SPEECH_KEY, que nunca pode morar em
+// arquivo do repositorio. Vindo depois dos JSON, a variavel de ambiente tambem vence
+// qualquer valor versionado por engano.
+builder.Configuration.AddEnvironmentVariables();
+
 // ── Observabilidade (§ Monitoramento) ─────────────────────────────────────────
 // Registrada antes de tudo de proposito: falha na composicao do container e um erro
 // de startup, e sem log configurado ele sai como texto cru no console e some.
@@ -198,15 +203,18 @@ switch (adaptadorStorage)
             $"Adaptador de storage '{adaptadorStorage}' nao reconhecido. Valores validos: Local.");
 }
 
-// Transcricao de fala (§5.3): Node-RED em producao, simulado em desenvolvimento.
-// O contrato do callback e da Vetly nos dois casos.
+// Transcricao de fala (§5.3): Azure Speech em producao, simulado em desenvolvimento.
+// O contrato do callback e da Vetly nos tres casos — e e ele que torna a troca de
+// motor uma troca de registro aqui, e nao uma refatoracao de fluxo.
 var adaptadorStt = builder.Configuration["Adaptadores:Stt"] ?? "Simulado";
 switch (adaptadorStt)
 {
+    // Continua sendo o padrao: desenvolver e rodar a suite inteira sem consumir quota
     case "Simulado":
         builder.Services.AddScoped<ISttAdapter, SttAdapterSimulado>();
         break;
 
+    // Segue valido como implementacao da porta, mas nao e mais o caminho recomendado
     case "NodeRed":
         builder.Services.AddHttpClient<ISttAdapter, SttAdapterNodeRed>(client =>
         {
@@ -218,9 +226,36 @@ switch (adaptadorStt)
         });
         break;
 
+    case "Azure":
+        // Resolvida no arranque: chave ausente ou regiao errada tem de derrubar a
+        // subida, e nao aparecer como segmento que nunca transcreve.
+        var azure = new ConfiguracaoDoAzureSpeech(builder.Configuration);
+        builder.Services.AddSingleton(azure);
+
+        builder.Services.AddScoped<ISttAdapter, SttAdapterAzure>();
+        builder.Services.AddScoped<IJobHandler, TranscreverSegmentoAzureHandler>();
+
+        builder.Services.AddHttpClient(ConfiguracaoDoAzureSpeech.NomeDoHttpClient, client =>
+        {
+            client.BaseAddress = azure.BaseUrl;
+            client.DefaultRequestHeaders.Add("Ocp-Apim-Subscription-Key", azure.Chave);
+            client.DefaultRequestHeaders.Accept.ParseAdd("application/json");
+
+            // Um trecho tem ~30s de audio e a API de short audio aceita ate 60s: 60s de
+            // timeout e folga suficiente e curta o bastante para o backoff agir.
+            client.Timeout = TimeSpan.FromSeconds(60);
+        });
+
+        builder.Services.AddHealthChecks()
+            .AddCheck<AzureSpeechHealthCheck>(
+                name: "azure-speech",
+                failureStatus: HealthStatus.Degraded,
+                tags: ["ready", "external"]);
+        break;
+
     default:
         throw new InvalidOperationException(
-            $"Adaptador de STT '{adaptadorStt}' nao reconhecido. Valores validos: Simulado, NodeRed.");
+            $"Adaptador de STT '{adaptadorStt}' nao reconhecido. Valores validos: Simulado, NodeRed, Azure.");
 }
 
 // Push (RN-092): no MVP, simulado. Trocar por APNs ou FCM e trocar o registro desta

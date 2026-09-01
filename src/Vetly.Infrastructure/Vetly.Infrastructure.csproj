@@ -15,6 +15,11 @@
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
     <PackageReference Include="Oracle.EntityFrameworkCore" Version="10.23.26200" />
+    <!-- IHttpClientFactory: o handler do Azure Speech precisa de DOIS clientes — um com
+         a chave de assinatura, para o motor, e um limpo, para baixar o audio do proprio
+         storage. Cliente tipado so entrega um, e mandar a chave do Azure junto do
+         download seria vazar credencial para outro destino. -->
+    <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.7" />
     <!-- Emissao do JWT: o adaptador de token vive na Infrastructure, junto dos demais
          adaptadores de dependencia tecnica. A mesma versao ja usada na API. -->
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.14.0" />

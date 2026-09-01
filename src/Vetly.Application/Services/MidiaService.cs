@@ -19,7 +19,15 @@ public class MidiaService : IMidiaService
     {
         [TipoMidia.FotoPet] = ["image/jpeg", "image/png", "image/webp"],
         [TipoMidia.PreSintoma] = ["image/jpeg", "image/png", "image/webp", "video/mp4"],
-        [TipoMidia.AudioConsulta] = ["audio/webm", "audio/webm;codecs=opus", "audio/ogg", "audio/mpeg", "audio/wav"],
+        // OGG-OPUS e WAV/PCM sao o que o motor de transcricao le (§5.3). WebM continua
+        // aceito no upload — segmento em formato que o motor recusa falha com
+        // FormatoNaoSuportado, e o app antigo nao fica sem conseguir nem enviar.
+        [TipoMidia.AudioConsulta] =
+        [
+            "audio/ogg", "audio/ogg;codecs=opus", "audio/ogg; codecs=opus",
+            "audio/wav", "audio/wave", "audio/x-wav",
+            "audio/webm", "audio/webm;codecs=opus", "audio/mpeg"
+        ],
         [TipoMidia.ResultadoExame] = ["application/pdf", "image/jpeg", "image/png"],
         [TipoMidia.DocumentoPdf] = ["application/pdf"]
     };

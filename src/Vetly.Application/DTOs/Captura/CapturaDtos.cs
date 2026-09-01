@@ -28,10 +28,18 @@ public class SessaoIniciadaDto
     public List<string> Avisos { get; set; } = [];
 }
 
-/// <summary>Como o app deve gravar o áudio da consulta.</summary>
+/// <summary>
+/// Como o app deve gravar o áudio da consulta.
+///
+/// <b>OGG-OPUS e não WebM</b>: a REST API de short audio do Azure aceita apenas WAV
+/// (PCM) e OGG (OPUS), ambos 16 kHz mono — WebM ela recusa com 400. O
+/// <c>MediaRecorder</c> do navegador grava OGG-OPUS nativamente, então o front
+/// continua sem biblioteca externa, e a alternativa (transcodificar no servidor)
+/// custaria uma dependência nativa para resolver o mesmo problema.
+/// </summary>
 public class ParametrosDeGravacaoDto
 {
-    public string Formato { get; set; } = "audio/webm;codecs=opus";
+    public string Formato { get; set; } = "audio/ogg;codecs=opus";
     public int SegundosPorSegmento { get; set; } = 30;
     public int SampleRate { get; set; } = 16000;
 }
