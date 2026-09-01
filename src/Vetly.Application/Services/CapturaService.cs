@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Text;
 using Vetly.Application.DTOs.Captura;
 using Vetly.Application.Exceptions;
@@ -217,6 +218,8 @@ public class CapturaService : ICapturaService
         var segmento = await _repo.ObterSegmentoAsync(dto.SegmentoId)
             ?? throw new NotFoundException("Segmento de audio", dto.SegmentoId);
 
+        GarantirTokenDoSegmento(segmento, dto.CallbackToken);
+
         // Callback e entregue mais de uma vez por natureza: segmento com desfecho
         // ignora a reentrega, sem duplicar texto nem reabrir o ciclo.
         if (segmento.TemDesfecho())
@@ -244,6 +247,38 @@ public class CapturaService : ICapturaService
         await _repo.SalvarAsync();
 
         await AvaliarDesfechoDaTranscricaoAsync(segmento.SessaoCapturaId);
+    }
+
+    /// <summary>
+    /// Confere que o callback é a resposta <b>deste</b> segmento (RN-009).
+    ///
+    /// O token de serviço no cabeçalho autentica o fluxo de transcrição como um todo;
+    /// só ele deixaria quem o conhecesse escrever texto no prontuário de qualquer
+    /// consulta, bastando acertar um id de segmento. O token por segmento fecha isso:
+    /// ele é sorteado no despacho, só o hash fica na base, e o motor tem de devolvê-lo.
+    ///
+    /// A comparação é em tempo fixo: comparar hash com <c>==</c> vaza, pelo tempo de
+    /// resposta, quantos caracteres iniciais estavam certos — e um atacante que pode
+    /// repetir a chamada transforma isso em adivinhação caractere a caractere.
+    ///
+    /// Segmento sem hash gravado é segmento que ainda não foi despachado: não há
+    /// callback legítimo possível para ele.
+    /// </summary>
+    private static void GarantirTokenDoSegmento(SegmentoAudio segmento, string? token)
+    {
+        if (string.IsNullOrWhiteSpace(segmento.CallbackTokenHash) || string.IsNullOrWhiteSpace(token))
+            throw new AcessoNegadoException("RN-009", "Callback de transcricao sem token valido.");
+
+        var recebido = Convert.ToHexString(
+            SHA256.HashData(Encoding.UTF8.GetBytes(token))).ToLowerInvariant();
+
+        var esperado = segmento.CallbackTokenHash;
+
+        if (!CryptographicOperations.FixedTimeEquals(
+                Encoding.UTF8.GetBytes(recebido), Encoding.UTF8.GetBytes(esperado)))
+        {
+            throw new AcessoNegadoException("RN-009", "Callback de transcricao sem token valido.");
+        }
     }
 
     /// <summary>

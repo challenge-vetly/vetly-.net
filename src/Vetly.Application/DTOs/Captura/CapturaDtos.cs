@@ -139,6 +139,16 @@ public class CallbackDeTranscricaoDto
 
     /// <summary>Motor e versão que produziram o texto.</summary>
     public MotorDeTranscricaoDto? Motor { get; set; }
+
+    /// <summary>
+    /// Token que a Vetly entregou ao motor ao despachar <b>este</b> segmento (RN-009).
+    ///
+    /// O token de serviço do cabeçalho diz que quem chama é o fluxo de transcrição;
+    /// este diz que a resposta é do trecho que foi mandado. Sem ele, qualquer um que
+    /// conheça o token de serviço poderia escrever texto no prontuário de qualquer
+    /// consulta — bastaria acertar um id de segmento.
+    /// </summary>
+    public string? CallbackToken { get; set; }
 }
 
 /// <summary>Identificação do motor que transcreveu.</summary>

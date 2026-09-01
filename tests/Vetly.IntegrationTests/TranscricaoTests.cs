@@ -353,4 +353,68 @@ public class TranscricaoTests : IClassFixture<VetlyWebApplicationFactory>
             return new HttpResponseMessage(_status!.Value);
         }
     }
+
+    // ── RN-009: o token do segmento fecha a volta ───────────────────────────
+
+    [Fact]
+    public async Task Simulado_DevolveOMesmoTokenQueRecebeu()
+    {
+        var fila = new Mock<IFilaDeJobs>();
+        string? payload = null;
+
+        fila.Setup(f => f.EnfileirarAsync(
+                TipoJob.TranscreverSegmentoSimulado, It.IsAny<string>(), It.IsAny<TimeSpan?>()))
+            .Callback<TipoJob, string, TimeSpan?>((_, p, _) => payload = p)
+            .Returns(Task.CompletedTask);
+
+        var adaptador = new SttAdapterSimulado(fila.Object, NullLogger<SttAdapterSimulado>.Instance);
+
+        var token = "token-do-segmento-abc123";
+
+        await adaptador.SolicitarTranscricaoAsync(new SolicitarTranscricaoRequest(
+            Guid.NewGuid(), Guid.NewGuid(), 0, "https://storage.test/audio", "audio/webm",
+            "pt-BR", "https://api.vetly.test/api/internos/stt/callback", token));
+
+        Assert.NotNull(payload);
+
+        var callback = JsonSerializer.Deserialize<CallbackDeTranscricaoDto>(payload!, Json);
+
+        // Sem devolver o token, o simulado passaria por uma porta que o fluxo de
+        // producao nao atravessa, e a guarda so seria exercitada em producao
+        Assert.Equal(token, callback!.CallbackToken);
+    }
+
+    [Fact]
+    public async Task DespachoESimulado_OTokenDoPedidoBateComOHashGravado()
+    {
+        var (sessao, segmento, midia) = Cenario();
+        var (captura, midias, storage) = Dependencias(sessao, segmento, midia);
+
+        var fila = new Mock<IFilaDeJobs>();
+        string? payload = null;
+
+        fila.Setup(f => f.EnfileirarAsync(
+                TipoJob.TranscreverSegmentoSimulado, It.IsAny<string>(), It.IsAny<TimeSpan?>()))
+            .Callback<TipoJob, string, TimeSpan?>((_, p, _) => payload = p)
+            .Returns(Task.CompletedTask);
+
+        var stt = new SttAdapterSimulado(fila.Object, NullLogger<SttAdapterSimulado>.Instance);
+
+        var handler = new TranscreverSegmentoHandler(
+            captura.Object, midias.Object, storage.Object, stt, Config(),
+            NullLogger<TranscreverSegmentoHandler>.Instance);
+
+        await handler.ExecutarAsync(
+            new Job(TipoJob.TranscreverSegmento, segmento.Id.ToString()), CancellationToken.None);
+
+        var callback = JsonSerializer.Deserialize<CallbackDeTranscricaoDto>(payload!, Json);
+
+        var hashDoTokenDevolvido = Convert.ToHexString(
+            System.Security.Cryptography.SHA256.HashData(
+                Encoding.UTF8.GetBytes(callback!.CallbackToken!))).ToLowerInvariant();
+
+        // O caminho de ida grava o hash; o de volta traz o token. E o par que prova
+        // que a transcricao responde ao trecho que foi mandado.
+        Assert.Equal(segmento.CallbackTokenHash, hashDoTokenDevolvido);
+    }
 }

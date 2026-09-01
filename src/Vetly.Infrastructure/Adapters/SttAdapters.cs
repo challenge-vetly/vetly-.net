@@ -100,7 +100,13 @@ public class SttAdapterSimulado : ISttAdapter
             texto = TextoSintetico(req.Sequencia),
             confianca = 0.92m,
             idioma = req.Idioma,
-            motor = new { nome = "stt-simulado", versao = "1.0.0" }
+            motor = new { nome = "stt-simulado", versao = "1.0.0" },
+
+            // O simulado devolve o mesmo token que recebeu: e o que faz o caminho de
+            // volta ser o mesmo do motor real, verificacao incluida (RN-009). Sem
+            // isso, o simulado passaria por uma porta que o fluxo de producao nao
+            // atravessa, e a guarda so seria exercitada em producao.
+            callbackToken = req.CallbackToken
         };
 
         await _fila.EnfileirarAsync(
