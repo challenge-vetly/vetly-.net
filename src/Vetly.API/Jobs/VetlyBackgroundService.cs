@@ -1,7 +1,9 @@
+using System.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Vetly.Application.Interfaces;
+using Vetly.Application.Observability;
 
 namespace Vetly.API.Jobs;
 
@@ -84,10 +86,28 @@ public class VetlyBackgroundService : BackgroundService
     /// <summary>Um ciclo completo: rotinas periódicas e depois a fila.</summary>
     internal async Task ExecutarCicloAsync(CancellationToken cancellationToken)
     {
-        using var escopo = _escopos.CreateScope();
+        // O worker roda fora de qualquer requisicao HTTP: nao ha Activity herdada, e
+        // sem abrir uma aqui todo o trabalho dele ficaria invisivel no tracing. Este
+        // span e a raiz do trace de cada ciclo — os spans de dominio dos handlers
+        // (pagamento.webhook, ia.*) penduram nele.
+        using var atividade = VetlyTelemetry.Iniciar("worker.ciclo");
 
-        await ExecutarRotinasAsync(escopo.ServiceProvider, cancellationToken);
-        await ExecutarJobsAsync(escopo.ServiceProvider, cancellationToken);
+        var inicio = Stopwatch.GetTimestamp();
+
+        try
+        {
+            using var escopo = _escopos.CreateScope();
+
+            await ExecutarRotinasAsync(escopo.ServiceProvider, cancellationToken);
+            await ExecutarJobsAsync(escopo.ServiceProvider, cancellationToken);
+        }
+        finally
+        {
+            // Ciclo que passa a durar mais que o intervalo de 30s e o sinal antecedente
+            // de fila crescendo — aparece aqui muito antes de virar lembrete atrasado.
+            VetlyTelemetry.DuracaoDoCicloDoWorker.Record(
+                Stopwatch.GetElapsedTime(inicio).TotalMilliseconds);
+        }
     }
 
     private async Task ExecutarRotinasAsync(IServiceProvider servicos, CancellationToken cancellationToken)
@@ -128,6 +148,13 @@ public class VetlyBackgroundService : BackgroundService
             if (!handlers.TryGetValue(job.Tipo, out var handler))
             {
                 job.RegistrarFalha($"Nao ha handler registrado para o tipo {job.Tipo}.", DateTime.UtcNow);
+
+                // Falha de configuracao, nao de execucao: o job nunca vai drenar por si.
+                // Precisa aparecer na mesma serie, ou some da contagem.
+                VetlyTelemetry.JobsExecutados.Add(1,
+                    new KeyValuePair<string, object?>("tipo", job.Tipo.ToString()),
+                    new KeyValuePair<string, object?>("resultado", "sem-handler"));
+
                 continue;
             }
 
@@ -135,9 +162,17 @@ public class VetlyBackgroundService : BackgroundService
             {
                 await handler.ExecutarAsync(job, cancellationToken);
                 job.Concluir();
+
+                VetlyTelemetry.JobsExecutados.Add(1,
+                    new KeyValuePair<string, object?>("tipo", job.Tipo.ToString()),
+                    new KeyValuePair<string, object?>("resultado", "sucesso"));
             }
             catch (Exception ex)
             {
+                VetlyTelemetry.JobsExecutados.Add(1,
+                    new KeyValuePair<string, object?>("tipo", job.Tipo.ToString()),
+                    new KeyValuePair<string, object?>("resultado", "falha"));
+
                 // Falha e retentada com espera crescente; esgotadas as tentativas, o job
                 // fica registrado como falho para inspecao, em vez de sumir.
                 job.RegistrarFalha(ex.Message, DateTime.UtcNow);

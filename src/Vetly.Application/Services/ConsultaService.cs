@@ -7,6 +7,7 @@ using Vetly.Application.DTOs.Notificacao;
 using Vetly.Application.DTOs.Exame;
 using Vetly.Application.Exceptions;
 using Vetly.Application.Interfaces;
+using Vetly.Application.Observability;
 using Vetly.Application.Strategies.Cancelamento;
 using Vetly.Domain.Entities;
 using Vetly.Domain.Enums;
@@ -74,6 +75,13 @@ public class ConsultaService : IConsultaService
     /// </summary>
     public async Task<CheckoutCriadoDto> IniciarCheckoutAsync(CheckoutDto dto)
     {
+        // Span de dominio: a instrumentacao automatica do ASP.NET Core sabe que houve um
+        // POST em /api/consultas/checkout, mas nao sabe quanto do tempo foi gasto
+        // travando o horario e quanto foi lendo o cadastro. Este span abre essa caixa.
+        using var atividade = VetlyTelemetry.Iniciar("consulta.checkout");
+        atividade?.SetTag("vetly.animal_id", dto.AnimalId);
+        atividade?.SetTag("vetly.slot_id", dto.SlotId);
+
         var animal = await _animalRepo.ObterPorIdAsync(dto.AnimalId)
             ?? throw new NotFoundException("Animal", dto.AnimalId);
 
@@ -122,6 +130,14 @@ public class ConsultaService : IConsultaService
 
         await _repo.AdicionarAsync(consulta);
         await _repo.SalvarAsync();
+
+        // Numerador do funil de agendamento (§10): quantos checkouts abriram. O
+        // denominador da conversao e vetly.consultas.confirmadas, incrementado quando
+        // o webhook confirma o pagamento (RN-006).
+        VetlyTelemetry.CheckoutsIniciados.Add(1,
+            new KeyValuePair<string, object?>("prestador", empresaId is null ? "autonomo" : "clinica"));
+
+        atividade?.SetTag("vetly.consulta_id", consulta.Id);
 
         return new CheckoutCriadoDto
         {
@@ -359,6 +375,11 @@ public class ConsultaService : IConsultaService
 
             await LiberarHorarioAsync(consulta);
 
+            // Faixa propria: checkout abandonado nao e cancelamento de atendimento
+            // vendido, e misturar os dois inflaria a taxa de cancelamento da clinica.
+            VetlyTelemetry.ConsultasCanceladas.Add(1,
+                new KeyValuePair<string, object?>("faixa", "checkout-nao-pago"));
+
             return new ResultadoCancelamentoDto
             {
                 ValorReembolso = 0m,
@@ -396,6 +417,13 @@ public class ConsultaService : IConsultaService
 
         // O horario volta a valer, e quem esta na fila de espera precisa saber (RN-037)
         await LiberarHorarioAsync(consulta);
+
+        // A tag e o nome da Strategy que respondeu (RN-041/RN-042). Cancelamento
+        // concentrado numa faixa e informacao de produto, nao curiosidade: muito
+        // "sem reembolso" significa gente cancelando em cima da hora, e a politica
+        // pode estar empurrando o Responsavel para o no-show em vez do cancelamento.
+        VetlyTelemetry.ConsultasCanceladas.Add(1,
+            new KeyValuePair<string, object?>("faixa", strategy.GetType().Name));
 
         return resultado;
     }

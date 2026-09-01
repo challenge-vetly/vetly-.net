@@ -12,7 +12,8 @@ namespace Vetly.IntegrationTests;
 /// Fluxo ponta a ponta da sessao do Responsavel por HTTP (§3.1):
 /// cadastro, login, /me, rotacao do refresh token e logout.
 /// </summary>
-public class AuthFluxoTests : IClassFixture<VetlyWebApplicationFactory>
+[Collection(ColecaoDaApi.Nome)]
+public class AuthFluxoTests
 {
     private readonly HttpClient _client;
 

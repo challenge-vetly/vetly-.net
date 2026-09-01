@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Configuracao de cobertura usada pelo coletor "XPlat Code Coverage" do dotnet test.
+
+  Sem estes filtros o numero de cobertura mente por omissao. As migrations do EF Core
+  sao ~7 mil linhas de codigo GERADO, que nenhum teste executa e nenhum teste deveria
+  executar: elas afundam a cobertura da Infrastructure de 87% para 4% e transformam a
+  metrica em ruido. O mesmo vale para o DbContext snapshot.
+
+  A regra por tras da lista: exclui-se o que nao e decisao humana (codigo gerado) e o
+  que nao tem comportamento a verificar (Program.cs e composicao de container, coberto
+  de ponta a ponta pelos testes de integracao). Nao se exclui nada que contenha regra.
+
+  Uso: ver a secao "Cobertura" do README (dotnet test com o coletor XPlat Code
+  Coverage apontando para este arquivo em settings).
+-->
+<RunSettings>
+  <DataCollectionRunSettings>
+    <DataCollectors>
+      <DataCollector friendlyName="XPlat code coverage">
+        <Configuration>
+          <Format>cobertura</Format>
+
+          <!-- Codigo gerado pelo EF Core: migrations e snapshot do modelo. -->
+          <Exclude>[Vetly.Infrastructure]Vetly.Infrastructure.Migrations.*</Exclude>
+
+          <!-- Atributos que marcam codigo gerado tambem sao respeitados. -->
+          <ExcludeByAttribute>Obsolete,GeneratedCodeAttribute,CompilerGeneratedAttribute</ExcludeByAttribute>
+
+          <!-- Arquivos de migration, por caminho, para o caso de o filtro por
+               namespace nao alcancar as classes parciais do designer. -->
+          <ExcludeByFile>**/Migrations/*.cs</ExcludeByFile>
+
+          <SingleHit>false</SingleHit>
+          <UseSourceLink>true</UseSourceLink>
+          <IncludeTestAssembly>false</IncludeTestAssembly>
+        </Configuration>
+      </DataCollector>
+    </DataCollectors>
+  </DataCollectionRunSettings>
+</RunSettings>

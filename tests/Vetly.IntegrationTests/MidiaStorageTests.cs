@@ -14,7 +14,8 @@ namespace Vetly.IntegrationTests;
 /// <summary>
 /// Storage de objetos e midias (§2.6, RN-090).
 /// </summary>
-public class MidiaStorageTests : IClassFixture<VetlyWebApplicationFactory>
+[Collection(ColecaoDaApi.Nome)]
+public class MidiaStorageTests
 {
     private readonly HttpClient _client;
 

@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -5,6 +7,7 @@ using Microsoft.Extensions.Configuration;
 using Vetly.Application.DTOs.IA;
 using Vetly.Application.Exceptions;
 using Vetly.Application.Interfaces;
+using Vetly.Application.Observability;
 
 namespace Vetly.Application.Services;
 
@@ -178,7 +181,25 @@ public class OllamaService : IOllamaService
     }
 
     // Envia um prompt ao Ollama e retorna a resposta em texto
-    private async Task<string> EnviarAsync(string prompt)
+    /// <summary>
+    /// Ponto unico de saida para o LLM — e, por isso, o ponto unico de instrumentacao
+    /// da IA.
+    /// </summary>
+    /// <param name="prompt">Prompt ja montado pelo metodo chamador.</param>
+    /// <param name="operacao">
+    /// Preenchido automaticamente pelo compilador com o nome do metodo que chamou
+    /// (<see cref="CallerMemberNameAttribute"/>). E o que permite separar, na metrica,
+    /// "sugerir diagnostico" de "estruturar consulta" sem obrigar cada chamador a
+    /// repetir o proprio nome — e sem correr o risco de alguem esquecer.
+    /// </param>
+    /// <returns>O texto devolvido pelo modelo.</returns>
+    /// <remarks>
+    /// O Ollama e a dependencia mais lenta do sistema e a unica cuja latencia varia por
+    /// ordens de grandeza conforme o modelo carregado e o hardware. Sem esta medida,
+    /// uma consulta que demorou 40 segundos e indistinguivel de uma API lenta; com ela,
+    /// o histograma mostra imediatamente que 38 desses segundos foram do modelo.
+    /// </remarks>
+    private async Task<string> EnviarAsync(string prompt, [CallerMemberName] string operacao = "")
     {
         var payload = new OllamaRequest
         {
@@ -190,12 +211,41 @@ public class OllamaService : IOllamaService
 
         var json = JsonSerializer.Serialize(payload, _jsonOptions);
         using var content = new StringContent(json, Encoding.UTF8, "application/json");
-        var response = await _http.PostAsync("/api/generate", content);
-        response.EnsureSuccessStatusCode();
 
-        var responseJson = await response.Content.ReadAsStringAsync();
-        var result = JsonSerializer.Deserialize<OllamaResponse>(responseJson, _jsonOptions);
-        return result?.Response ?? string.Empty;
+        // Kind.Client: para o backend de tracing, este span e uma chamada de saida — e
+        // e assim que o Ollama aparece separado do tempo da propria Vetly.
+        using var atividade = VetlyTelemetry.Iniciar($"ia.{operacao}", ActivityKind.Client);
+        atividade?.SetTag("vetly.ia.modelo", _model);
+
+        var inicio = Stopwatch.GetTimestamp();
+        var resultado = "sucesso";
+
+        try
+        {
+            var response = await _http.PostAsync("/api/generate", content);
+            response.EnsureSuccessStatusCode();
+
+            var responseJson = await response.Content.ReadAsStringAsync();
+            var result = JsonSerializer.Deserialize<OllamaResponse>(responseJson, _jsonOptions);
+            return result?.Response ?? string.Empty;
+        }
+        catch (Exception excecao)
+        {
+            // A falha e medida e re-lancada: quem trata o erro continua sendo o
+            // chamador. Instrumentar nao pode mudar o comportamento do codigo.
+            resultado = "falha";
+            VetlyTelemetry.RegistrarFalha(atividade, excecao);
+            throw;
+        }
+        finally
+        {
+            // No finally: um timeout do LLM e justamente o caso em que a duracao mais
+            // interessa, e ele chega aqui como excecao.
+            VetlyTelemetry.DuracaoDaIa.Record(
+                Stopwatch.GetElapsedTime(inicio).TotalMilliseconds,
+                new KeyValuePair<string, object?>("operacao", operacao),
+                new KeyValuePair<string, object?>("resultado", resultado));
+        }
     }
 
     private static T? ParsearOuPadrao<T>(string json) where T : class

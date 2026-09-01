@@ -10,7 +10,8 @@ namespace Vetly.IntegrationTests;
 /// Credencial do veterinario (pendencia P-05) e encerramento de acesso no
 /// offboarding (RN-022/RN-024), por HTTP.
 /// </summary>
-public class AuthVeterinarioTests : IClassFixture<VetlyWebApplicationFactory>
+[Collection(ColecaoDaApi.Nome)]
+public class AuthVeterinarioTests
 {
     private readonly HttpClient _client;
 

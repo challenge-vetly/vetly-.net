@@ -1,60 +1,575 @@
-# Vetly API — Detalhamento do Projeto
+# Vetly API
 
-O Vetly é uma API REST para gestão de clínicas veterinárias, cobrindo todo o ciclo do atendimento — agendamento de consultas com pagamento integrado, prontuários, internações com apuração financeira, exames, emissão de documentos clínicos (prontuário, receita, atestado, nota fiscal) e split financeiro entre profissionais e empresas. Integra um assistente de IA local (Ollama) para sugerir hipóteses diagnósticas, protocolos de tratamento, triagem de sintomas e orientações pós-atendimento, sempre validados manualmente pelo veterinário (RN-082).
+**Plataforma intermediária entre Responsáveis de pets e veterinários, construída em ASP.NET Core 10 sobre Oracle, com IA local na consulta e observabilidade de produção.**
 
-## Stack
+O Vetly não presta serviço veterinário: ele conecta, relaciona e retém Responsáveis e veterinários, organiza o agendamento, cobra, reparte e guarda o histórico. Esta API é a implementação dessa plataforma — o backend inteiro do produto, do onboarding do Responsável até a nota fiscal com split apurado, passando por agenda com controle de concorrência, captura de áudio da consulta, estruturação do prontuário por LLM, programa de fidelidade com contabilidade FIFO de pontos e uma trilha de auditoria append-only para tudo que a IA sugere.
 
-| Camada | Tecnologia |
-|---|---|
-| Framework | ASP.NET Core 10 (Web API) |
-| ORM | EF Core 10 + Oracle.EntityFrameworkCore |
-| Banco | Oracle Database 21c+ |
-| Autenticação | JWT Bearer |
-| Documentação | Scalar (tema DeepSpace) em `/scalar/v1` |
-| IA | Ollama local (modelo `llama3.1`) |
-| Testes | xUnit + Moq (885 testes verdes: 698 unitários + 187 de integração) |
+A tese que organiza o produto é simples de enunciar e difícil de implementar: **o prontuário pertence ao animal, não à clínica**. Um Responsável que muda de bairro, troca de veterinário ou cai num plantão de emergência às três da manhã leva o histórico completo do animal junto — porque o histórico nunca esteve na clínica, esteve na plataforma. Isso desloca a diferenciação entre prestadores de "quem tem o prontuário" para "preço, qualidade, infraestrutura e equipamentos", que é um nivelamento estratégico desejado, e transforma a Vetly no ativo insubstituível da relação. Quase toda decisão de arquitetura deste repositório existe para sustentar essa frase: o modelo de consentimento granular, a colmeia por evento clínico com prazo e escopo, o log de acesso append-only visível ao Responsável, a permanência do histórico após o desligamento do profissional.
 
-## Padrões aplicados
+A API é uma implementação de **MVP**, e isso é explícito no código, não uma desculpa. Não há gateway de pagamento real: a cobrança é simulada, e nota fiscal e split são **registrados, não liquidados**. O que não é simulado é o resto — a apuração do split por plano está correta até o centavo, o webhook é a fonte autoritativa do estado da transação, a idempotência protege reenvios, e a concorrência no horário é resolvida por token de concorrência no banco, não por `lock` em memória. As dependências externas entram por **porta** na camada de Aplicação e saem por um adaptador `*Simulado` na Infrastructure, escolhido por configuração: trocar "simulado" por "real" é trocar o registro no contêiner de injeção de dependência, sem tocar em nenhum serviço.
 
-| Padrão | Onde |
-|---|---|
-| Factory Pattern | `DocumentoService` seleciona `IDocumentoFactory` pelo `TipoDocumento` (Prontuario, Receita, Atestado, NotaFiscal) |
-| Strategy Pattern | `ConsultaService` seleciona `ICancelamentoStrategy` por antecedência (RN-014/RN-041/RN-042) |
-| Strategy Pattern | `PagamentoService` seleciona `ISplitFinanceiroStrategy` pelo **plano** (Básico 15% / Profissional 12% / Enterprise 10%) |
-| Repository Pattern | Interfaces em `Vetly.Application`; implementações EF Core em `Vetly.Infrastructure` |
-| DIP | Todos os serviços dependem de interfaces — zero acoplamento concreto |
-| Soft Delete | `Veterinario`, `Animal` e `Tutor` são desativados, nunca deletados |
-| Value Object | `Crmv` — imutável, valida regex `^\d{4,6}-[A-Z]{2}$` |
-| ProblemDetails | `ExceptionHandlingMiddleware` retorna RFC 7807 em todos os erros, incluindo **503** para dependência externa fora do ar — 422 diria ao app que a culpa é dele |
-| Enums como string | `JsonStringEnumConverter` — o JSON trafega `"Presencial"`, não `1` (entrada e saída) |
-| Worker de negócio | `VetlyBackgroundService` + `TB_JOB`: rotinas periódicas (expirar locks, limpar idempotência) e jobs pontuais (promover lista de espera, webhook simulado) |
-| Idempotência | `IdempotencyFilter` + `TB_IDEMPOTENCIA`: rotas marcadas com `[Idempotente]` exigem `Idempotency-Key` e reaproveitam a resposta por 24h |
-| Adapter / Port | Dependências externas entram por porta na `Application` e implementação `*Simulado` na `Infrastructure`, escolhida por configuração (`Adaptadores:*`) — trocar de fornecedor é trocar o registro no DI |
+Esta versão da documentação acrescenta a camada que faltava para que o sistema pudesse ser operado, e não apenas executado: **monitoramento e observabilidade** (health checks, log estruturado, tracing distribuído e métricas) e uma suíte de **testes automatizados** de 915 casos organizados por camada. As duas coisas respondem à mesma pergunta em momentos diferentes — a suíte responde "isto está certo?" antes do deploy; a observabilidade responde "isto continua certo?" depois dele.
 
 ---
 
-## Instalação e como rodar
+## Sumário
 
-**Pré-requisitos:**
+| Seção | O que você encontra |
+|---|---|
+| [1. Arquitetura](#1-arquitetura) | As quatro camadas, a regra de dependência e por que ela é inegociável |
+| [2. Stack e tecnologias](#2-stack-e-tecnologias) | Cada biblioteca do projeto e para que exatamente ela serve aqui |
+| [3. Padrões de projeto](#3-padrões-de-projeto-aplicados) | Factory, Strategy, Repository, Adapter e onde cada um vive |
+| [4. Monitoramento e observabilidade](#4-monitoramento-e-observabilidade) | Health checks, Serilog, OpenTelemetry, catálogo de métricas e o playbook de plantão |
+| [5. Testes automatizados](#5-testes-automatizados) | Padrão AAA, nomenclatura, fixtures, execução e cobertura |
+| [6. Instalação e execução](#6-instalação-e-execução) | Pré-requisitos, configuração local, migrations e como subir |
+| [7. Autenticação](#7-autenticação) | JWT, refresh rotativo, perfis e policies |
+| [8. Roteiro de testes no Postman](#8-roteiro-de-testes-no-postman) | A jornada completa, chamada por chamada, na ordem em que funciona |
+| [9. Referência de endpoints](#9-referência-de-endpoints) | Todas as rotas, agrupadas por área, com o que cada uma faz |
+| [10. Correções de segurança](#10-correções-de-segurança) | O que a revisão de segurança encontrou e como foi fechado |
+| [11. Modelo entidade-relacionamento](#11-modelo-entidade-relacionamento) | As tabelas principais e seus campos |
+| [Regras de negócio](REGRAS-DE-NEGOCIO.md) | Documento separado: RN-001 a RN-107 e onde cada uma é implementada |
 
-- .NET 10 SDK
-- Oracle Database 21c+ acessível (a connection string padrão aponta para `oracle.fiap.com.br:1521/orcl`)
-- Ollama instalado e rodando — baixar em https://ollama.com/download, depois:
+---
+
+## 1. Arquitetura
+
+O projeto é dividido em quatro camadas, com a regra de dependência apontando **sempre para dentro**:
+
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│  Vetly.API                                                               │
+│  Controllers · Filters · Middlewares · HealthChecks · Observability       │
+│  Jobs (worker hospedado) · Security (identidade da requisição)            │
+│  ↓ referencia Application e Infrastructure                                │
+├──────────────────────────────────────────────────────────────────────────┤
+│  Vetly.Infrastructure                                                     │
+│  EF Core + Oracle · Repositories · Migrations · Adapters (*Simulado)       │
+│  Jobs (handlers e rotinas) · Security (JWT, PBKDF2)                        │
+│  ↓ referencia Application e Domain                                        │
+├──────────────────────────────────────────────────────────────────────────┤
+│  Vetly.Application                                                        │
+│  Services (as regras) · Interfaces (portas) · DTOs · Factories            │
+│  Strategies · Exceptions · Observability (spans e métricas de negócio)     │
+│  ↓ referencia apenas Domain                                               │
+├──────────────────────────────────────────────────────────────────────────┤
+│  Vetly.Domain                                                             │
+│  Entities · Value Objects · Enums — sem dependência de pacote nenhum      │
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
+**O Domain não referencia nada.** Nem EF Core, nem ASP.NET Core, nem sequer as abstrações de logging da Microsoft. Uma entidade que precisasse de um pacote para existir não seria mais um modelo de negócio, seria um modelo de persistência com outro nome. O mapeamento para o Oracle acontece inteiramente na Infrastructure, em classes `IEntityTypeConfiguration<T>` — o `Animal` não sabe que existe uma tabela `TB_ANIMAL`, e é isso que permite que as invariantes dele sejam testadas sem banco nenhum, em milissegundos.
+
+**A Application depende só de abstrações.** As duas únicas dependências de pacote são `Microsoft.Extensions.Configuration.Abstractions` e `Microsoft.Extensions.Logging.Abstractions` — contratos, não implementações. Tudo que ela precisa do mundo externo (banco, storage, gateway de pagamento, conselho regional de medicina veterinária, motor de transcrição, push) é declarado como **interface** aqui e implementado lá fora. É o Princípio de Inversão de Dependência aplicado literalmente: `ConsultaService` conhece `IConsultaRepository`, e nunca `ConsultaRepository`.
+
+A instrumentação de observabilidade também vive na Application, em `Observability/VetlyTelemetry.cs`, pelo mesmo raciocínio das abstrações de log: `ActivitySource` e `Meter` são tipos da própria BCL, e usá-los não acopla a camada a OpenTelemetry, a Prometheus nem a fornecedor nenhum. Quem escolhe o exportador é o `Program.cs`. A alternativa — instrumentar só na borda HTTP — produziria métricas de transporte ("quantos 200 saíram") em vez de métricas de negócio ("quantos checkouts viraram consulta confirmada"), e são as segundas que dizem se o produto funciona.
+
+**A API é uma casca fina.** Os controllers validam entrada, chamam um serviço e traduzem o resultado em HTTP. Nenhuma regra de negócio mora ali. O que a API acrescenta é o que só faz sentido na borda: autenticação, os três filtros globais que falham fechado (consentimento LGPD, bloqueio de veterinário desativado, idempotência), o middleware que converte exceção de domínio em `ProblemDetails`, os health checks e a telemetria HTTP.
+
+---
+
+## 2. Stack e tecnologias
+
+Cada linha diz **para que a tecnologia é usada neste projeto**, não o que ela é em abstrato.
+
+### Plataforma e persistência
+
+| Tecnologia | Versão | Para que serve aqui |
+|---|---|---|
+| **.NET / ASP.NET Core** | 10.0 | Runtime e framework web. Hospeda a API, o worker de negócio no mesmo processo e o pipeline de middlewares. Minimal hosting no `Program.cs`, com controllers clássicos para as rotas |
+| **Entity Framework Core** | 10.0.7 | ORM. Mapeamento por `IEntityTypeConfiguration`, migrations versionadas e — o ponto que mais importa aqui — **tokens de concorrência** nas colunas `ESTADO` e `LOCK_CONSULTA_ID` do horário, que é o que impede dois animais no mesmo slot |
+| **Oracle.EntityFrameworkCore** | 10.23 | Provider Oracle do EF Core. O banco é Oracle 21c+; particularidades como "string vazia é `NULL`" moldaram decisões reais do modelo (daí o sentinela `";"` em pré-sintomas vazios) |
+| **Oracle Database** | 21c+ | Banco relacional de produção. Guarda também a fila de jobs (`TB_JOB`) e os registros de idempotência — o worker não precisou de broker novo |
+
+### Segurança e identidade
+
+| Tecnologia | Versão | Para que serve aqui |
+|---|---|---|
+| **Microsoft.AspNetCore.Authentication.JwtBearer** | 10.0.7 | Valida o token em toda requisição autenticada: emissor, audiência, tempo de vida e assinatura |
+| **System.IdentityModel.Tokens.Jwt** | 8.14 | Emissão do token no `GeradorDeTokenJwt` (Infrastructure). Access token de 8 horas; refresh de 30 dias, **rotativo** — reapresentar um refresh já usado derruba todas as sessões daquele usuário, porque é o sinal de que ele vazou |
+| **PBKDF2-HMAC-SHA256** | BCL | Hash de senha com 210.000 iterações e salt por senha, no formato autodescritivo `pbkdf2$sha256$iteracoes$salt$hash`. Subir o custo no futuro não invalida as senhas já cadastradas |
+
+### Observabilidade
+
+| Tecnologia | Versão | Para que serve aqui |
+|---|---|---|
+| **Serilog.AspNetCore** | 10.0.0 | Provedor de log estruturado. Substitui o logging padrão, lê níveis e sinks do `appsettings.json` e escreve uma linha por requisição com método, rota, status e duração como **campos**, não como texto |
+| **Serilog.Sinks.Console / File** | 6.1.1 / 7.0.0 | Dois destinos: console legível em desenvolvimento e arquivo JSON compacto (`logs/vetly-YYYYMMDD.log`) com rotação diária, teto de 20 MB e retenção de 14 dias |
+| **Serilog.Enrichers.Environment / Thread** | 3.0.1 / 4.0.0 | Carimbam `MachineName` e `ThreadId` em toda linha — o que responde "o erro só acontece numa das instâncias?" sem precisar instrumentar nada |
+| **OpenTelemetry.Extensions.Hosting** | 1.18.0 | Integra o SDK do OpenTelemetry ao host: um `Resource` compartilhado (nome, versão e ambiente do serviço) para traces e métricas |
+| **OpenTelemetry.Instrumentation.AspNetCore** | 1.18.0 | Um span por requisição HTTP recebida, com exceção anexada. Sondas de saúde são filtradas para não afogarem o trace |
+| **OpenTelemetry.Instrumentation.Http** | 1.18.0 | Spans das chamadas de **saída** — é assim que a latência do Ollama e do Node-RED aparece separada da nossa |
+| **OpenTelemetry.Instrumentation.EntityFrameworkCore** | 1.18.0-beta.1 | Um span por consulta ao Oracle. Responde "a rota está lenta por causa do banco ou da regra?" sem precisar adivinhar |
+| **OpenTelemetry.Instrumentation.Runtime** | 1.18.0 | Métricas de GC, heap, thread pool e exceções do runtime — o primeiro lugar a olhar quando a latência sobe sem que o banco tenha piorado |
+| **OpenTelemetry.Exporter.Prometheus.AspNetCore** | 1.18.0-beta.1 | Publica o endpoint `/metrics` no formato de texto do Prometheus, pronto para raspagem por Prometheus, Grafana Agent ou Datadog |
+| **OpenTelemetry.Exporter.OpenTelemetryProtocol** | 1.18.0 | Exportador OTLP para traces e métricas. Desligado por padrão e ativado por configuração — sem coletor do outro lado, ele só encheria o log de falhas de conexão |
+| **OpenTelemetry.Exporter.Console** | 1.18.0 | Exportador de console para depurar a própria instrumentação em desenvolvimento, sob a chave `OpenTelemetry:ExportarParaConsole` |
+| **Diagnostics.HealthChecks** | framework | Os três endpoints de saúde (`/health/live`, `/health/ready`, `/health`), com checks separados por tag e um escritor de resposta JSON próprio. Vem no framework compartilhado do ASP.NET Core |
+| **HealthChecks.EntityFrameworkCore** | 10.0.7 | Referência direta. O check do Oracle abre conexão de verdade — não apenas valida a string de conexão |
+
+### Documentação e testes
+
+| Tecnologia | Versão | Para que serve aqui |
+|---|---|---|
+| **Microsoft.AspNetCore.OpenApi** | 10.0.7 | Gera o documento OpenAPI a partir dos controllers e dos DTOs |
+| **Scalar.AspNetCore** | 2.14.11 | Interface interativa da documentação em `/scalar/v1` — navegação, exemplos e execução de chamadas direto do navegador |
+| **xUnit** | 2.9.3 | Framework de testes das duas suítes. É o que fornece `IClassFixture` e `ICollectionFixture`, usados para compartilhar contexto entre testes |
+| **Moq** | 4.20.72 | Dublês das interfaces da Application nos testes de unidade — repositórios, adaptadores e o escopo do usuário autenticado |
+| **Microsoft.AspNetCore.Mvc.Testing** | 10.0.7 | `WebApplicationFactory`: sobe a API inteira em memória para os testes de integração, com pipeline, filtros e autenticação reais |
+| **Microsoft.EntityFrameworkCore.InMemory** | 10.0.7 | Substitui o Oracle nos testes de integração. É a **única** peça trocada — todo o resto do sistema roda de verdade |
+| **coverlet.collector** | 6.0.4 | Cobertura de código em formato Cobertura, filtrada por `coverlet.runsettings` para não contar migrations geradas |
+
+### IA e serviços auxiliares
+
+| Tecnologia | Versão | Para que serve aqui |
+|---|---|---|
+| **Ollama** | `llama3.1` | LLM local. Estrutura a transcrição da consulta em prontuário (RN-080), sugere hipóteses diagnósticas, protocolo com posologia, triagem de sintomas e orientações pós-atendimento. **Toda saída é sugestão** e passa por decisão explícita do veterinário (RN-082) |
+| **Node-RED** | opcional | Motor de transcrição de fala em produção. O contrato do callback é da Vetly, não do motor — trocar de fornecedor é mexer no fluxo, sem refazer o caminho de volta |
+
+---
+
+## 3. Padrões de projeto aplicados
+
+| Padrão | Onde vive | Que problema resolve |
+|---|---|---|
+| **Factory** | `DocumentoService` seleciona um `IDocumentoFactory` pelo `TipoDocumento` | Prontuário, receita, atestado e nota fiscal têm formatação e regras próprias. Um `switch` gigante viraria o lugar onde todo tipo novo é esquecido; com factories injetadas por `IEnumerable<T>`, adicionar um tipo é adicionar uma classe |
+| **Strategy** | `ConsultaService` seleciona um `ICancelamentoStrategy` por antecedência (RN-041/RN-042) | As três faixas de reembolso (integral, parcial, nenhum) são políticas, não ramos de código. A simulação de cancelamento **reusa a mesma seleção** — mostrar um valor e cobrar outro é exatamente o que a regra proíbe |
+| **Strategy** | `PagamentoService` seleciona um `ISplitFinanceiroStrategy` pelo plano | Take rate decrescente: Básico 15%, Profissional 12%, Enterprise 10%. A maior comissão pertence ao menor plano |
+| **Repository** | Interfaces na Application, implementações EF Core na Infrastructure | Mantém o EF Core fora das regras. Também é onde a colisão de concorrência otimista é traduzida em 409, para que a camada de aplicação siga sem conhecer o ORM |
+| **Adapter / Port** | `ICrmvAdapter`, `IPagamentoAdapter`, `IStorageAdapter`, `ISttAdapter`, `IPushAdapter`, `IAssinaturaAdapter`, `IGeocodificacaoAdapter` | Toda dependência externa entra por uma porta e sai por um adaptador escolhido em `Adaptadores:*`. No MVP são `*Simulado`; trocar por real é trocar o registro no DI |
+| **Middleware** | `CorrelationIdMiddleware` → log de requisição → `MetricasHttpMiddleware` → `ExceptionHandlingMiddleware` | Preocupações transversais que nenhum controller deveria repetir: correlação, log, métrica e tradução de exceção em `ProblemDetails` (RFC 7807) |
+| **Action Filter** | `ConsentimentoAtendimentoFilter`, `VetDesativadoFilter`, `IdempotencyFilter` | Guardas que **falham fechado**: valem em toda rota, e a exceção precisa se declarar explicitamente. Uma guarda que vale por opt-in é uma guarda que alguém vai esquecer |
+| **Background worker** | `VetlyBackgroundService` + `TB_JOB` | Trabalho que não pode acontecer dentro da requisição: transcrição, estruturação por IA, expiração de locks, régua de lembretes, crédito de pontos |
+| **Value Object** | `Crmv`, `Endereco`, `Geo`, `RegistroVacinacao`, `ConsentimentoRegistrado` | Conceitos que se validam sozinhos e são imutáveis. Um `Crmv` inválido não chega a existir |
+| **Soft delete** | `Veterinario`, `Animal`, `Tutor` | Desativação em vez de exclusão. Prontuário que some quando alguém deleta um cadastro é o oposto do que a plataforma promete |
+| **Inversão de dependência** | Toda a Application | Nenhum serviço conhece uma implementação concreta. É o que permite testar 713 casos de regra sem banco, sem HTTP e sem I/O |
+| **ProblemDetails (RFC 7807)** | `ExceptionHandlingMiddleware` | Um formato de erro para toda a API, incluindo **503** para dependência externa fora do ar — 422 diria ao app que a culpa é dele |
+| **Enums como string no JSON** | `JsonStringEnumConverter`, entrada e saída | O contrato trafega `"Presencial"`, não `1`. O contrato numérico é ilegível para o front e quebra a cada reordenação do enum; a persistência não muda |
+| **Idempotência** | `IdempotencyFilter` + `TB_IDEMPOTENCIA` | Rotas marcadas exigem `Idempotency-Key` e reaproveitam a resposta por 24 h. É o que impede que um reenvio do app cobre duas vezes |
+| **Concorrência otimista** | Tokens em `Slot.ESTADO` e `LOCK_CONSULTA_ID` | Dois processos lendo o mesmo horário livre no mesmo milissegundo. O banco decide quem fica com ele; o perdedor recebe 409 |
+
+---
+
+## 4. Monitoramento e observabilidade
+
+Uma API sem observabilidade não é uma API mais simples: é uma API cujos problemas são descobertos pelo usuário. A diferença entre as duas aparece no dia em que alguém escreve "não consegui pagar às 14h32" — e o time descobre que a única forma de investigar é varrer log por horário torcendo para não ter havido duas tentativas no mesmo minuto.
+
+A camada implementada aqui cobre os **três pilares**, e eles não se substituem porque respondem a perguntas diferentes:
+
+| Pilar | Pergunta que responde | Custo | Ferramenta |
+|---|---|---|---|
+| **Métricas** | *Está ruim?* | Baixíssimo — números agregados | OpenTelemetry + Prometheus |
+| **Traces** | *Ruim onde?* | Médio — amostrado em produção | OpenTelemetry + OTLP |
+| **Logs** | *Ruim por quê?* | Alto — uma linha por evento | Serilog |
+
+A métrica dispara o alerta, o trace aponta a camada culpada, o log traz o detalhe do caso concreto. Ter só um dos três significa, na prática, descobrir o incidente pelo cliente, ou saber que ele existe sem conseguir explicá-lo.
+
+**O que costura os três é o `TraceId`.** Ele é gerado (ou aceito do cliente) no primeiro middleware do pipeline, gravado em `HttpContext.TraceIdentifier`, empilhado no `LogContext` do Serilog — de onde carimba toda linha de log de toda camada, sem que nenhum serviço precise recebê-lo por parâmetro —, anexado como tag do span e devolvido em dois lugares que o usuário alcança: o cabeçalho `X-Correlation-Id` e o campo `correlationId` do corpo de erro. Um chamado de suporte que começa com um id termina no span exato.
+
+### 4.1 Health checks
+
+Três endpoints públicos, sem autenticação, com semânticas deliberadamente diferentes:
+
+| Endpoint | Executa | Decisão que sustenta |
+|---|---|---|
+| `GET /health/live` | Só o check `api` — não toca dependência nenhuma | **Reiniciar** o container |
+| `GET /health/ready` | Checks com a tag `ready`: Oracle e Ollama | Enviar ou não **tráfego** para a instância |
+| `GET /health` | Todos os checks registrados | Diagnóstico manual |
+
+A separação entre *liveness* e *readiness* não é cerimônia. Liveness decide reiniciar o processo: se ela consultasse o banco, uma indisponibilidade momentânea do Oracle mataria containers perfeitamente saudáveis, e o restart em massa pioraria exatamente o incidente em curso. Readiness precisa do oposto — tocar as dependências e tirar a instância de rotação enquanto elas não respondem.
+
+**A severidade de cada falha também é uma decisão de produto:**
+
+| Check | Tags | Falha reportada como | Por quê |
+|---|---|---|---|
+| `api` | `live` | — | Se o processo responde à lambda, o host está vivo |
+| `oracle-db` | `ready`, `db`, `oracle` | `Unhealthy` → **HTTP 503** | Sem banco a API não entrega nada. Tem de sair de rotação |
+| `ollama` | `ready`, `external` | `Degraded` → **HTTP 200** | Sem IA só os recursos de IA param; agendar, pagar e emitir documento seguem funcionando. Derrubar a instância inteira por causa do LLM seria transformar uma degradação em indisponibilidade |
+
+O check do Oracle usa uma consulta de teste customizada que **abre a conexão explicitamente**, em vez do `CanConnectAsync` padrão. O motivo é prático: o padrão engole a exceção e devolve apenas `false`, e o relatório sai sem motivo nenhum. Abrindo a conexão, o erro do Oracle (`ORA-01017`, por exemplo) sobe, é capturado pelo `HealthCheckService` e aparece no JSON — o que transforma "o banco está fora" em "a senha do usuário expirou".
+
+O check do Ollama tem **timeout próprio de 5 segundos**, e não os 120 do `HttpClient` que o serviço usa: 120 segundos são adequados para inferência e absurdos para uma sonda. Um health check que trava é pior que um health check que falha.
+
+A resposta é um JSON próprio, e não o texto `Healthy` que o ASP.NET Core devolve por padrão — porque `Unhealthy` sem dizer **qual** dependência caiu não ajuda ninguém às três da manhã:
+
+```json
+{
+  "status": "Degraded",
+  "duracaoTotalMs": 84.21,
+  "checks": [
+    { "nome": "oracle-db", "status": "Healthy",  "descricao": null, "duracaoMs": 12.4, "tags": ["ready","db","oracle"], "erro": null },
+    { "nome": "ollama",    "status": "Degraded", "descricao": "Ollama nao respondeu em 5s.", "duracaoMs": 5002.1, "tags": ["ready","external"], "erro": null }
+  ]
+}
+```
+
+O campo `erro` **só é preenchido fora de Produção**. Mensagens de erro do Oracle expõem host, porta e código de erro, e isso não pode vazar por um endpoint público.
+
+```bash
+curl http://localhost:5140/health/live      # o processo está de pé?
+curl http://localhost:5140/health/ready     # as dependências estão prontas?
+curl http://localhost:5140/health           # relatório completo
+```
+
+### 4.2 Logging estruturado (Serilog)
+
+O log da Vetly é **estruturado**: cada linha é um objeto com campos nomeados, não uma frase concatenada. A diferença é a diferença entre conseguir perguntar *"todas as requisições acima de 2 segundos, na rota de checkout, do usuário X"* e ter um `.txt` com frases.
+
+**Configuração por ambiente, não por código.** Níveis, sinks e overrides por namespace vêm da seção `Serilog` do `appsettings.json` — mudar o nível de log de um namespace em produção não pode exigir recompilar e redeployar. O que fica em código são os enriquecedores, que são decisão de arquitetura:
+
+| Enriquecedor | Campo adicionado | Para que serve |
+|---|---|---|
+| `FromLogContext` | `CorrelationId`, `TraceId` | **O mais importante.** Sem ele, as propriedades empilhadas pelo middleware de correlação não aparecem, e a correlação inteira deixa de existir |
+| `WithProperty` | `Aplicacao`, `Versao`, `Ambiente` | Separa a Vetly dos demais serviços num log agregado, e o `Versao` permite comparar "antes" e "depois" de um deploy |
+| `WithMachineName` | `MachineName` | Responde "o erro só acontece numa das instâncias?" |
+| `WithThreadId` | `ThreadId` | Correlaciona linhas de um mesmo fluxo assíncrono quando o `TraceId` não basta |
+
+**Dois destinos, com propósitos distintos.** O console usa um template legível por humanos, com o `CorrelationId` na frente para que se possa acompanhar o desenvolvimento a olho nu. O arquivo usa `CompactJsonFormatter` — uma linha JSON por evento, que é o formato que Seq, Elastic, Loki ou Datadog ingerem sem transformação. Rotação diária, teto de 20 MB por arquivo e retenção de 14 dias.
+
+**Níveis com critério.** O padrão é `Information`, com `Microsoft` e `Microsoft.AspNetCore` rebaixados para `Warning` — o framework é verboso e o ruído dele afogaria o log da aplicação. `Microsoft.EntityFrameworkCore.Database.Command` também está em `Warning`: logar cada SQL executado em `Information` significaria despejar parâmetros de consulta no log, e parâmetros carregam nome de Responsável, id de animal e conteúdo clínico — dado sensível sob a LGPD.
+
+Uma linha por requisição sai do `UseSerilogRequestLogging`, com regra de nível própria:
+
+- exceção vazando até ali → **Error**, qualquer que seja a rota;
+- status ≥ 500 → **Error**;
+- status ≥ 400 → **Warning** — o cliente errou, não o servidor; acionar alerta de disponibilidade por um payload inválido é o caminho mais rápido para o time ignorar alertas;
+- sonda de saúde → **Verbose**, porque um `/health/live` a cada 10 segundos são 8.640 linhas por dia e por instância. Elas não somem: baixar o nível na configuração as traz de volta quando se quer depurar o próprio probe;
+- o resto → **Information**.
+
+Exemplo real do arquivo JSON, com tudo que uma investigação precisa em uma única linha:
+
+```json
+{
+  "@t": "2026-09-01T12:58:23.3779493Z",
+  "@mt": "{RequestMethod} {RequestPath} respondeu {StatusCode} em {Elapsed:0.0000} ms",
+  "@l": "Warning",
+  "@tr": "3c041ea3875bc38c14a0c83a0dbd1362",
+  "@sp": "bab6fa8cc853f137",
+  "RequestMethod": "POST",
+  "RequestPath": "/api/auth/login",
+  "StatusCode": 422,
+  "Elapsed": 192.6375,
+  "CorrelationId": "3c041ea3875bc38c14a0c83a0dbd1362",
+  "TraceId": "3c041ea3875bc38c14a0c83a0dbd1362",
+  "Host": "localhost:5140",
+  "Protocolo": "HTTP/1.1",
+  "Aplicacao": "vetly-api",
+  "Versao": "1.0.0",
+  "Ambiente": "Development",
+  "MachineName": "DESKTOP-RCHE303",
+  "ThreadId": 23
+}
+```
+
+`@tr` e `@sp` são o trace e o span do OpenTelemetry, incluídos automaticamente pelo Serilog quando há uma `Activity` corrente. É por eles que se salta do log para o trace no backend.
+
+**O identificador de correlação segue uma ordem de precedência deliberada:**
+
+1. o cabeçalho `X-Correlation-Id` enviado pelo cliente, se vier — é assim que o app mobile amarra a jornada dele à nossa;
+2. o `TraceId` do W3C Trace Context da `Activity` corrente — o mesmo id que o OpenTelemetry exporta, o que faz log e trace se encontrarem sem nenhuma conversão;
+3. o `TraceIdentifier` do Kestrel, que sempre existe.
+
+O valor vindo do cliente é truncado em 128 caracteres e tem quebras de linha neutralizadas: cabeçalho é entrada do usuário, e sem limite alguém inflaria cada linha de log com o que quisesse — ou injetaria uma quebra de linha para quebrar o parsing.
+
+### 4.3 Tracing distribuído (OpenTelemetry)
+
+O tracing responde onde o tempo foi gasto **dentro** da requisição. A instrumentação automática cobre as três fronteiras que uma requisição da Vetly atravessa:
+
+| Instrumentação | O que produz |
+|---|---|
+| ASP.NET Core | O span raiz da requisição, com rota, método, status e exceção anexada |
+| Entity Framework Core | Um span filho por consulta ao Oracle — é o que separa "a regra está lenta" de "o banco está lento" |
+| HttpClient | Um span filho por chamada de saída: Ollama e Node-RED aparecem com a latência deles isolada da nossa |
+
+Isso ainda não é suficiente. Os spans automáticos param na fronteira do controller e não sabem que dentro daquele `POST` houve uma trava de horário, uma leitura de cadastro e uma escrita transacional. Por isso a camada de Aplicação abre **spans de domínio** próprios, pela `ActivitySource` `Vetly.Application`:
+
+| Span | Onde é aberto | O que revela |
+|---|---|---|
+| `consulta.checkout` | `ConsultaService.IniciarCheckoutAsync` | Quanto do checkout foi trava de horário e quanto foi leitura de cadastro |
+| `pagamento.webhook` | `PagamentoService.ProcessarWebhookAsync` | O caminho mais crítico do sistema: é o webhook, não a resposta síncrona, que confirma a consulta (RN-006) |
+| `documento.gerar` | `DocumentoService.GerarAsync` | Qual das três etapas custou — trilha de auditoria, montagem do conteúdo ou renderização do PDF |
+| `ia.<operacao>` | `OllamaService.EnviarAsync` | `ActivityKind.Client`, com o modelo em tag. É o que faz o LLM aparecer como dependência externa |
+| `worker.ciclo` | `VetlyBackgroundService.ExecutarCicloAsync` | O worker roda fora de qualquer requisição HTTP; sem um span raiz próprio, todo o trabalho dele seria invisível |
+
+**Exceções de negócio marcam o span como erro.** Do ponto de vista do transporte, um 422 é uma resposta bem-sucedida — o span sairia verde. Quem investiga "por que o agendamento não completou" precisa que o span diga que a operação terminou em RN-035. O `ExceptionHandlingMiddleware` faz isso para toda exceção que passa por ele.
+
+**Exportação.** O OTLP é o protocolo padrão e fala com Jaeger, Tempo, Grafana Cloud, Honeycomb, Datadog e qualquer coletor compatível. Fica **desligado por padrão**, porque ligado sem coletor do outro lado ele tentaria exportar em lote a cada poucos segundos e encheria o log de falhas de conexão — barulho que faz a observabilidade parecer o problema. Para ligar, basta configurar o endpoint:
+
+```json
+{
+  "OpenTelemetry": {
+    "ServiceName": "vetly-api",
+    "ExportarParaConsole": false,
+    "Otlp": { "Endpoint": "http://localhost:4317" }
+  }
+}
+```
+
+Um Jaeger local para ver os traces sobe com um comando:
+
+```bash
+docker run -d --name jaeger -p 16686:16686 -p 4317:4317 jaegertracing/all-in-one:latest
+# UI em http://localhost:16686 — procure pelo serviço "vetly-api"
+```
+
+Para depurar a própria instrumentação sem subir nada, `"ExportarParaConsole": true` despeja spans e métricas no console.
+
+**Privacidade no trace.** Os valores dos parâmetros de consulta SQL não são exportados. O texto do SQL é inofensivo — vem parametrizado —, mas os valores carregam nome de Responsável, id de animal e conteúdo clínico, que são dado sensível sob a LGPD (§7.2 do documento de produto) e não podem sair para um backend de tracing de terceiro.
+
+### 4.4 Métricas
+
+`GET /metrics` publica, no formato de texto do Prometheus, três famílias de métricas em uma única resposta.
+
+**Da plataforma e do runtime** — vindas dos medidores `Microsoft.AspNetCore.Hosting`, `Microsoft.AspNetCore.Server.Kestrel`, `System.Net.Http` e da instrumentação de runtime: duração de requisição, conexões ativas do Kestrel, pool de conexões HTTP de saída, GC, heap, thread pool e contagem de exceções.
+
+**Da borda HTTP da Vetly** — medidor `Vetly.Http`, com a rota template e a classe de status já resolvidas:
+
+| Métrica | Tipo | Tags | Para que serve |
+|---|---|---|---|
+| `vetly.http.requisicoes` | Counter | `metodo`, `rota`, `classe`, `status` | Volume por rota |
+| `vetly.http.erros` | Counter | `metodo`, `rota`, `classe`, `status` | Dividido pela anterior no mesmo recorte, é a **taxa de erros** |
+| `vetly.http.duracao` | Histogram (ms) | `metodo`, `rota`, `classe` | **Tempo de resposta**, com percentis |
+
+Histograma e não média: média de latência esconde exatamente o que interessa. Uma rota com média de 90 ms e p99 de 4 s tem um problema real que a média nunca mostra.
+
+**De negócio** — medidor `Vetly.Negocio`, emitido pela camada de Aplicação. São as métricas que o produto precisa provar (§10 do documento de produto), e nenhuma delas poderia ser derivada de códigos HTTP:
+
+| Métrica | Tipo | Tags | Pergunta que responde |
+|---|---|---|---|
+| `vetly.checkouts.iniciados` | Counter | `prestador` (clinica/autonomo) | Quantos checkouts abriram |
+| `vetly.consultas.confirmadas` | Counter | — | Quantos viraram consulta paga. **A razão entre as duas é a taxa de conversão do agendamento** |
+| `vetly.consultas.canceladas` | Counter | `faixa` (Strategy aplicada) | Cancelamento concentrado numa faixa é sinal de política mal calibrada |
+| `vetly.pagamentos.processados` | Counter | `status` (confirmado/recusado/inalterado) | Taxa de recusa. `inalterado` é reentrega de webhook, contada à parte para não contaminar a série |
+| `vetly.pagamentos.valor` | Histogram (BRL) | — | Distribuição do ticket — base do split e do take rate efetivo |
+| `vetly.documentos.emitidos` | Counter | `tipo` | A consulta está saindo com prontuário, receita e NF, ou só com prontuário? |
+| `vetly.ia.decisoes` | Counter | `decisao` (Aprovado/Corrigido/NaoAprovado) | **A métrica central do MVP**: aprovado ÷ total é a proporção de documentos gerados pela IA sem edição relevante |
+| `vetly.ia.duracao` | Histogram (ms) | `operacao`, `resultado` | Separa "a API está lenta" de "o modelo está lento" |
+| `vetly.regras.violadas` | Counter | `codigo` (RN-xxx) | Qual regra está sendo tocada, e com que frequência |
+| `vetly.jobs.executados` | Counter | `tipo`, `resultado` | Fila que parou de drenar — antes de virar lembrete não entregue |
+| `vetly.worker.ciclo.duracao` | Histogram (ms) | — | Ciclo maior que o intervalo de 30 s é o sinal antecedente de fila crescendo |
+| `vetly.notificacoes.despachadas` | Counter | `canal`, `resultado` | Queda na entrega quase sempre é credencial de provedor vencida |
+
+`vetly.regras.violadas` merece destaque porque é o contador mais útil do conjunto para operação. Uma RN que dispara o tempo todo raramente é usuário mal-intencionado: quase sempre é tela deixando o usuário tentar o que a regra proíbe. E um pico em RN-105 (escopo por linha) — esse sim — é incidente de segurança, não usabilidade.
+
+**Cardinalidade é a regra que não se quebra.** A tag de rota usa o *template* (`api/consultas/{id}`), nunca o path concreto: o path concreto criaria uma série temporal nova por consulta agendada, e um Prometheus com milhões de séries é um Prometheus fora do ar. Pela mesma razão a tag de status inclui a *classe* (`2xx`, `4xx`, `5xx`), e requisições que não casam rota nenhuma são agrupadas sob `(sem rota)` — o que impede um scanner de URLs de criar uma série por tentativa. **Sondas de saúde e a própria raspagem de métricas ficam fora** das métricas de negócio: um `/health/live` a cada poucos segundos dominaria a contagem e faria a latência média parecer excelente, porque a maioria das "requisições" não faz nada.
+
+Consultas úteis no Prometheus:
+
+```promql
+# Taxa de erro por rota, nos últimos 5 minutos
+sum by (rota) (rate(vetly_http_erros_total[5m]))
+  / sum by (rota) (rate(vetly_http_requisicoes_total[5m]))
+
+# p95 de tempo de resposta por rota
+histogram_quantile(0.95,
+  sum by (le, rota) (rate(vetly_http_duracao_milliseconds_bucket[5m])))
+
+# Conversão do funil de agendamento
+sum(rate(vetly_consultas_confirmadas_total[1h]))
+  / sum(rate(vetly_checkouts_iniciados_total[1h]))
+
+# Regras de negócio mais violadas na última hora
+topk(10, sum by (codigo) (rate(vetly_regras_violadas_total[1h])))
+
+# Aprovação da IA sem correção (a métrica-alvo do MVP)
+sum(rate(vetly_ia_decisoes_total{decisao="Aprovado"}[24h]))
+  / sum(rate(vetly_ia_decisoes_total[24h]))
+
+# p99 de latência do LLM
+histogram_quantile(0.99, sum by (le, operacao) (rate(vetly_ia_duracao_milliseconds_bucket[15m])))
+```
+
+Um Prometheus local para raspar a API:
+
+```yaml
+# prometheus.yml
+scrape_configs:
+  - job_name: vetly-api
+    scrape_interval: 15s
+    static_configs:
+      - targets: ['host.docker.internal:5140']
+```
+
+```bash
+docker run -d --name prometheus -p 9090:9090 \
+  -v "$PWD/prometheus.yml:/etc/prometheus/prometheus.yml" prom/prometheus
+```
+
+### 4.5 Como monitorar na prática
+
+O roteiro abaixo é o que se faz de fato quando algo parece errado, na ordem em que se faz:
+
+**1. A instância está viva?** `GET /health/live`. Se responde 200, o processo está de pé e o problema não é reiniciar o container.
+
+**2. Ela consegue atender?** `GET /health/ready`. `503` aponta o Oracle; `200` com `Degraded` aponta o Ollama — e nesse caso só os recursos de IA estão afetados.
+
+**3. Está ruim para todo mundo ou para uma rota?** No `/metrics`, `vetly_http_erros_total` e `vetly_http_duracao_milliseconds` agrupados por `rota` respondem em segundos. Erro concentrado numa rota é bug; espalhado por todas é infraestrutura.
+
+**4. É erro de servidor ou regra sendo violada?** `vetly_regras_violadas_total` por `codigo`. Um pico em `RN-035` significa disputa por horário — talvez agenda mal configurada. Um pico em `RN-060` significa gente tentando usar o app sem consentimento — provavelmente a tela de onboarding quebrou. Nenhum dos dois é erro de servidor, e nenhum dos dois apareceria como 5xx.
+
+**5. Onde o tempo está indo?** No backend de traces, filtre por `service.name = vetly-api` e ordene por duração. Os spans filhos separam banco, LLM e regra.
+
+**6. O que exatamente aconteceu com aquele usuário?** Pegue o `correlationId` que o cliente recebeu no corpo do erro e procure por ele no log — todas as linhas daquela requisição, de todas as camadas, saem carimbadas com o mesmo valor.
+
+```bash
+# Toda a história de uma requisição, do arquivo JSON
+grep '"CorrelationId":"3c041ea3875bc38c14a0c83a0dbd1362"' logs/vetly-*.log
+```
+
+---
+
+## 5. Testes automatizados
+
+A suíte tem **915 testes**, todos verdes, divididos em dois projetos por natureza do que verificam — e não por conveniência de organização:
+
+| Projeto | Testes | O que verifica | Como |
+|---|---|---|---|
+| `tests/Vetly.UnitTests` | **713** | Domínio e Aplicação: invariantes de entidade e regras de serviço | xUnit + Moq. Sem banco, sem HTTP, sem I/O — a suíte inteira roda em menos de um segundo |
+| `tests/Vetly.IntegrationTests` | **202** | A API de ponta a ponta, por HTTP | `WebApplicationFactory` com a aplicação real; só o Oracle é trocado por InMemory |
+
+A divisão importa porque as duas suítes pegam classes diferentes de defeito. Os testes de unidade provam que **cada regra está certa isoladamente**: que cancelar com 25 horas de antecedência devolve reembolso integral, que 100 pontos valem R$ 3,00, que um CRMV fora do formato não vira entidade. Os testes de integração provam que **elas se encaixam** — e pegam o que nenhum teste de unidade pegaria: o campo que o serviço preenche e o controller não devolve, a rota que existe mas não aceita o payload que a anterior produziu, o filtro que barra o caminho legítimo, a policy que exige uma role que ninguém emite. Uma API pode ter todas as regras certas e ainda assim não ser atravessável.
+
+### 5.1 Padrão AAA e nomenclatura
+
+Todo teste segue **Arrange, Act, Assert**, nessa ordem, com uma única ação no Act:
+
+```csharp
+[Fact]
+public async Task ChamadaAoLlm_QuandoOModeloFalha_RegistraDuracaoComResultadoDeFalha()
+{
+    // Arrange — o registro no finally é o que garante isto. Medir só no caminho
+    // feliz esconderia exatamente o caso que interessa: o timeout, que é longo
+    // por definição e sai por exceção.
+    _coletor.Limpar();
+    var servico = CriarServico(status: HttpStatusCode.InternalServerError);
+    var contexto = new ContextoClinicoDto { /* ... */ };
+
+    // Act
+    await Assert.ThrowsAnyAsync<HttpRequestException>(
+        () => servico.SugerirDiagnosticoAsync(contexto));
+
+    // Assert
+    var medicao = _coletor.De("vetly.ia.duracao")
+        .LastOrDefault(m => m.Tag("operacao") == "SugerirDiagnosticoAsync");
+
+    Assert.NotNull(medicao);
+    Assert.Equal("falha", medicao.Tag("resultado"));
+}
+```
+
+O Arrange às vezes vive no construtor da classe ou em um método auxiliar — que é o idioma do xUnit para setup compartilhado — mas a separação das três fases é sempre visível. Um teste com dois Acts não é um teste: é dois testes que falham juntos e não dizem qual regra quebrou.
+
+A nomenclatura é **`MetodoTestado_Cenario_ResultadoEsperado`**, e a razão é que o nome de um teste é lido no relatório de falha do CI, onde ninguém tem o código na frente:
+
+| Nome | O que se lê sem abrir o arquivo |
+|---|---|
+| `Credito_PorObrigacaoCumprida_DaCinquentaPontosFixos` | Creditar por obrigação cumprida dá 50 pontos fixos |
+| `TravarParaCheckout_SlotJaTravado_RecusaOSegundoCheckout` | Travar um slot já travado recusa o segundo checkout |
+| `HealthLive_NaoExecutaChecksDeDependencia` | Liveness não toca dependência |
+| `RespostaDeErro_TrazNoProblemDetailsOMesmoIdDoCabecalho` | O `ProblemDetails` traz o mesmo id do cabeçalho |
+
+### 5.2 Fixtures e Collection Fixtures
+
+O xUnit oferece dois níveis de compartilhamento de contexto, e o projeto usa os dois — cada um onde faz sentido.
+
+**`IClassFixture<T>`** compartilha uma instância entre os testes de **uma classe**. Serve para setup caro que não deve vazar entre classes.
+
+**`ICollectionFixture<T>`** compartilha uma instância entre **todas as classes de uma coleção**. É o que o projeto usa nos dois casos em que o recurso é, por natureza, de processo:
+
+| Coleção | Fixture | Por que precisa ser de coleção |
+|---|---|---|
+| `ColecaoDaApi` | `VetlyWebApplicationFactory` | Subir o host ASP.NET Core é caro. Com `IClassFixture`, as 11 classes de integração subiriam 11 hosts, cada um com contêiner de DI, pipeline e worker próprios. E como o nome do banco InMemory é estático, todas já compartilhavam o mesmo banco: o isolamento que múltiplos hosts aparentavam dar nunca existiu. A coleção torna essa realidade explícita em vez de deixá-la como armadilha |
+| `ColecaoDeTelemetria` | `ColetorDeTelemetriaFixture` | Um `MeterListener` e um `ActivityListener` são inscrições de **processo**. Vários listeners simultâneos sobre os mesmos instrumentos estáticos funcionam, mas duplicam trabalho e tornam a ordem de callback imprevisível |
+
+```csharp
+// tests/Vetly.IntegrationTests/Fixtures/ColecaoDaApi.cs
+[CollectionDefinition(Nome)]
+public sealed class ColecaoDaApi : ICollectionFixture<VetlyWebApplicationFactory>
+{
+    public const string Nome = "API Vetly (host compartilhado)";
+}
+
+// e cada classe de teste declara:
+[Collection(ColecaoDaApi.Nome)]
+public class JornadaCompletaTests { /* ... */ }
+```
+
+**O contrato que isso impõe** vale registrar, porque é a fonte clássica de teste intermitente: o xUnit não paraleliza classes da mesma coleção, então elas rodam em sequência — mas compartilham estado no banco. Cada teste cria os próprios dados com identificadores únicos (e-mail com `Guid`, CRMV aleatório) em vez de depender de uma linha específica já existente. É a mesma disciplina que um banco de homologação compartilhado exige.
+
+O `ColetorDeTelemetriaFixture` resolve um problema mais sutil: **instrumentação é o caso clássico de código que "não dá para testar"** e que, por isso, quebra sem ninguém notar. Alguém remove uma linha de `Add` num refactor e a métrica simplesmente deixa de existir — nenhum teste falha, nenhum comportamento muda, e o painel só some meses depois. O `MeterListener` e o `ActivityListener` são a API que a própria BCL oferece para fechar essa lacuna: são os mesmos mecanismos que o OpenTelemetry usa por baixo, apontados para uma lista em memória.
+
+Como outras coleções rodam em paralelo e também exercitam os serviços instrumentados, as asserções são sempre do tipo *"contém uma medição com estas tags"*, nunca *"recebeu exatamente uma medição"*, e os testes usam valores-sentinela próprios, impossíveis de colidir com o restante da suíte.
+
+### 5.3 Como executar
+
+```bash
+# Toda a suíte
+dotnet test
+
+# Só uma das camadas
+dotnet test tests/Vetly.UnitTests
+dotnet test tests/Vetly.IntegrationTests
+
+# Um arquivo ou um teste específico
+dotnet test --filter "FullyQualifiedName~FidelidadeTests"
+dotnet test --filter "FullyQualifiedName~ObservabilidadeTests"
+dotnet test --filter "Name~RegistraDuracaoComResultadoDeFalha"
+
+# Saída detalhada, com o nome de cada teste
+dotnet test --logger "console;verbosity=detailed"
+
+# Sem recompilar (útil ao rodar em ciclo)
+dotnet build && dotnet test --no-build
+```
+
+Os testes de integração **não precisam de Oracle nem de Ollama**: o banco é substituído por InMemory e os adaptadores externos são os `*Simulado` padrão. `dotnet test` funciona em uma máquina recém-clonada, sem configuração nenhuma.
+
+### 5.4 Cobertura
+
+```bash
+# Coleta com os filtros do projeto (exclui migrations geradas)
+dotnet test --collect:"XPlat Code Coverage" --settings coverlet.runsettings
+
+# Relatório HTML navegável
+dotnet tool install --global dotnet-reportgenerator-globaltool
+reportgenerator -reports:"**/coverage.cobertura.xml" -targetdir:"coverage" -reporttypes:Html
+```
+
+Números da última execução completa:
+
+| Suíte | Cobertura de linhas | Por projeto |
+|---|---|---|
+| Unitários | **86,1%** | Application 89,2% · Domain 82,9% |
+| Integração | **69,9%** | API 91,1% · Infrastructure 96,7% · Application 48,0% · Domain 47,1% |
+
+O `coverlet.runsettings` existe porque, sem ele, o número mente por omissão: as migrations do EF Core são cerca de 7 mil linhas de **código gerado**, que nenhum teste executa e nenhum teste deveria executar — elas afundam a cobertura da Infrastructure de 96% para 4% e transformam a métrica em ruído. A regra do filtro é simples: exclui-se o que não é decisão humana (código gerado) e o que não tem comportamento a verificar; não se exclui nada que contenha regra.
+
+---
+
+## 6. Instalação e execução
+
+### Pré-requisitos
+
+| Requisito | Necessário para | Observação |
+|---|---|---|
+| **.NET 10 SDK** | Compilar e executar | `dotnet --version` deve começar com `10.` |
+| **Oracle Database 21c+** | Persistência | A connection string padrão aponta para `oracle.fiap.com.br:1521/orcl` |
+| **Ollama + `llama3.1`** | Recursos de IA | Opcional para subir a API: sem ele, `/health/ready` reporta `Degraded` e só as rotas de IA param |
+
+Instalação do Ollama em https://ollama.com/download e, depois:
 
 ```bash
 ollama serve
 ollama pull llama3.1
-```
 
-Validar:
-
-```bash
+# validar
 curl -X POST http://localhost:11434/api/generate \
   -H "Content-Type: application/json" \
   -d '{"model":"llama3.1","prompt":"ola","stream":false}'
 ```
 
-**Configuração** — crie o arquivo `src/Vetly.API/appsettings.Development.local.json` com suas credenciais Oracle:
+### Configuração local
+
+Crie `src/Vetly.API/appsettings.Development.local.json` — este arquivo está no `.gitignore` e **não é commitado**. Credencial, connection string e chave JWT não vão para o repositório:
 
 ```json
 {
@@ -64,87 +579,302 @@ curl -X POST http://localhost:11434/api/generate \
   "Jwt": {
     "Key": "VetlySecretKey_MustBeAtLeast32CharactersLong!"
   },
+  "Servicos": {
+    "TokenInterno": "escolha-um-token-de-servico-longo-e-aleatorio"
+  },
   "Ollama": {
     "BaseUrl": "http://localhost:11434",
     "Model": "llama3.1",
     "TimeoutSeconds": 120
+  },
+  "OpenTelemetry": {
+    "ExportarParaConsole": false,
+    "Otlp": { "Endpoint": "" }
   }
 }
 ```
 
-> Este arquivo está no `.gitignore` e **não é commitado**. Substitua `SEU_USUARIO` e `SUA_SENHA` pelas suas credenciais Oracle. O modelo Ollama utilizado no projeto é o `llama3.1` — certifique-se de tê-lo instalado com `ollama pull llama3.1`.
+O `Servicos:TokenInterno` autentica as rotas serviço-a-serviço (webhook de pagamento e callback de transcrição). Sem token configurado, essas rotas ficam indisponíveis — o que é o comportamento correto: uma rota que confirma pagamento não pode existir sem autenticação.
 
-**Rodar:**
+### Subir
 
 ```bash
-# 1. Restaurar e compilar
+# 1. Restaurar e compilar — o build deve terminar limpo com -warnaserror
 dotnet restore
-dotnet build
+dotnet build -warnaserror
 
-# 2. Aplicar migrations no Oracle
+# 2. Aplicar as migrations no Oracle
 dotnet ef database update --project src/Vetly.Infrastructure --startup-project src/Vetly.API
 
-# 3. Subir a API (HTTPS na porta 7262)
-dotnet run --project src/Vetly.API --launch-profile https
+# 3. Executar
+dotnet run --project src/Vetly.API --launch-profile https   # https://localhost:7262
+dotnet run --project src/Vetly.API --launch-profile http    # http://localhost:5140
 
-# 4. Abrir documentação interativa
-# https://localhost:7262/scalar/v1
-
-# 5. Rodar os testes
+# 4. Rodar a suíte de testes
 dotnet test
 ```
 
+### Endereços úteis
+
+| Endereço | O que é |
+|---|---|
+| `https://localhost:7262/scalar/v1` | Documentação interativa (Scalar) — navegar e executar chamadas |
+| `https://localhost:7262/openapi/v1.json` | Documento OpenAPI bruto, para importar no Postman ou no Insomnia |
+| `http://localhost:5140/health` | Relatório de saúde completo |
+| `http://localhost:5140/metrics` | Métricas no formato Prometheus |
+| `src/Vetly.API/logs/vetly-AAAAMMDD.log` | Log estruturado em JSON, com rotação diária |
+
+### Chaves de configuração
+
+| Chave | Padrão | O que controla |
+|---|---|---|
+| `Adaptadores:Crmv` | `Simulado` | Consulta ao conselho regional (RN-107) |
+| `Adaptadores:Pagamento` | `Simulado` | Provedor de cobrança e webhook (RN-006) |
+| `Adaptadores:Storage` | `Local` | Onde a mídia é guardada — disco em dev, bucket S3-compatível em produção |
+| `Adaptadores:Stt` | `Simulado` | Motor de transcrição: `Simulado` ou `NodeRed` (RN-009) |
+| `Adaptadores:Assinatura` | `NomeDigitado` | Assinatura de documentos (RN-087) |
+| `Adaptadores:Push` | `Simulado` | Envio de push (RN-092) |
+| `Adaptadores:Geocodificacao` | `Simulado` | Coordenadas a partir do endereço (RN-026) |
+| `Serilog:MinimumLevel:Default` | `Information` | Nível de log da aplicação |
+| `OpenTelemetry:Otlp:Endpoint` | vazio | Endpoint OTLP. Vazio desliga a exportação |
+| `OpenTelemetry:ExportarParaConsole` | `false` | Despeja spans e métricas no console, para depurar a instrumentação |
+
 ---
 
-## Como autenticar
+## 7. Autenticação
 
-Todos os endpoints exigem JWT, exceto as rotas públicas de `api/auth` e os health checks.
+Todos os endpoints exigem JWT, exceto as rotas públicas de `api/auth`, os health checks e `/metrics`.
 
-**Responsável (app)** — cadastro e login com e-mail e senha:
+**Responsável (app)** — cadastro e login por e-mail e senha:
 
 ```bash
 # 1. Cadastro — devolve token, refreshToken e consentimentoPendente
-curl -X POST https://localhost:7262/api/auth/registro/tutor -H "Content-Type: application/json" -d '{"nome":"Ana","email":"ana@exemplo.com","telefone":"11999998888","senha":"senha-forte-123"}'
+curl -X POST https://localhost:7262/api/auth/registro/tutor \
+  -H "Content-Type: application/json" \
+  -d '{"nome":"Ana","email":"ana@exemplo.com","telefone":"11999998888","senha":"senha-forte-123"}'
 
 # 2. Login nas próximas vezes
-curl -X POST https://localhost:7262/api/auth/login -H "Content-Type: application/json" -d '{"email":"ana@exemplo.com","senha":"senha-forte-123"}'
+curl -X POST https://localhost:7262/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"ana@exemplo.com","senha":"senha-forte-123"}'
 
 # 3. Renovação — o refresh token rotaciona a cada uso
-curl -X POST https://localhost:7262/api/auth/refresh -H "Content-Type: application/json" -d '{"refreshToken":"..."}'
+curl -X POST https://localhost:7262/api/auth/refresh \
+  -H "Content-Type: application/json" \
+  -d '{"refreshToken":"..."}'
 ```
 
-O token de acesso vale 8 horas; o refresh token, 30 dias, e é **rotativo**: cada renovação revoga o anterior. Reapresentar um token já usado derruba todas as sessões daquele usuário — é o sinal de que ele vazou.
+O access token vale **8 horas**; o refresh, **30 dias**, e é **rotativo**: cada renovação revoga o anterior. Reapresentar um token já usado derruba todas as sessões daquele usuário — é o sinal de que ele vazou.
 
-**Veterinário** — o Admin cadastra o profissional em `POST /api/veterinarios` e a resposta traz a **senha temporária** de primeiro acesso, exibida uma única vez. O veterinário entra em `/api/auth/login` com ela e troca em `POST /api/auth/trocar-senha`. Vet desativado ainda faz login, mas com a role `VetDesativado`, limitada ao extrato dos próprios atendimentos (RN-022/RN-024).
+**Veterinário** — o Admin cadastra o profissional em `POST /api/veterinarios`, e a resposta traz a **senha temporária** de primeiro acesso, exibida uma única vez. O veterinário entra em `/api/auth/login` com ela e troca em `POST /api/auth/trocar-senha`. Vet desativado ainda faz login, mas com a role `VetDesativado`, limitada ao extrato dos próprios atendimentos (RN-022/RN-024).
 
-**Admin (desenvolvimento)** — o Admin ainda não tem cadastro próprio; a rota obsoleta segue disponível apenas em `Development`:
+**Admin (desenvolvimento)** — o Admin ainda não tem cadastro próprio; a rota obsoleta segue disponível apenas em `Development`, e responde **404 fora dele**:
 
 ```bash
-curl -X POST https://localhost:7262/api/auth/token -H "Content-Type: application/json" -d '{"usuario":"admin-teste","role":"Admin"}'
+curl -X POST https://localhost:7262/api/auth/token \
+  -H "Content-Type: application/json" \
+  -d '{"usuario":"admin-teste","role":"Admin"}'
 ```
 
-Roles: `Tutor`, `Veterinario` e `Admin`. Policies: `ApenasAdmin`, `VeterinarioOuAdmin`, `ApenasTutor` e `TutorOuAdmin`. Use o token com `Authorization: Bearer {token}`.
+Roles: `Tutor`, `Veterinario`, `Admin` e `VetDesativado`. Policies: `ApenasAdmin`, `VeterinarioOuAdmin`, `ApenasTutor` e `TutorOuAdmin`. Use o token com `Authorization: Bearer {token}`.
 
-As senhas são guardadas com PBKDF2-HMAC-SHA256, 210.000 iterações e salt aleatório por senha, no formato autodescritivo `pbkdf2$sha256$iteracoes$salt$hash` — aumentar o custo no futuro não invalida as senhas já cadastradas.
+O login responde **exatamente a mesma coisa** para e-mail inexistente, senha errada e conta desativada: distinguir os casos entregaria a lista de contas existentes. As senhas são guardadas com PBKDF2-HMAC-SHA256, 210.000 iterações e salt aleatório por senha.
+
+**Cabeçalhos que valem conhecer:**
+
+| Cabeçalho | Direção | Para que serve |
+|---|---|---|
+| `Authorization: Bearer {token}` | Requisição | Autenticação de usuário |
+| `Idempotency-Key: {guid}` | Requisição | **Obrigatório** nas rotas marcadas como idempotentes. A resposta é reaproveitada por 24 h para a mesma chave |
+| `X-Vetly-Service-Token` | Requisição | Autentica as rotas `api/internos/*` — quem chama é um provedor, não uma pessoa |
+| `X-Correlation-Id` | Ambas | Envie o seu para amarrar a jornada; se não enviar, a API gera e devolve o dela |
+
 ---
 
-## Endpoints
+## 8. Roteiro de testes no Postman
 
-### Health Checks
-Públicos (sem autenticação). Respondem JSON com o status de cada dependência.
+Esta é a **jornada completa da plataforma**, na ordem exata em que funciona — é o mesmo caminho que o teste `JornadaCompletaTests.JornadaFeliz_DoCadastroAAvaliacao` percorre por HTTP na suíte de integração. Cada passo traz o endpoint e o que ele faz. Base local: `https://localhost:7262`.
+
+> **Antes de começar.** Crie no Postman as variáveis de ambiente `baseUrl`, `tokenTutor`, `tokenVet`, `tokenAdmin`, `tutorId`, `animalId`, `vetId`, `servicoId`, `slotId`, `consultaId`, `pagamentoId`, `referenciaExterna` e `documentoId`. Todo `POST` e `DELETE` das rotas idempotentes precisa do cabeçalho `Idempotency-Key` com um GUID novo a cada chamada — a chave protege contra o **mesmo** pedido reenviado, não contra dois pedidos diferentes.
+
+### Bloco A — Preparar o prestador (perfil Admin, depois Veterinário)
+
+| # | Método e rota | O que faz |
+|---|---|---|
+| A1 | `POST /api/auth/token` | Emite um JWT de Admin sem senha. **Só existe em `Development`** — é o atalho que o ambiente sem back-office oferece. Guarde em `tokenAdmin` |
+| A2 | `POST /api/veterinarios` | Cadastra o profissional com CRMV, UF, persona e plano. Devolve o `id` do veterinário e a **senha temporária**, exibida uma única vez. Requer Admin (RN-107) |
+| A3 | `POST /api/auth/login` | Autentica o veterinário com a senha temporária. Guarde em `tokenVet` |
+| A4 | `PUT /api/veterinarios/{vetId}/agenda-config` | Define dias, horário, duração e intervalo, e **materializa 60 dias de horários**. Sem esta chamada não existe horário para o Responsável escolher (RN-034) |
+| A5 | `PUT /api/veterinarios/{vetId}/servicos` | Define a vitrine de serviços com valor e duração. **É daqui que sai o preço cobrado** — nunca do corpo da requisição de pagamento (RN-032) |
+
+```json
+// A2 — POST /api/veterinarios   (Authorization: Bearer {{tokenAdmin}})
+{ "nome": "Dra. Marina", "crmv": "12345-SP", "ufAtuacao": "SP",
+  "email": "marina@clinica.com", "persona": 1, "plano": 2 }
+
+// A4 — PUT /api/veterinarios/{{vetId}}/agenda-config   (Bearer {{tokenVet}})
+{ "dias": [1,2,3,4,5], "horaInicio": "08:00", "horaFim": "18:00",
+  "duracaoMinutos": 30, "intervaloMinutos": 0 }
+
+// A5 — PUT /api/veterinarios/{{vetId}}/servicos   (Bearer {{tokenVet}})
+{ "servicos": [ { "tipo": 1, "valor": 200.00, "duracaoMinutos": 30, "aceitaPlanoPet": false } ] }
+```
+
+### Bloco B — Onboarding do Responsável
+
+| # | Método e rota | O que faz |
+|---|---|---|
+| B1 | `POST /api/auth/registro/tutor` | Cria a conta do Responsável e devolve a sessão com `consentimentoPendente: true`. Guarde `token` em `tokenTutor` e `tutorId` |
+| B2 | `PUT /api/tutores/{tutorId}/consentimentos` | Concede a finalidade `Atendimento`. **Sem isto, toda rota de negócio responde 422**: a base legal precede o tratamento (RN-060) |
+| B3 | `POST /api/animais` | Cadastra o pet. `pesoKg` é obrigatório — sem peso a IA não sugere dose (RN-081). A carteira de vacinação informada já **deriva o calendário de obrigações** (RN-046) |
+| B4 | `POST /api/tutores/{tutorId}/dispositivos` | Registra o aparelho para receber push. Idempotente por token de push (RN-092) |
+
+```json
+// B1 — POST /api/auth/registro/tutor
+{ "nome": "Ana Teste", "email": "ana@exemplo.com",
+  "telefone": "11999998888", "senha": "senha-forte-123" }
+
+// B2 — PUT /api/tutores/{{tutorId}}/consentimentos   (Bearer {{tokenTutor}})
+{ "consentimentos": [ { "finalidade": "Atendimento", "concedido": true } ] }
+
+// B3 — POST /api/animais   (Bearer {{tokenTutor}})
+{ "nome": "Thor", "especie": "Canino", "raca": "Golden Retriever",
+  "dataNascimento": "2023-04-10T00:00:00Z", "tutorId": "{{tutorId}}",
+  "pesoKg": 31.5, "alergias": ["Dipirona"] }
+```
+
+### Bloco C — Encontrar e agendar
+
+| # | Método e rota | O que faz |
+|---|---|---|
+| C1 | `GET /api/busca?animalId={animalId}&cep=01310-100&raioKm=10` | Lista clínicas e vets autônomos por proximidade e necessidade, ordenados pelo score 40/30/30. Espécie atendida é filtro **eliminatório** (RN-001 a RN-033) |
+| C2 | `GET /api/veterinarios/{vetId}/disponibilidade` | Horários livres, por dia. Copie o `id` de um horário para `slotId` |
+| C3 | `POST /api/consultas/checkout` | **Trava o horário por 10 minutos** e cria a consulta em `EmCheckout`. Quem chegar depois recebe 409 — é o que impede overbooking (RN-003/RN-035) |
+| C4 | `POST /api/pagamentos` | Cria a cobrança com o split já apurado. Responde **202**, e o pagamento fica pendente: quem confirma é o webhook, nunca a resposta síncrona. Guarde `id` e `instrucoes.referenciaExterna` |
+| C5 | `POST /api/internos/pagamentos/webhook` | Simula o provedor confirmando o pagamento. **Promove a consulta de `EmCheckout` para `Confirmada`** e ocupa o horário (RN-006). Usa `X-Vetly-Service-Token`, não JWT |
+| C6 | `PUT /api/consultas/{consultaId}/pre-sintomas` | O Responsável descreve a queixa em texto guiado. É o único relato de quem convive com o animal, e alimenta o briefing (RN-005/RN-036) |
+
+```json
+// C3 — POST /api/consultas/checkout   (Bearer {{tokenTutor}}, Idempotency-Key)
+{ "animalId": "{{animalId}}", "prestadorId": "{{vetId}}",
+  "slotId": "{{slotId}}", "servicoId": "{{servicoId}}" }
+
+// C4 — POST /api/pagamentos   (Bearer {{tokenTutor}}, Idempotency-Key)
+{ "tutorId": "{{tutorId}}", "consultaId": "{{consultaId}}",
+  "valor": 200.00, "meioPagamento": 1 }
+
+// C5 — POST /api/internos/pagamentos/webhook   (X-Vetly-Service-Token: {{tokenInterno}})
+{ "referenciaExterna": "{{referenciaExterna}}", "status": "Confirmado" }
+
+// C6 — PUT /api/consultas/{{consultaId}}/pre-sintomas   (Bearer {{tokenTutor}})
+{ "queixaPrincipal": "Vomito ha dois dias", "duracaoEmDias": 2,
+  "sinaisObservados": ["Apatia"], "alimentacaoNormal": false }
+```
+
+> **Por que o valor vai no corpo se o servidor decide o preço?** Ele vai como declaração do cliente e é **ignorado**: o valor cobrado sai de `Servico.Valor`. Confira na resposta — ela devolve `200.00` mesmo que você mande `1.00`. Aceitar o valor do cliente é aceitar que ele pague o que quiser (RN-032).
+
+### Bloco D — O atendimento (perfil Veterinário)
+
+| # | Método e rota | O que faz |
+|---|---|---|
+| D1 | `GET /api/dashboard/veterinario` | O que precisa da atenção dele agora: agenda do dia, pendências que travam dinheiro ou documento, números do mês. Sem id na rota — o escopo vem do token (RN-105) |
+| D2 | `GET /api/consultas/{consultaId}/briefing` | Contexto completo antes de começar: histórico, alergias, peso, medicações e os pré-sintomas já organizados (RN-005) |
+| D3 | `POST /api/consultas/{consultaId}/iniciar` | **Abre a janela de captura** — a consulta começa aqui. Devolve os avisos que o profissional precisa ver antes, como peso ausente (RN-008) |
+| D4 | `POST /api/consultas/{consultaId}/captura/segmentos` | Envia um trecho de áudio e enfileira a transcrição fora da requisição. Responde 202 (RN-009). *Opcional: planos Profissional e Enterprise* |
+| D5 | `GET /api/consultas/{consultaId}/captura` | Situação da captura, com o texto já transcrito |
+| D6 | `POST /api/consultas/{consultaId}/encerrar` | **Fecha a janela** e marca a consulta como `Realizada`. Encerrar não é finalizar (RN-008/RN-038) |
+| D7 | `GET /api/consultas/{consultaId}/rascunho` | O prontuário que a IA estruturou a partir da transcrição — rascunho até o veterinário decidir (RN-080) |
+| D8 | `PUT /api/consultas/{consultaId}/validar-diagnostico` | A decisão sobre o rascunho: `Aprovado`, `Corrigido` (exige o conteúdo corrigido) ou `NaoAprovado` (exige justificativa). Não há aprovação por omissão (RN-082) |
+| D9 | `POST /api/consultas/{consultaId}/prontuario-manual` | O caminho sem IA: prontuário escrito à mão. É o que fecha o atendimento no plano Básico, ou quando o rascunho é recusado (RN-085) |
+
+```json
+// D9 — POST /api/consultas/{{consultaId}}/prontuario-manual   (Bearer {{tokenVet}})
+{ "conteudo": {
+    "anamnese": "Vomito ha dois dias, sem diarreia.",
+    "exameFisico": "Hidratado, mucosas normocoradas, abdome sem dor a palpacao.",
+    "hipotesesDiagnosticas": ["Gastrite alimentar"],
+    "conduta": "Dieta branda por cinco dias.",
+    "orientacoes": "Retornar se o vomito persistir." } }
+```
+
+### Bloco E — Documentos
+
+| # | Método e rota | O que faz |
+|---|---|---|
+| E1 | `POST /api/documentos/consulta/{consultaId}?tipo=Prontuario` | Gera o documento pela Factory correspondente ao tipo, com conteúdo e PDF. Exige diagnóstico validado (RN-082/RN-083). Guarde o `id` |
+| E2 | `POST /api/documentos/{documentoId}/assinar` | Assina pelo adaptador de assinatura. No MVP é o nome digitado, conferido contra o registrado — só o vet do atendimento assina (RN-087) |
+| E3 | `POST /api/documentos/{documentoId}/publicar` | Publica no board do pet. **Receita sem assinatura não é publicada**: no board ela pareceria válida sem ser |
+| E4 | `POST /api/consultas/{consultaId}/finalizar` | Fecho documental. Exige que todo documento **já emitido** que precise de assinatura esteja assinado (RN-087) |
+| E5 | `GET /api/documentos/animal/{animalId}` | O board do pet, na visão do Responsável: documentos publicados do animal |
+| E6 | `POST /api/documentos/{documentoId}/lido` | Registra que o Responsável abriu o documento |
+| E7 | `POST /api/documentos/{documentoId}/correcao` | Cria uma **versão corrigida** — o original é preservado. Depois de 24 h exige justificativa (RN-088/RN-089) |
+
+Tipos aceitos em `?tipo=`: `Prontuario`, `Receita`, `Atestado` (com `&subtipo=Saude`, `Obito` ou `Vacinacao`) e `NotaFiscal`.
+
+### Bloco F — Depois da consulta
+
+| # | Método e rota | O que faz |
+|---|---|---|
+| F1 | `POST /api/avaliacoes/consulta/{consultaId}` | O Responsável avalia. Só quem foi atendido avalia, uma vez por consulta e em até **14 dias** (RN-055) |
+| F2 | `GET /api/avaliacoes/veterinario/{vetId}` | Reputação com distribuição de notas. Abaixo de 3 avaliações a nota não é pública nem entra no score (RN-057) |
+| F3 | `POST /api/avaliacoes/{avaliacaoId}/resposta` | A resposta pública do veterinário — uma só |
+| F4 | `GET /api/fidelidade/saldo` | Saldo, tier e o que vence em 30 dias. Serviço pago rende 1 ponto por real; obrigação cumprida no prazo rende 50 fixos (RN-047/RN-048) |
+| F5 | `POST /api/fidelidade/resgates/simular` | Mostra o desconto em reais e **como o custo se divide entre Vetly e prestador**, sem gravar nada (RN-051) |
+| F6 | `POST /api/fidelidade/resgates` | Debita os pontos em FIFO e emite o cupom com QR e 30 dias de validade (RN-050/RN-053) |
+| F7 | `GET /api/notificacoes/tutor/{tutorId}` | A caixa de entrada do Responsável — sobrevive ao push perdido (RN-092) |
+| F8 | `GET /api/animais/{animalId}/board` | O board do pet: obrigações, agendamentos, documentos e o estado do avatar |
+| F9 | `POST /api/consultas/{consultaId}/retorno` | Agenda o retorno. Nasce **confirmado e sem cobrança nova** — é a segunda metade de um tratamento já pago (RN-013) |
+
+### Bloco G — Os caminhos que custam dinheiro
+
+Estes são os cenários que valem testar depois do caminho feliz, porque são onde as regras aparecem:
+
+| # | Método e rota | O que provar |
+|---|---|---|
+| G1 | `GET /api/consultas/{id}/simulacao-cancelamento` | O valor do reembolso **antes** de cancelar, pela mesma Strategy que o cancelamento usa. Mostrar um valor e cobrar outro é o que a RN-042 proíbe |
+| G2 | `DELETE /api/consultas/{id}` | Cancela e aplica a faixa: **> 24 h** reembolso integral; **entre 24 h e 2 h** parcial com a retenção da clínica; **< 2 h** sem reembolso (RN-041/RN-042) |
+| G3 | `POST /api/consultas/{id}/remarcar` | Transfere horário e pagamento sem nova cobrança. **Limite de 2** — acima disso, remarcar viraria burla à janela de reembolso (RN-043) |
+| G4 | `POST /api/consultas/{id}/no-show` | Registra o não comparecimento. Só quem esperava registra — nunca o próprio Responsável — e não gera reembolso (RN-044) |
+| G5 | `POST /api/consultas/checkout` **duas vezes no mesmo `slotId`** | A segunda recebe **409**. É a prova de que a concorrência é resolvida no banco, não em memória (RN-035) |
+| G6 | `POST /api/internos/pagamentos/webhook` com `"status": "Recusado"` | Expira a consulta, libera o horário e **devolve o cupom à vigência** — o desconto não foi usado (RN-053) |
+| G7 | `POST /api/pagamentos` repetindo o mesmo `Idempotency-Key` | A segunda chamada devolve a **mesma resposta**, sem criar uma segunda cobrança |
+| G8 | `GET /api/consultas/{id}` com o token de **outro** Responsável | **403 com `RN-105`**. O escopo vem do token, nunca de parâmetro do cliente |
+| G9 | `GET /api/financeiro/consolidado` | O painel do Admin. O campo `fecha` confirma a conta `bruto = comissão + repasse + desconto` |
+| G10 | `POST /api/colmeia` | O Responsável — e só ele — autoriza um veterinário de fora a alcançar o histórico, com escopo e prazo (RN-090) |
+
+### Bloco H — Observabilidade (sem autenticação)
+
+| # | Método e rota | O que faz |
+|---|---|---|
+| H1 | `GET /health/live` | O processo está no ar? Não toca dependência nenhuma |
+| H2 | `GET /health/ready` | As dependências respondem? 503 tira a instância de rotação |
+| H3 | `GET /health` | Relatório completo, com duração e tags de cada check |
+| H4 | `GET /metrics` | Todas as métricas no formato Prometheus. Faça algumas chamadas antes e procure por `vetly_http_requisicoes_total` e `vetly_regras_violadas_total` |
+
+**Um teste de correlação que vale fazer no Postman:** envie qualquer requisição com o cabeçalho `X-Correlation-Id: meu-teste-123`. A resposta volta com o mesmo cabeçalho; se a requisição falhar, o corpo do erro traz `"correlationId": "meu-teste-123"`; e `grep 'meu-teste-123' src/Vetly.API/logs/vetly-*.log` mostra **todas** as linhas daquela requisição, de todas as camadas.
+
+---
+
+## 9. Referência de endpoints
+
+Todas as rotas da API, agrupadas por área, com uma frase do que cada uma faz. Para
+exercitá-las na ordem em que a jornada acontece, use o [roteiro do Postman](#8-roteiro-de-testes-no-postman).
+
+### Observabilidade
+Públicos, sem autenticação. Detalhados na [seção 4](#4-monitoramento-e-observabilidade).
 
 | Método | Rota | Descrição |
 |---|---|---|
-| GET | `/health/live` | Liveness — só verifica se o processo está no ar; não toca em dependências. Use para decidir **reiniciar** o container |
-| GET | `/health/ready` | Readiness — verifica Oracle e Ollama. Use para decidir se o container recebe **tráfego** |
-| GET | `/health` | Diagnóstico completo — todos os checks registrados |
+| GET | `/health/live` | Liveness — só verifica se o processo está no ar; não toca em dependências. Decide **reiniciar** o container |
+| GET | `/health/ready` | Readiness — verifica Oracle e Ollama. Decide se a instância recebe **tráfego** |
+| GET | `/health` | Diagnóstico completo — todos os checks registrados, com duração e tags |
+| GET | `/metrics` | Métricas no formato de texto do Prometheus: plataforma, runtime e negócio |
 
-Checks registrados: `api` (tag `live`), `oracle-db` (tags `ready,db,oracle`) e `ollama` (tags `ready,external`).
-
-Códigos de status: `Healthy` e `Degraded` retornam **200**; `Unhealthy` retorna **503**. Falha no Oracle é `Unhealthy` (a API não atende sem banco); falha no Ollama é `Degraded` (só os recursos de IA param, o resto segue funcionando). O detalhamento do erro só aparece fora do ambiente de Produção.
+Checks registrados: `api` (tag `live`), `oracle-db` (tags `ready,db,oracle`) e `ollama` (tags `ready,external`). `Healthy` e `Degraded` respondem **200**; `Unhealthy` responde **503**.
 
 ```bash
-curl http://localhost:5099/health/ready
+curl http://localhost:5140/health/ready
+curl http://localhost:5140/metrics | grep '^vetly_'
 ```
 
 ### Auth
@@ -533,7 +1263,9 @@ As listagens grandes (`GET /api/consultas`, `GET /api/pagamentos`) aceitam `?pag
 
 Sem parâmetros valem página 1 e 20 itens. O tamanho é limitado a 100 por página — valores fora da faixa são normalizados, não rejeitados.
 
-## Correções de segurança
+---
+
+## 10. Correções de segurança
 
 Uma revisão completa do fluxo de comunicação da API encontrou brechas em que a regra
 existia no documento e não no código, ou existia num serviço e não no outro. O que
@@ -645,102 +1377,15 @@ porta aberta. O login responde **exatamente a mesma coisa** para e-mail inexiste
 senha errada e conta desativada: distinguir os casos entregaria a lista de contas
 existentes.
 
-## Regras de Negócio
-
-> A numeração segue o documento técnico oficial (`vetly-tech.md`, RN-001 a RN-107). As versões anteriores deste
-> README usavam uma numeração própria que colidia com códigos diferentes do documento técnico — o de-para foi
-> aplicado ao código, às exceções e a esta tabela.
-
-| Código | Descrição | Implementação |
-|---|---|---|
-| RN-006 | Consulta só pode ser agendada se o pagamento estiver com status Confirmado | `ConsultaService.AgendarAsync` |
-| RN-022/RN-025 | Desativação de veterinário encerra o acesso e retorna agendamentos futuros ao chamador | `VeterinarioService.DesativarAsync` |
-| RN-004 | Sem horário disponível, o Responsável entra na lista de espera do veterinário | `ListaEsperaService` |
-| RN-037 | Vaga liberada é oferecida ao primeiro da fila com prioridade de 15 min; vencida, passa ao próximo | `ItemListaEspera` + `PromoverProximoAsync` |
-| RN-026 | Endereço persistido no próprio registro, com latitude/longitude **derivadas dele** pela geocodificação — o payload do cliente é ignorado | `Endereco` + `IGeocodificacaoAdapter` |
-| RN-033/RN-057 | Nota só é pública a partir de 3 avaliações; `PUBLICADO_EM` ancora o selo "Novo na Vetly" por 30 dias | `Veterinario.TemNotaPublica` + `PublicarNoMatching` |
-| RN-106 | Métricas agregadas com denominadores explícitos; a taxa de aprovação sem correção mede se a IA ajuda, e o prontuário manual fica fora do denominador | `AnalyticsService` |
-| RN-025 | Consulta de vet indisponível é redistribuída preservando pagamento e animal, com o horário novo travado antes da troca e o antigo liberado; o Responsável é avisado | `Consulta.Redistribuir` + `RedistribuicaoService` |
-| RN-070/RN-072 | O consolidado verifica explicitamente que comissão + repasse + desconto fecha o bruto, e agrupa o repasse por destinatário pela maior pendência | `FinanceiroService.ObterConsolidadoAsync` |
-| RN-071 | A liquidação registra um pagamento feito fora da plataforma, exige referência e ignora o que já estava liquidado; só cobrança confirmada entra | `FinanceiroService.LiquidarAsync` + `Pagamento.Liquidar` |
-| RN-105 | O painel é sempre do próprio veterinário e destaca só o que trava dinheiro ou documento; avaliação sem resposta não conta como pendência bloqueante | `DashboardService.ObterDoVeterinarioAsync` |
-| RN-092 | Notificação é gravada antes de enviada e sobrevive ao push perdido; token recusado como inválido desativa o dispositivo, falha de provedor não | `Notificacao` + `NotificacaoService` + `IPushAdapter` |
-| RN-094/RN-095 | Régua diária transforma obrigação vencendo em um aviso por animal, com intervalo mínimo de 7 dias, e cria o lembrete que aciona a clínica após 3 tentativas | `AvisarObrigacoesVencendo` + `LembreteAgendado` |
-| RN-055 | Só o Responsável atendido avalia, uma vez por consulta e em até **14 dias**; índice único garante a invariante sob concorrência | `Avaliacao` + `AvaliacaoService` |
-| RN-059 | Cancelamento invalida a avaliação — sai do cálculo da nota, mas a linha fica com o motivo | `Avaliacao.Invalidar` + `AvaliacaoService.InvalidarPorCancelamentoAsync` |
-| RN-057 | Reputação recalculada a partir das avaliações; abaixo de 3 a nota não é pública nem entra no score, e comentário moderado não tira a nota da média | `AvaliacaoService.RecalcularReputacaoAsync` + `Veterinario.TemNotaPublica` |
-| RN-047 | Serviço pago rende 1 ponto por real; obrigação cumprida **no prazo** rende 50 pontos fixos — cumprir atrasado não credita | `MovimentoDePontos.PorServicoPago` / `PorObrigacaoCumprida` |
-| RN-048 | Tier por acúmulo de 12 meses (Bronze/Prata/Ouro) com multiplicador 1,0/1,25/1,5 aplicado no crédito; o tier conta o creditado, não o saldo | `RegrasDeFidelidade.TierPara` |
-| RN-049 | 100 pontos = R$ 3,00, arredondado a favor do programa nos dois sentidos | `RegrasDeFidelidade.EmReais` / `PontosPara` |
-| RN-050 | Crédito é lote com saldo próprio; resgate consome em FIFO e a expiração baixa só o que sobrou | `MovimentoDePontos.Consumir` + `FidelidadeService.ConsumirFifoAsync` |
-| RN-051 | O custo do desconto é dividido por faixa (100/0 · 60/40 · 30/70): a parte da Vetly sai da comissão, a do prestador sai do repasse, e as três parcelas fecham o bruto | `RegrasDeFidelidade.Dividir` + `Pagamento.AplicarDesconto` |
-| RN-052 | Cancelamento estorna os pontos da consulta, tirando só o que ainda não foi gasto | `FidelidadeService.EstornarPorConsultaAsync` |
-| RN-053/RN-054 | Cupom com QR e 30 dias; vencido, os pontos não voltam; vale para uma transação | `CupomResgate` |
-| RN-036 | Pré-sintomas em texto guiado + mídias, aceitos só antes do atendimento; lista vazia grava o sentinela `";"`, porque no Oracle string vazia é NULL | `Consulta.RegistrarPreSintomas` |
-| RN-041/RN-042 | A simulação de cancelamento reusa a mesma Strategy do cancelamento e não deixa rastro — mostrar um valor e cobrar outro é o que a regra proíbe | `ConsultaService.SimularCancelamentoAsync` |
-| RN-013/RN-043 | Remarcar transfere o pagamento e incrementa o contador da consulta, limitado a 2; esgotado, resta cancelar | `Consulta.RemarcarPara` |
-| RN-044 | No-show é registrado por quem esperava — nunca pelo próprio Responsável — e não gera reembolso | `ConsultaService.RegistrarNoShowAsync` |
-| RN-045 | Obrigação de cuidado guarda periodicidade e se reagenda sozinha ao ser cumprida, contando a partir do cumprimento; `Vencendo` avisa 30 dias antes | `ObrigacaoPet` + `ObrigacaoService` |
-| RN-046 | Obrigações derivadas da carteira de vacinação, uma por tipo, a partir da dose mais recente; derivar de novo não duplica | `ObrigacaoService.DerivarDaCarteiraAsync` |
-| RN-090 | Colmeia: o Responsável (e só ele) autoriza um veterinário de fora a alcançar o histórico do animal, com escopo e prazo; concessão vigente duplicada devolve 409 | `AcessoColmeia` + `ColmeiaService` |
-| RN-090 | Todo acesso pela colmeia — permitido ou negado — vai para uma trilha append-only que o Responsável consulta; revogar não apaga o que já foi acessado | `LogAcessoColmeia` + `ColmeiaRepository` |
-| RN-105/RN-106 | Escopo por linha: o Responsável só alcança os próprios dados, o veterinário só os animais que atende, e o escopo vem do token — não de parâmetro do cliente | `IUsuarioAtual` + guardas em `AnimalService`, `ConsultaService`, `PagamentoService`, `TutorService` |
-| RN-001/RN-002 | Busca lista clínicas e vets autônomos por proximidade e necessidade, ordenados por score | `BuscaService` |
-| RN-027 | Distância entre a posição do Responsável e a coordenada do prestador; CEP é o fallback quando a localização é negada | `BuscaService.ResolverPosicaoAsync` |
-| RN-028 | Raio de 10 km por padrão, expansível até 25 km | `BuscaService` |
-| RN-029 | Espécie atendida é filtro **eliminatório** — matching clinicamente inválido não aparece | `BuscaService.Elegivel` |
-| RN-030/RN-031 | Score 40/30/30 e desempate por nota → distância → disponibilidade em 48h | `BuscaService.CalcularScore` |
-| RN-042 | Percentual de retenção do cancelamento parcial é configurado pela clínica no onboarding (padrão 30%) e lido no cancelamento | `Empresa.DefinirPoliticaRetencao` |
-| RN-072 | Faixa Enterprise recalculada automaticamente ao cruzar o limite de vets vinculados | `Empresa.RecalcularFaixaEnterprise` |
-| RN-003 | Com clínica, a consulta é atribuída ao profissional dono do horário escolhido; com autônomo, direto com ele | `ConsultaService.IniciarCheckoutAsync` |
-| RN-034 | Agenda configurável (dias, horário, duração, intervalo) materializada em horários por 60 dias | `AgendaConfig` + `AgendaService` |
-| RN-035 | Slot com lock de checkout de 10 min: `Livre → EmCheckout → Confirmado`; horário já reservado devolve 409 | `Slot` + `ConsultaService.IniciarCheckoutAsync` |
-| RN-039/RN-040 | Atendimento remoto fora de escopo; `POST /api/consultas` é oficialmente a rota de emergência/balcão, marcada na origem da consulta | `ConsultaService` |
-| RN-035/RN-038 | Estado da consulta em enum `StatusConsulta` (EmCheckout → Confirmada → Realizada / Cancelada / NoShow / Expirada), substituindo os três booleanos | `Consulta.Status` |
-| RN-041 | Cancelamento com mais de 24h de antecedência = reembolso integral | `ReembolsoIntegralStrategy` |
-| RN-041/RN-042 | Cancelamento entre 2h e 24h = reembolso parcial, com o percentual configurado pela clínica (padrão 30%) | `ReembolsoParcialStrategy` + `ConsultaService.CancelarAsync` |
-| RN-041 | Cancelamento com menos de 2h = sem reembolso | `SemReembolsoStrategy` |
-| RN-022/RN-024 | Vet desativado entra com role `VetDesativado` e é bloqueado em toda rota de negócio, mantendo só o que a RN-024 garante | `VetDesativadoFilter` + `AuthService` |
-| RN-024 | O extrato é a única rota de negócio que o vet desativado alcança, e não carrega dado de Responsável, de animal nem clínico — só o registro financeiro do próprio trabalho | `VeterinarioService.ObterExtratoAsync` + `[PermitidoAoVetDesativado]` |
-| RN-060 | Sem consentimento de atendimento, as rotas de negócio do Responsável devolvem 422 — a base legal precede o tratamento | `ConsentimentoAtendimentoFilter` |
-| RN-061/RN-062 | Consentimento granular por finalidade, com data de concessão e de revogação; revogar não apaga registro clínico já produzido | `Tutor.RegistrarConsentimento` + `TutorService` |
-| RN-006 | A consulta só é confirmada com o pagamento, e a confirmação vem do **webhook**, nunca da resposta síncrona | `PagamentoService.ProcessarWebhookAsync` |
-| RN-070 | Take rate por plano: Básico 15%, Profissional 12%, Enterprise 10% — a maior comissão pertence ao menor plano | `SplitBasicoStrategy`, `SplitProfissionalStrategy`, `SplitEnterpriseStrategy` |
-| RN-072 | Repasse único: ao vet autônomo ou à clínica. Vet vinculado usa o plano da unidade, e a remuneração interna fica fora do escopo | `PagamentoService.ResolverPlanoEDestinatarioAsync` |
-| RN-081 | Sugestão de dose exige peso do animal — `POST /api/ia/protocolo` com peso ausente/zero devolve 422, e o cadastro do pet passa a exigir `pesoKg` | `OllamaService.SugerirProtocoloAsync` + `AnimalService` |
-| RN-008 | A consulta tem uma janela explícita: `iniciar` abre, `encerrar` fecha e marca a consulta como `Realizada`; iniciar ou encerrar duas vezes devolve 409 | `SessaoCaptura` + `CapturaService` |
-| RN-009 | Áudio capturado em segmentos sequenciais, transcritos fora da requisição; reenvio da mesma sequência devolve 409, e falha em parte dos trechos gera rascunho parcial em vez de perder a consulta | `SegmentoAudio` + `TranscreverSegmentoHandler` |
-| RN-079 | Fora da janela de captura a IA não captura áudio nem produz conteúdo clínico — trecho enviado com a janela fechada devolve 409 | `SessaoCaptura.JanelaAberta` |
-| RN-085 | Captura e IA na consulta existem nos planos Profissional e Enterprise; no Básico a consulta inicia sem captura e o prontuário é manual | `CapturaService.PlanoTemCapturaAsync` |
-| RN-080 | A IA estrutura a transcrição em prontuário fora da requisição; o rascunho guarda o texto de origem e o modelo, e transcrição parcial vira rascunho parcial com aviso | `OllamaService.EstruturarConsultaAsync` + `RascunhoService` |
-| RN-082 | Decisão sobre o rascunho da IA em três caminhos (aprovar / corrigir / não aprovar), cada um com o que o torna auditável; não aprovar não valida o diagnóstico | `ProntuarioService.DecidirAsync` |
-| RN-082 | Toda decisão vira registro append-only com o conteúdo final, quem decidiu e o modelo — o repositório não tem atualizar nem remover | `LogAuditoriaIa` + `AuditoriaIaRepository` |
-| RN-085 | Prontuário manual fecha o atendimento quando não houve IA no caminho; com rascunho pendente devolve 409 | `ProntuarioService.RegistrarManualAsync` |
-| RN-082 | Documentos só podem ser gerados após `consulta.DiagnosticoValidado = true` E pagamento confirmado | `DocumentoService.GerarAsync` |
-| RN-083 | O conteúdo do documento é formatação do estado final aprovado, lido da trilha de auditoria; sem conteúdo aprovado, não se gera documento | `DocumentoService.ObterConteudoAprovadoAsync` + factories |
-| RN-086 | O subtipo do atestado muda o texto do documento (óbito, saúde, vacinação), e não apenas o rótulo | `AtestadoFactory.Declaracao` |
-| RN-090 | Documento gerado vira PDF no storage, com URL sempre temporária; publicar no board é passo separado, e receita só vai ao board assinada | `IGeradorDePdf` + `DocumentoService.PublicarAsync` |
-| RN-087 (C-04) | Finalizar exige que todo documento **já emitido** que precise de assinatura esteja assinado — receita e atestado; consulta que não prescreveu nada finaliza normalmente | `Documento.PendenteDeAssinatura` + `ConsultaService.FinalizarAsync` |
-| RN-087 | Assinatura por adaptador: nome digitado conferido contra o registrado, carimbo no corpo do documento dizendo como foi assinado e o que não habilita | `IAssinaturaAdapter` + `AssinaturaAdapterNomeDigitado` |
-| RN-088 | Correção cria nova versão do documento (original preservado com `VersaoOriginalId`) | `DocumentoService.CorrigirAsync` |
-| RN-089 | Correção após 24h exige justificativa não vazia | `DocumentoService.CorrigirAsync` |
-| RN-094 | Resposta do tutor encerra a régua de contato | `LembreteService.RegistrarRespostaAsync` |
-| RN-095 | Após 3 tentativas sem resposta, `AlertaEnviadoClinica = true` | `LembreteService.ProcessarTentativaAsync` |
-| RN-100 | Procedimentos acumulam `ValorTotalApurado`; alta retorna `saldo = total − caução` | `InternacaoService.RegistrarProcedimentosAsync` + `DarAltaAsync` |
-| RN-107 | CRMV consultado no conselho regional via `ICrmvAdapter`; `Indisponivel` mantém o perfil pendente e fora do matching — nunca se aprova por omissão | `CrmvAdapterSimulado` + `VeterinarioService.RevalidarCrmvAsync` |
-| RN-107 | CRMV validado por regex `^\d{4,6}-[A-Z]{2}$` + duplicidade; perfil nasce `PendenteValidacao` e só é publicado no matching com CRMV `Valido` (adaptador do conselho: C-05) | `VeterinarioService.CriarAsync` + `Veterinario.PublicarNoMatching` |
-| CONSULTA-001 | Consulta já cancelada não pode ser cancelada novamente | `ConsultaService.CancelarAsync` |
-| CONSULTA-002 | Pagamento da consulta não encontrado ao cancelar | `ConsultaService.CancelarAsync` |
-| CONSULTA-003 | Não é possível validar diagnóstico de consulta cancelada | `ConsultaService.ValidarDiagnosticoAsync` |
-| INTERNACAO-001 | Animal já possui internação ativa | `InternacaoService.AbrirAsync` |
-| INTERNACAO-002 | Não é possível registrar procedimentos em internação encerrada | `InternacaoService.RegistrarProcedimentosAsync` |
-| PAGAMENTO-001 | Split exige `ConsultaId` preenchido no pagamento | `PagamentoService.ProcessarSplitAsync` |
-| TUTOR-001 | Tutor não encontrado | `TutorService` |
-| LEMBRETE-001 | Lembrete não encontrado | `LembreteService` |
-
 ---
 
-## Modelo Entidade-Relacionamento
+## 11. Modelo entidade-relacionamento
+
+As tabelas principais e seus campos. Os nomes seguem a convenção Oracle em maiúsculas,
+definida nas classes `IEntityTypeConfiguration<T>` da Infrastructure — o Domain não
+conhece nenhum deles. Identificadores são `CHAR(36)` guardando GUID em texto, decisão
+que troca alguns bytes por legibilidade em consulta manual e por portabilidade entre
+bancos.
 
     TB_TUTOR {
         CHAR(36) ID PK
@@ -856,3 +1501,30 @@ existentes.
         NUMBER(1) TUTOR_RESPONDEU
         NUMBER(1) ALERTA_ENVIADO_CLINICA
     }
+
+---
+
+## Regras de negócio
+
+O catálogo completo — **RN-001 a RN-107**, com a descrição de cada regra e a classe que a
+implementa — vive em um documento separado:
+
+### 📘 **[REGRAS-DE-NEGOCIO.md](REGRAS-DE-NEGOCIO.md)**
+
+A separação é deliberada. Este README responde *"o que a API faz e como operá-la"*, e é o
+documento de quem chega para integrar ou para colocar o sistema no ar. O catálogo de regras
+responde *"por que ela se comporta como se comporta"*, e é o documento de quem chega para
+alterar o comportamento. Misturar os dois produziria um arquivo que ninguém lê inteiro e no
+qual ninguém encontra o que veio buscar.
+
+O código que aparece no campo `codigo` de toda resposta de erro é uma chave daquele
+catálogo — e é também a tag da métrica `vetly_regras_violadas_total`. Da resposta HTTP à
+regra, e da regra ao arquivo que a implementa, sem intermediários.
+
+---
+
+## Licença e contexto
+
+Projeto acadêmico desenvolvido para a disciplina **Advanced Business Development with .NET**.
+O documento de produto (`vetly-produto.md`) e o documento técnico (`vetly-tech.md`) são as
+fontes das regras referenciadas como `RN-xxx` ao longo desta documentação.

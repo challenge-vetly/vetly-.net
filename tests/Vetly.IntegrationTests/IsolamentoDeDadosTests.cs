@@ -13,7 +13,8 @@ namespace Vetly.IntegrationTests;
 /// pagamentos de todo mundo. Estes testes sao a prova de que o escopo por linha
 /// fecha isso — e a rede de seguranca contra regressao.
 /// </summary>
-public class IsolamentoDeDadosTests : IClassFixture<VetlyWebApplicationFactory>
+[Collection(ColecaoDaApi.Nome)]
+public class IsolamentoDeDadosTests
 {
     private readonly HttpClient _client;
 

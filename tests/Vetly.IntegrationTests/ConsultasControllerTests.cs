@@ -3,8 +3,6 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Security.Claims;
 using System.Text;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Tokens;
@@ -19,7 +17,8 @@ namespace Vetly.IntegrationTests;
 /// Testes de integração dos endpoints da API Vetly via WebApplicationFactory.
 /// Banco de dados Oracle é substituído por InMemory para isolar o ambiente de CI.
 /// </summary>
-public class ConsultasControllerTests : IClassFixture<VetlyWebApplicationFactory>
+[Collection(ColecaoDaApi.Nome)]
+public class ConsultasControllerTests
 {
     private readonly HttpClient _client;
     private readonly VetlyWebApplicationFactory _factory;
@@ -174,40 +173,5 @@ public class ConsultasControllerTests : IClassFixture<VetlyWebApplicationFactory
             expires: DateTime.UtcNow.AddHours(1),
             signingCredentials: credentials);
         return new JwtSecurityTokenHandler().WriteToken(token);
-    }
-}
-
-/// <summary>
-/// Factory customizada que substitui o Oracle pelo banco InMemory,
-/// permitindo rodar os testes de integração sem infraestrutura externa.
-/// </summary>
-public class VetlyWebApplicationFactory : WebApplicationFactory<Program>
-{
-    // Nome fixo por instância de factory — compartilhado entre testes e seeding
-    public static readonly string DatabaseName = "VetlyIntegrationTest_" + Guid.NewGuid();
-
-    // ServiceProvider isolado com apenas o provider InMemory — evita conflito com Oracle no DI
-    private static readonly IServiceProvider InMemoryServiceProvider =
-        new ServiceCollection()
-            .AddEntityFrameworkInMemoryDatabase()
-            .BuildServiceProvider();
-
-    protected override void ConfigureWebHost(IWebHostBuilder builder)
-    {
-        builder.ConfigureServices(services =>
-        {
-            // Remove o DbContextOptions<VetlyDbContext> configurado com Oracle
-            var descriptor = services.SingleOrDefault(
-                d => d.ServiceType == typeof(DbContextOptions<VetlyDbContext>));
-            if (descriptor != null)
-                services.Remove(descriptor);
-
-            // Substitui por InMemory usando service provider isolado
-            // UseInternalServiceProvider evita que o EF Core consulte os serviços Oracle do DI
-            services.AddDbContext<VetlyDbContext>(options =>
-                options
-                    .UseInternalServiceProvider(InMemoryServiceProvider)
-                    .UseInMemoryDatabase(DatabaseName));
-        });
     }
 }

@@ -1,6 +1,7 @@
 using System.Net;
 using Microsoft.AspNetCore.Mvc;
 using Vetly.Application.Exceptions;
+using Vetly.Application.Observability;
 
 namespace Vetly.API.Middlewares;
 
@@ -22,7 +23,13 @@ public class ExceptionHandlingMiddleware
 
     public async Task InvokeAsync(HttpContext context)
     {
-        // Cada request recebe um correlationId para rastreabilidade nos logs
+        // O CorrelationIdMiddleware ja resolveu o identificador e o gravou aqui; ler
+        // dali (em vez de gerar outro) e o que faz o corpo do erro apontar para o mesmo
+        // trace que o log e o backend de tracing conhecem.
+        //
+        // Ele nao aparece mais nos templates de log abaixo de proposito: o enriquecedor
+        // do Serilog carimba CorrelationId e TraceId em TODA linha, e repetir a
+        // propriedade no template so duplicaria o campo no JSON.
         var correlationId = context.TraceIdentifier;
 
         try
@@ -31,12 +38,14 @@ public class ExceptionHandlingMiddleware
         }
         catch (NotFoundException ex)
         {
-            _logger.LogWarning("CorrelationId={CorrelationId} | NotFound: {Message}", correlationId, ex.Message);
+            _logger.LogWarning("NotFound: {Message}", ex.Message);
+            Instrumentar("NAO-ENCONTRADO", ex);
             await EscreverRespostaAsync(context, HttpStatusCode.NotFound, ex.Message, correlationId);
         }
         catch (Application.Exceptions.ValidationException ex)
         {
-            _logger.LogWarning("CorrelationId={CorrelationId} | ValidationError: {Errors}", correlationId, ex.Erros);
+            _logger.LogWarning("ValidationError: {Errors}", ex.Erros);
+            Instrumentar("VALIDACAO", ex);
             var details = new ValidationProblemDetails(ex.Erros)
             {
                 Status = (int)HttpStatusCode.BadRequest,
@@ -50,21 +59,22 @@ public class ExceptionHandlingMiddleware
         }
         catch (AcessoNegadoException ex)
         {
-            _logger.LogWarning("CorrelationId={CorrelationId} | AcessoNegado [{Codigo}]: {Message}",
-                correlationId, ex.Codigo, ex.Message);
+            _logger.LogWarning("AcessoNegado [{Codigo}]: {Message}", ex.Codigo, ex.Message);
+            Instrumentar(ex.Codigo, ex);
             await EscreverRespostaAsync(context, HttpStatusCode.Forbidden,
                 ex.Message, correlationId, ex.Codigo);
         }
         catch (ConflitoDeEstadoException ex)
         {
-            _logger.LogWarning("CorrelationId={CorrelationId} | Conflito [{Codigo}]: {Message}",
-                correlationId, ex.Codigo, ex.Message);
+            _logger.LogWarning("Conflito [{Codigo}]: {Message}", ex.Codigo, ex.Message);
+            Instrumentar(ex.Codigo, ex);
             await EscreverRespostaAsync(context, HttpStatusCode.Conflict,
                 ex.Message, correlationId, ex.Codigo);
         }
         catch (BusinessRuleException ex)
         {
-            _logger.LogWarning("CorrelationId={CorrelationId} | BusinessRule [{Codigo}]: {Message}", correlationId, ex.Codigo, ex.Message);
+            _logger.LogWarning("BusinessRule [{Codigo}]: {Message}", ex.Codigo, ex.Message);
+            Instrumentar(ex.Codigo, ex);
             await EscreverRespostaAsync(context, HttpStatusCode.UnprocessableEntity,
                 ex.Message, correlationId, ex.Codigo);
         }
@@ -73,23 +83,55 @@ public class ExceptionHandlingMiddleware
             // 503 e nao 422: nao ha regra violada nem nada que o cliente possa
             // corrigir no payload. A resposta certa e "tente de novo" (§2.4).
             _logger.LogWarning(
-                "CorrelationId={CorrelationId} | DependenciaIndisponivel [{Dependencia}]: {Message}",
-                correlationId, ex.Dependencia, ex.Message);
+                "DependenciaIndisponivel [{Dependencia}]: {Message}", ex.Dependencia, ex.Message);
 
+            // A RN afetada e opcional nesta excecao; sem ela, a dependencia que caiu e
+            // a informacao util — "DEPENDENCIA-Ollama" agrupa por quem esta fora.
+            Instrumentar(ex.Codigo ?? $"DEPENDENCIA-{ex.Dependencia}", ex);
             await EscreverRespostaAsync(context, HttpStatusCode.ServiceUnavailable,
                 ex.Message, correlationId, ex.Codigo);
         }
         catch (InvalidOperationException ex)
         {
-            _logger.LogWarning("CorrelationId={CorrelationId} | InvalidOperation: {Message}", correlationId, ex.Message);
+            _logger.LogWarning("InvalidOperation: {Message}", ex.Message);
+            Instrumentar("OPERACAO-INVALIDA", ex);
             await EscreverRespostaAsync(context, HttpStatusCode.UnprocessableEntity, ex.Message, correlationId);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "CorrelationId={CorrelationId} | UnhandledException: {Message}", correlationId, ex.Message);
+            _logger.LogError(ex, "UnhandledException: {Message}", ex.Message);
+            Instrumentar("ERRO-INTERNO", ex);
             await EscreverRespostaAsync(context, HttpStatusCode.InternalServerError,
                 "Ocorreu um erro interno. Tente novamente mais tarde.", correlationId);
         }
+    }
+
+    /// <summary>
+    /// Contabiliza a regra violada e marca o span da requisicao como falho.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Este e o unico ponto do sistema por onde <b>toda</b> excecao de negocio passa —
+    /// o que faz dele o lugar certo para instrumentar. Contar a violacao dentro de cada
+    /// servico significaria repetir a chamada em dezenas de arquivos e esquecer em
+    /// alguns; aqui, uma RN nova ja nasce medida.
+    /// </para>
+    /// <para>
+    /// Marcar o span importa porque, do ponto de vista do transporte, um 422 e uma
+    /// resposta perfeitamente bem-sucedida: o trace sairia verde. Quem investiga
+    /// "por que o agendamento nao completou" precisa que o span diga que a operacao
+    /// terminou em RN-035, e nao que tudo correu bem.
+    /// </para>
+    /// </remarks>
+    /// <param name="codigo">Codigo da regra (RN-035, RN-060, ...) ou da falha tecnica.</param>
+    /// <param name="excecao">Excecao capturada.</param>
+    private static void Instrumentar(string codigo, Exception excecao)
+    {
+        // Tag de baixa cardinalidade por construcao: o conjunto de codigos e finito e
+        // conhecido, ao contrario da mensagem, que carrega ids e nomes.
+        VetlyTelemetry.RegrasVioladas.Add(1, new KeyValuePair<string, object?>("codigo", codigo));
+
+        VetlyTelemetry.RegistrarFalhaNoSpanAtual(excecao);
     }
 
     private static async Task EscreverRespostaAsync(

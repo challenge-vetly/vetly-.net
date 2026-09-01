@@ -1,6 +1,7 @@
 using Vetly.Application.DTOs.Notificacao;
 using Vetly.Application.Exceptions;
 using Vetly.Application.Interfaces;
+using Vetly.Application.Observability;
 using Vetly.Domain.Entities;
 using Vetly.Domain.Enums;
 
@@ -204,6 +205,14 @@ public class NotificacaoService : INotificacaoService
             notificacao.RegistrarEnvio(DateTime.UtcNow);
         else
             notificacao.RegistrarFalha("Nenhum dispositivo aceitou o push.");
+
+        // RN-092: a notificacao existe in-app mesmo quando o push nao chega, e essa
+        // diferenca precisa ser visivel. Uma taxa de entrega despencando quase sempre
+        // e credencial de provedor vencida — falha silenciosa que so aparece quando o
+        // Responsavel perde o lembrete da vacina.
+        VetlyTelemetry.NotificacoesDespachadas.Add(1,
+            new KeyValuePair<string, object?>("canal", "push"),
+            new KeyValuePair<string, object?>("resultado", entregue ? "entregue" : "falha"));
 
         _repo.Atualizar(notificacao);
         await _repo.SalvarAsync();

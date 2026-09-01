@@ -10,7 +10,8 @@ namespace Vetly.IntegrationTests;
 /// Portao de consentimento LGPD (RN-060 a RN-062): a base legal precede o
 /// tratamento de dados, e o consentimento e granular por finalidade e revogavel.
 /// </summary>
-public class ConsentimentoLgpdTests : IClassFixture<VetlyWebApplicationFactory>
+[Collection(ColecaoDaApi.Nome)]
+public class ConsentimentoLgpdTests
 {
     private readonly HttpClient _client;
 

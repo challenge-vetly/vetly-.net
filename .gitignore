@@ -33,6 +33,10 @@ publish/
 appsettings.*.local.json
 secrets.json
 
+# Logs estruturados (Serilog escreve em logs/vetly-YYYYMMDD.log)
+logs/
+*.log
+
 # OS
 .DS_Store
 Thumbs.db

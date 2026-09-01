@@ -20,7 +20,8 @@ namespace Vetly.IntegrationTests;
 /// desfechos que custam dinheiro ou horário: checkout duplo, cancelamento por
 /// terceiro, cancelamento com reembolso integral e pagamento recusado.
 /// </summary>
-public class JornadaCompletaTests : IClassFixture<VetlyWebApplicationFactory>
+[Collection(ColecaoDaApi.Nome)]
+public class JornadaCompletaTests
 {
     private readonly HttpClient _client;
 

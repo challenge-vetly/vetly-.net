@@ -12,7 +12,8 @@ namespace Vetly.IntegrationTests;
 /// O app repete envio por natureza: rede oscila, o usuario toca de novo, o cliente
 /// faz retry. Reservar horario e criar cobranca nao podem acontecer em dobro.
 /// </summary>
-public class IdempotenciaTests : IClassFixture<VetlyWebApplicationFactory>
+[Collection(ColecaoDaApi.Nome)]
+public class IdempotenciaTests
 {
     private readonly HttpClient _client;
 

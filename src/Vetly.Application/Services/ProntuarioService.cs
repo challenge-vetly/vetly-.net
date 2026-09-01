@@ -2,6 +2,7 @@ using System.Text.Json;
 using Vetly.Application.DTOs.Captura;
 using Vetly.Application.Exceptions;
 using Vetly.Application.Interfaces;
+using Vetly.Application.Observability;
 using Vetly.Domain.Entities;
 using Vetly.Domain.Enums;
 
@@ -90,6 +91,13 @@ public class ProntuarioService : IProntuarioService
         await _captura.SalvarAsync();
         await _consultaRepo.SalvarAsync();
         await _auditoria.SalvarAsync();
+
+        // A metrica central do MVP (§10): "proporcao de documentos gerados pela IA sem
+        // edicao manual relevante". Aprovado / (Aprovado + Corrigido + NaoAprovado) e
+        // exatamente essa proporcao — e ela so existe se as tres decisoes forem
+        // contadas no mesmo instrumento, com a decisao em tag.
+        VetlyTelemetry.DecisoesSobreRascunho.Add(1,
+            new KeyValuePair<string, object?>("decisao", dto.Decisao.ToString()));
 
         return new DecisaoRegistradaDto
         {

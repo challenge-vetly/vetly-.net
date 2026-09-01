@@ -21,6 +21,17 @@ using Vetly.API.Jobs;
 using Vetly.API.Security;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Vetly.API.Observability;
+using Serilog;
+
+// ── Logger de bootstrap ───────────────────────────────────────────────────────
+// Existe para cobrir a janela entre o inicio do processo e o Serilog definitivo, que
+// so nasce depois de o appsettings ser lido. Sem ele, um erro de configuracao (uma
+// connection string ausente, a Jwt:Key faltando) derruba a API com um stacktrace cru
+// no console — justamente o tipo de falha que se investiga pelo log.
+Log.Logger = new LoggerConfiguration()
+    .WriteTo.Console()
+    .CreateBootstrapLogger();
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -31,6 +42,16 @@ builder.Configuration
         $"appsettings.{builder.Environment.EnvironmentName}.local.json",
         optional: true,
         reloadOnChange: true);
+
+// ── Observabilidade (§ Monitoramento) ─────────────────────────────────────────
+// Registrada antes de tudo de proposito: falha na composicao do container e um erro
+// de startup, e sem log configurado ele sai como texto cru no console e some.
+//
+//   AddLogEstruturado   → Serilog como unico provedor de log, lendo appsettings
+//   AddTracingEMetricas → OpenTelemetry: traces (ASP.NET Core, EF Core, HttpClient e
+//                         spans de dominio) e metricas (plataforma, runtime e negocio)
+builder.AddLogEstruturado();
+builder.AddTracingEMetricas();
 
 // ── Controllers ───────────────────────────────────────────────────────────────
 builder.Services
@@ -357,7 +378,18 @@ builder.Services.AddHealthChecks()
 var app = builder.Build();
 
 // ── Middlewares ───────────────────────────────────────────────────────────────
-app.UseMiddleware<RequestLoggingMiddleware>();
+// A ordem aqui nao e estetica; cada posicao resolve um problema:
+//
+//   1. CorrelationId  — precisa ser o primeiro: e ele que define o TraceIdentifier que
+//                       todos os outros (inclusive o ProblemDetails de erro) vao usar.
+//   2. Log de request — por fora do tratador de excecao, para registrar o status FINAL
+//                       da resposta, e nao o caminho que estourou no meio.
+//   3. Metricas HTTP  — mesma razao: mede o tempo que o cliente esperou de verdade,
+//                       incluindo o custo de montar a resposta de erro.
+//   4. Excecoes       — o mais interno dos quatro: converte excecao em ProblemDetails.
+app.UseMiddleware<CorrelationIdMiddleware>();
+app.UseLogDeRequisicoes();
+app.UseMiddleware<MetricasHttpMiddleware>();
 app.UseMiddleware<ExceptionHandlingMiddleware>();
 
 // ── OpenAPI (Scalar) ──────────────────────────────────────────────────────────
@@ -401,4 +433,34 @@ app.MapHealthChecks("/health", new HealthCheckOptions
     ResponseWriter = escritorDeResposta
 });
 
-app.Run();
+// ── Endpoint de metricas (Prometheus) ────────────────────────────────────────
+// Formato de texto do Prometheus, o mesmo que Grafana, Datadog e qualquer coletor
+// compativel sabem raspar. Publica em uma unica resposta as tres familias:
+//
+//   • plataforma → http.server.request.duration, kestrel.active_connections, ...
+//   • runtime    → process.runtime.dotnet.gc.*, thread pool, excecoes
+//   • negocio    → vetly.checkouts.iniciados, vetly.regras.violadas, vetly.http.*
+//
+// A rota fica publica, como os health checks: em producao ela seria exposta apenas na
+// rede interna, no nivel do ingress — metrica de negocio agregada nao carrega dado
+// pessoal, mas revela volume de operacao, que e informacao comercial.
+app.MapPrometheusScrapingEndpoint("/metrics");
+
+// ── Execucao ─────────────────────────────────────────────────────────────────
+// O try/finally aqui nao e defensivo por moda: sem o CloseAndFlush, o sink de arquivo
+// pode perder o ultimo lote em buffer — que e exatamente o lote que contem o motivo
+// de a aplicacao ter caido.
+try
+{
+    Log.Information("Vetly API subindo no ambiente {Ambiente}.", app.Environment.EnvironmentName);
+    app.Run();
+}
+catch (Exception excecao)
+{
+    Log.Fatal(excecao, "A Vetly API encerrou de forma inesperada.");
+    throw;
+}
+finally
+{
+    Log.CloseAndFlush();
+}

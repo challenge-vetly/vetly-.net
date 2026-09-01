@@ -1,7 +1,9 @@
+using System.Diagnostics;
 using Vetly.Application.DTOs.Comum;
 using Vetly.Application.DTOs.Pagamento;
 using Vetly.Application.Exceptions;
 using Vetly.Application.Interfaces;
+using Vetly.Application.Observability;
 using Vetly.Application.Strategies.Split;
 using Vetly.Domain.Entities;
 using Vetly.Domain.Enums;
@@ -297,6 +299,11 @@ public class PagamentoService : IPagamentoService
     /// <inheritdoc/>
     public async Task<ResultadoDoWebhookDto> ProcessarWebhookAsync(string payloadBruto, string? tokenDeServico)
     {
+        // Span de dominio para o caminho mais critico do sistema: e o webhook, e nao a
+        // resposta sincrona, que confirma a consulta (RN-006). Quando um agendamento
+        // "some", a pergunta e sempre se o webhook chegou — e este span responde.
+        using var atividade = VetlyTelemetry.Iniciar("pagamento.webhook", ActivityKind.Consumer);
+
         var evento = await _adaptador.ReceberWebhookDeStatusAsync(payloadBruto, tokenDeServico);
 
         if (!evento.Assinado || string.IsNullOrWhiteSpace(evento.ReferenciaExterna))
@@ -308,7 +315,18 @@ public class PagamentoService : IPagamentoService
         // Webhook e entregue mais de uma vez por natureza: reprocessar um pagamento que
         // ja teve desfecho nao pode reabrir consulta nem mexer em horario.
         if (pagamento.TemDesfecho())
+        {
+            // Reentrega e o comportamento normal de um webhook, nao anomalia. Contada
+            // a parte para nao contaminar a taxa de recusa — que e a serie que de fato
+            // dispara alerta.
+            VetlyTelemetry.PagamentosProcessados.Add(1,
+                new KeyValuePair<string, object?>("status", "inalterado"));
+
             return Inalterado(pagamento);
+        }
+
+        atividade?.SetTag("vetly.pagamento_id", pagamento.Id);
+        atividade?.SetTag("vetly.status", evento.Status.ToString());
 
         return evento.Status switch
         {
@@ -338,6 +356,17 @@ public class PagamentoService : IPagamentoService
 
         var consulta = await AtualizarConsultaAsync(pagamento, confirmada: true);
 
+        VetlyTelemetry.PagamentosProcessados.Add(1,
+            new KeyValuePair<string, object?>("status", "confirmado"));
+
+        // Fecha o funil aberto em vetly.checkouts.iniciados: a razao entre os dois e a
+        // taxa de conversao do agendamento, uma das metricas que o MVP precisa provar.
+        if (consulta is not null)
+            VetlyTelemetry.ConsultasConfirmadas.Add(1);
+
+        // Valor bruto da transacao — base do split (RN-070) e do take rate efetivo.
+        VetlyTelemetry.ValorTransacionado.Record((double)pagamento.Valor);
+
         return new ResultadoDoWebhookDto
         {
             PagamentoId = pagamento.Id,
@@ -365,6 +394,9 @@ public class PagamentoService : IPagamentoService
             await _fidelidade.ReverterUsoDoCupomAsync(cupomId);
 
         var consulta = await AtualizarConsultaAsync(pagamento, confirmada: false);
+
+        VetlyTelemetry.PagamentosProcessados.Add(1,
+            new KeyValuePair<string, object?>("status", "recusado"));
 
         return new ResultadoDoWebhookDto
         {

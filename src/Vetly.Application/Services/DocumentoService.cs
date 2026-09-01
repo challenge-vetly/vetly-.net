@@ -6,6 +6,7 @@ using Vetly.Application.DTOs.Documento;
 using Vetly.Application.Exceptions;
 using Vetly.Application.Factories;
 using Vetly.Application.Interfaces;
+using Vetly.Application.Observability;
 using Vetly.Domain.Entities;
 using Vetly.Domain.Enums;
 
@@ -169,6 +170,13 @@ public class DocumentoService : IDocumentoService
         var factory = _factories.FirstOrDefault(f => f.TipoSuportado == tipo)
             ?? throw new InvalidOperationException($"Nenhuma factory registrada para o tipo '{tipo}'.");
 
+        // Span de dominio: gerar documento encadeia leitura da trilha de auditoria da
+        // IA, montagem do conteudo e renderizacao de PDF. Quando a rota fica lenta, e
+        // este span que diz qual das tres etapas custou.
+        using var atividade = VetlyTelemetry.Iniciar("documento.gerar");
+        atividade?.SetTag("vetly.documento.tipo", tipo.ToString());
+        atividade?.SetTag("vetly.consulta_id", consultaId);
+
         var contexto = await MontarContextoAsync(consulta, subtipo);
 
         var documento = factory.Criar(contexto);
@@ -180,6 +188,12 @@ public class DocumentoService : IDocumentoService
 
         await _repo.AdicionarAsync(documento);
         await _repo.SalvarAsync();
+
+        // Producao documental por tipo (RN-083). E a metrica que mostra se a promessa
+        // do produto — a consulta sai com prontuario, receita e NF prontos — esta de
+        // fato acontecendo, ou se so o prontuario esta sendo emitido.
+        VetlyTelemetry.DocumentosEmitidos.Add(1,
+            new KeyValuePair<string, object?>("tipo", tipo.ToString()));
 
         return MapearParaDto(documento);
     }

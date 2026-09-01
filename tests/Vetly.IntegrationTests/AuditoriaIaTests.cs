@@ -13,7 +13,8 @@ namespace Vetly.IntegrationTests;
 ///
 /// Fica neste projeto porque o repositorio append-only vive na Infrastructure.
 /// </summary>
-public class AuditoriaIaTests : IClassFixture<VetlyWebApplicationFactory>
+[Collection(ColecaoDaApi.Nome)]
+public class AuditoriaIaTests
 {
     private readonly HttpClient _client;
 

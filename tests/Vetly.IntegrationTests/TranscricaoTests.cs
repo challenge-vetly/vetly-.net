@@ -18,7 +18,8 @@ namespace Vetly.IntegrationTests;
 ///
 /// Fica neste projeto porque handlers e adaptadores vivem na Infrastructure.
 /// </summary>
-public class TranscricaoTests : IClassFixture<VetlyWebApplicationFactory>
+[Collection(ColecaoDaApi.Nome)]
+public class TranscricaoTests
 {
     private readonly HttpClient _client;
 
