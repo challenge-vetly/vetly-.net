@@ -217,4 +217,56 @@ public class IsolamentoDeDadosTests : IClassFixture<VetlyWebApplicationFactory>
         foreach (var pagamento in pagina.GetProperty("itens").EnumerateArray())
             Assert.Equal(ana.TutorId, pagamento.GetProperty("tutorId").GetGuid());
     }
+
+    // ── Empresas: onboarding e ato da administracao (RN-105/RN-106) ──────────
+
+    private async Task<HttpResponseMessage> PostComTokenAsync(string rota, string json, string token)
+    {
+        var requisicao = new HttpRequestMessage(HttpMethod.Post, rota) { Content = Corpo(json) };
+        requisicao.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        return await _client.SendAsync(requisicao);
+    }
+
+    [Fact]
+    public async Task ResponsavelCriandoEmpresa_Retorna403()
+    {
+        var ana = await CriarResponsavelComPetAsync("Ana");
+
+        var resposta = await PostComTokenAsync("/api/empresas",
+            """{"nome":"Clinica da Ana","tipo":"Clinica","responsavelId":"00000000-0000-0000-0000-000000000001"}""",
+            ana.Token);
+
+        // Cadastrar clinica e ato de onboarding da administracao: uma empresa criada
+        // por qualquer usuario autenticado entraria no matching sem nenhuma validacao
+        Assert.Equal(HttpStatusCode.Forbidden, resposta.StatusCode);
+    }
+
+    [Fact]
+    public async Task ResponsavelVinculandoVeterinarioAEmpresa_Retorna403()
+    {
+        var ana = await CriarResponsavelComPetAsync("Ana");
+
+        var empresaId = Guid.NewGuid();
+        var vetId = Guid.NewGuid();
+
+        var resposta = await PostComTokenAsync(
+            $"/api/empresas/{empresaId}/veterinarios/{vetId}", "{}", ana.Token);
+
+        // O 403 tem de vir da politica, antes de a rota descobrir que os ids nem
+        // existem: autorizacao primeiro, existencia depois
+        Assert.Equal(HttpStatusCode.Forbidden, resposta.StatusCode);
+    }
+
+    [Fact]
+    public async Task ResponsavelDesativandoEmpresa_Retorna403()
+    {
+        var ana = await CriarResponsavelComPetAsync("Ana");
+
+        var requisicao = new HttpRequestMessage(HttpMethod.Delete, $"/api/empresas/{Guid.NewGuid()}");
+        requisicao.Headers.Authorization = new AuthenticationHeaderValue("Bearer", ana.Token);
+
+        var resposta = await _client.SendAsync(requisicao);
+
+        Assert.Equal(HttpStatusCode.Forbidden, resposta.StatusCode);
+    }
 }

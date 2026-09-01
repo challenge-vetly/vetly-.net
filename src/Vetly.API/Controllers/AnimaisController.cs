@@ -87,6 +87,21 @@ public class AnimaisController : ControllerBase
     public async Task<IActionResult> ObterAcessos(Guid id) =>
         Ok(await _colmeia.ObterLogDoAnimalAsync(id));
 
+    /// <summary>Registra o peso aferido no atendimento (RN-081).</summary>
+    /// <remarks>
+    /// E a unica escrita que o veterinario faz no cadastro do animal: ele afere o peso
+    /// na consulta, e sem peso a IA nao sugere dose. O resto do cadastro e do
+    /// Responsavel — um vet que atendeu uma vez nao renomeia o pet nem o desativa.
+    /// </remarks>
+    [HttpPut("{id:guid}/peso")]
+    [ProducesResponseType(typeof(AnimalDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> RegistrarPeso(Guid id, [FromBody] RegistrarPesoDto dto) =>
+        Ok(await _service.RegistrarPesoAsync(id, dto.PesoKg));
+
     /// <summary>Retorna o historico longitudinal de prontuarios de um animal.</summary>
     [HttpGet("{id:guid}/prontuarios")]
     [ProducesResponseType(typeof(IEnumerable<object>), StatusCodes.Status200OK)]

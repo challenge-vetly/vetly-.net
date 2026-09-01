@@ -114,4 +114,115 @@ public class AnimalServiceTests
         Assert.Empty(animal.CarteiraVacinacao);
         Assert.Empty(animal.Alergias);
     }
+
+    // ── RN-105: ler o prontuario nao e reescrever o cadastro ────────────────
+
+    private void ComoVeterinario(Guid veterinarioId)
+    {
+        _usuarioMock.SetupGet(u => u.EhAdmin).Returns(false);
+        _usuarioMock.SetupGet(u => u.EhVeterinario).Returns(true);
+        _usuarioMock.SetupGet(u => u.VeterinarioId).Returns(veterinarioId);
+    }
+
+    private static Animal CriarAnimalDe(Guid tutorId) =>
+        new("Thor", "Canino", "Golden Retriever",
+            new DateTime(2023, 4, 10, 0, 0, 0, DateTimeKind.Utc), tutorId);
+
+    [Fact]
+    public async Task AtualizarAsync_VeterinarioQueAtendeOAnimal_LancaAcessoNegadoRN105()
+    {
+        var vetId = Guid.NewGuid();
+        var animal = CriarAnimalDe(Guid.NewGuid());
+
+        _repoMock.Setup(r => r.ObterPorIdAsync(animal.Id)).ReturnsAsync(animal);
+        _repoMock.Setup(r => r.VeterinarioAtendeAnimalAsync(vetId, animal.Id)).ReturnsAsync(true);
+        ComoVeterinario(vetId);
+
+        var dto = CriarDto();
+        dto.Nome = "Rex";
+
+        var ex = await Assert.ThrowsAsync<AcessoNegadoException>(
+            () => CriarServico().AtualizarAsync(animal.Id, dto));
+
+        // Atender uma vez nao da direito de renomear o pet nem trocar a especie:
+        // leitura clinica e escrita cadastral sao escopos distintos
+        Assert.Equal("RN-105", ex.Codigo);
+        Assert.Equal("Thor", animal.Nome);
+    }
+
+    [Fact]
+    public async Task DesativarAsync_VeterinarioQueAtendeOAnimal_LancaAcessoNegadoRN105()
+    {
+        var vetId = Guid.NewGuid();
+        var animal = CriarAnimalDe(Guid.NewGuid());
+
+        _repoMock.Setup(r => r.ObterPorIdAsync(animal.Id)).ReturnsAsync(animal);
+        _repoMock.Setup(r => r.VeterinarioAtendeAnimalAsync(vetId, animal.Id)).ReturnsAsync(true);
+        ComoVeterinario(vetId);
+
+        var ex = await Assert.ThrowsAsync<AcessoNegadoException>(
+            () => CriarServico().DesativarAsync(animal.Id));
+
+        Assert.Equal("RN-105", ex.Codigo);
+        Assert.True(animal.Ativo);
+    }
+
+    [Fact]
+    public async Task AtualizarAsync_TutorDono_Aplica()
+    {
+        var tutorId = Guid.NewGuid();
+        var animal = CriarAnimalDe(tutorId);
+
+        _repoMock.Setup(r => r.ObterPorIdAsync(animal.Id)).ReturnsAsync(animal);
+        _repoMock.Setup(r => r.Atualizar(It.IsAny<Animal>()));
+        _repoMock.Setup(r => r.SalvarAsync()).ReturnsAsync(1);
+        _usuarioMock.SetupGet(u => u.EhAdmin).Returns(false);
+        _usuarioMock.SetupGet(u => u.EhTutor).Returns(true);
+        _usuarioMock.SetupGet(u => u.TutorId).Returns(tutorId);
+
+        var dto = CriarDto();
+        dto.Nome = "Thor Junior";
+
+        await CriarServico().AtualizarAsync(animal.Id, dto);
+
+        Assert.Equal("Thor Junior", animal.Nome);
+    }
+
+    // ── RN-081: o peso e a excecao, e tem caminho proprio ───────────────────
+
+    [Fact]
+    public async Task RegistrarPesoAsync_VeterinarioQueAtendeOAnimal_Aplica()
+    {
+        var vetId = Guid.NewGuid();
+        var animal = CriarAnimalDe(Guid.NewGuid());
+
+        _repoMock.Setup(r => r.ObterPorIdAsync(animal.Id)).ReturnsAsync(animal);
+        _repoMock.Setup(r => r.VeterinarioAtendeAnimalAsync(vetId, animal.Id)).ReturnsAsync(true);
+        _repoMock.Setup(r => r.Atualizar(It.IsAny<Animal>()));
+        _repoMock.Setup(r => r.SalvarAsync()).ReturnsAsync(1);
+        ComoVeterinario(vetId);
+
+        var resultado = await CriarServico().RegistrarPesoAsync(animal.Id, 33.2m);
+
+        // Sem peso a IA nao sugere dose: o vet o afere na consulta (RN-081)
+        Assert.Equal(33.2m, resultado.PesoKg);
+    }
+
+    [Fact]
+    public async Task RegistrarPesoAsync_VeterinarioDeFora_LancaAcessoNegadoRN105()
+    {
+        var vetId = Guid.NewGuid();
+        var animal = CriarAnimalDe(Guid.NewGuid());
+
+        _repoMock.Setup(r => r.ObterPorIdAsync(animal.Id)).ReturnsAsync(animal);
+        _repoMock.Setup(r => r.VeterinarioAtendeAnimalAsync(vetId, animal.Id)).ReturnsAsync(false);
+        _colmeiaMock.Setup(c => c.PodeAcessarAsync(vetId, animal.Id, It.IsAny<EscopoAcessoColmeia>()))
+            .ReturnsAsync(false);
+        ComoVeterinario(vetId);
+
+        var ex = await Assert.ThrowsAsync<AcessoNegadoException>(
+            () => CriarServico().RegistrarPesoAsync(animal.Id, 33.2m));
+
+        Assert.Equal("RN-105", ex.Codigo);
+    }
 }

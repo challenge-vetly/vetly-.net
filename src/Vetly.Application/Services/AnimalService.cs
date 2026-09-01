@@ -197,6 +197,48 @@ public class AnimalService : IAnimalService
         return EstadoDoAvatar.Saudavel;
     }
 
+    /// <summary>
+    /// Quem <b>altera</b> o cadastro de um animal e o dono, ou o Admin (RN-105).
+    ///
+    /// Distinta de <see cref="GarantirAcessoAoAnimalAsync"/>, que abre a LEITURA ao
+    /// veterinario e a colmeia: ler o prontuario de um animal que se atende e parte do
+    /// trabalho clinico; reescrever o cadastro dele nao e. Um veterinario que atendeu
+    /// uma vez nao pode renomear o pet, trocar a especie ou desativa-lo.
+    ///
+    /// O peso e a excecao prevista, e tem caminho proprio: <c>RegistrarPesoAsync</c>,
+    /// que o profissional usa durante o atendimento (RN-081).
+    /// </summary>
+    private void GarantirQueEODono(Animal animal)
+    {
+        if (_usuario.EhAdmin)
+            return;
+
+        if (_usuario.EhTutor && _usuario.TutorId == animal.TutorId)
+            return;
+
+        throw new AcessoNegadoException("RN-105",
+            "Somente o Responsavel pelo animal altera o cadastro dele.");
+    }
+
+    /// <inheritdoc/>
+    public async Task<AnimalDto> RegistrarPesoAsync(Guid animalId, decimal pesoKg)
+    {
+        var animal = await _repo.ObterPorIdAsync(animalId)
+            ?? throw new NotFoundException("Animal", animalId);
+
+        // O peso e o unico campo que o veterinario escreve sem ser dono: ele o afere
+        // na consulta, e sem ele a IA nao sugere dose (RN-081). Continua valendo o
+        // escopo de atendimento — vet que nao atende o animal nao pesa o animal.
+        await GarantirAcessoAoAnimalAsync(animal);
+
+        animal.RegistrarPeso(pesoKg);
+
+        _repo.Atualizar(animal);
+        await _repo.SalvarAsync();
+
+        return MapearParaDto(animal);
+    }
+
     public async Task<IEnumerable<ProntuarioDto>> ObterHistoricoAsync(Guid animalId)
     {
         var animal = await _repo.ObterPorIdAsync(animalId)
@@ -249,7 +291,8 @@ public class AnimalService : IAnimalService
     {
         var animal = await _repo.ObterPorIdAsync(id)
             ?? throw new NotFoundException("Animal", id);
-        await GarantirAcessoAoAnimalAsync(animal);
+
+        GarantirQueEODono(animal);
 
         animal.AtualizarDados(dto.Nome, dto.Especie, dto.Raca, dto.DataNascimento);
         AplicarPerfilClinico(animal, dto);
@@ -262,7 +305,8 @@ public class AnimalService : IAnimalService
     {
         var animal = await _repo.ObterPorIdAsync(id)
             ?? throw new NotFoundException("Animal", id);
-        await GarantirAcessoAoAnimalAsync(animal);
+
+        GarantirQueEODono(animal);
 
         animal.Desativar();
         _repo.Atualizar(animal);

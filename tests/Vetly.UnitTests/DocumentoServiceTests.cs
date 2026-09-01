@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging.Abstractions;
 using System.Reflection;
 using System.Text.Json;
 using Moq;
@@ -32,6 +33,7 @@ public class DocumentoServiceTests
     private readonly Mock<IGeradorDePdf> _pdfMock = new();
     private readonly Mock<IAssinaturaAdapter> _assinaturaMock = new();
     private readonly Mock<IColmeiaService> _colmeiaMock = new();
+    private readonly Mock<INotificacaoService> _notificacoesMock = new();
     private readonly Mock<IUsuarioAtual> _usuarioMock = new();
 
     public DocumentoServiceTests()
@@ -51,9 +53,9 @@ public class DocumentoServiceTests
     private DocumentoService CriarServico(params IDocumentoFactory[] factories) =>
         new(_docRepoMock.Object, _consultaRepoMock.Object, _vetRepoMock.Object,
             _animalRepoMock.Object, _tutorRepoMock.Object, _pagamentoRepoMock.Object,
-            _auditoriaMock.Object, _midiaRepoMock.Object, _storageMock.Object,
+            _auditoriaMock.Object, _midiaRepoMock.Object, _notificacoesMock.Object, _storageMock.Object,
             _pdfMock.Object, _assinaturaMock.Object, _colmeiaMock.Object,
-            _usuarioMock.Object, factories);
+            NullLogger<DocumentoService>.Instance, _usuarioMock.Object, factories);
 
     private static Consulta CriarConsultaValidada()
     {
@@ -323,9 +325,12 @@ public class DocumentoServiceTests
 
     // ── Helper para controlar DataGeracao nos testes de correção ─────────────
 
-    private static Documento CriarDocumentoComDataGeracao(DateTime dataGeracao)
+    private Documento CriarDocumentoComDataGeracao(DateTime dataGeracao)
     {
-        var doc = new Documento(TipoDocumento.Prontuario, "12345-SP", Guid.NewGuid());
+        var consulta = CriarConsultaValidada();
+        _consultaRepoMock.Setup(r => r.ObterPorIdAsync(consulta.Id)).ReturnsAsync(consulta);
+
+        var doc = new Documento(TipoDocumento.Prontuario, "12345-SP", consulta.Id);
         typeof(Documento)
             .GetField("<DataGeracao>k__BackingField", BindingFlags.NonPublic | BindingFlags.Instance)!
             .SetValue(doc, dataGeracao);
@@ -403,7 +408,12 @@ public class DocumentoServiceTests
 
     private Documento DocumentoPublicavel(TipoDocumento tipo = TipoDocumento.Prontuario)
     {
-        var doc = new Documento(tipo, "12345-SP", consultaId: Guid.NewGuid());
+        // A consulta precisa existir: publicar e corrigir passam pela guarda de escopo,
+        // que resolve quem conduziu o atendimento (RN-105).
+        var consulta = CriarConsultaValidada();
+        _consultaRepoMock.Setup(r => r.ObterPorIdAsync(consulta.Id)).ReturnsAsync(consulta);
+
+        var doc = new Documento(tipo, "12345-SP", consultaId: consulta.Id);
         doc.RegistrarConteudo("PRONTUARIO VETERINARIO");
 
         _docRepoMock.Setup(r => r.ObterPorIdAsync(doc.Id)).ReturnsAsync(doc);
@@ -424,7 +434,12 @@ public class DocumentoServiceTests
     [Fact]
     public async Task Publicar_DocumentoSemConteudo_NaoVaiAoBoard()
     {
-        var doc = new Documento(TipoDocumento.Prontuario, "12345-SP", consultaId: Guid.NewGuid());
+        // A consulta existe e e do veterinario do token: o que barra a publicacao aqui
+        // e a falta de conteudo (RN-090), e nao a guarda de escopo.
+        var consulta = CriarConsultaValidada();
+        _consultaRepoMock.Setup(r => r.ObterPorIdAsync(consulta.Id)).ReturnsAsync(consulta);
+
+        var doc = new Documento(TipoDocumento.Prontuario, "12345-SP", consultaId: consulta.Id);
         _docRepoMock.Setup(r => r.ObterPorIdAsync(doc.Id)).ReturnsAsync(doc);
 
         var ex = await Assert.ThrowsAsync<BusinessRuleException>(() => CriarServico().PublicarAsync(doc.Id));
@@ -532,5 +547,198 @@ public class DocumentoServiceTests
 
         await Assert.ThrowsAsync<AcessoNegadoException>(
             () => CriarServico().ObterDoBoardDoPetAsync(animal.Id));
+    }
+
+    // ── RN-090/RN-105: quem le e quem emite documento clinico ───────────────
+
+    private void ComoVeterinario(Guid veterinarioId)
+    {
+        _usuarioMock.SetupGet(u => u.EhAdmin).Returns(false);
+        _usuarioMock.SetupGet(u => u.EhVeterinario).Returns(true);
+        _usuarioMock.SetupGet(u => u.VeterinarioId).Returns(veterinarioId);
+    }
+
+    private void ComoTutor(Guid tutorId)
+    {
+        _usuarioMock.SetupGet(u => u.EhAdmin).Returns(false);
+        _usuarioMock.SetupGet(u => u.EhTutor).Returns(true);
+        _usuarioMock.SetupGet(u => u.TutorId).Returns(tutorId);
+    }
+
+    [Fact]
+    public async Task ObterPorConsultaAsync_TutorDono_Le()
+    {
+        var consulta = CriarConsultaValidada();
+        _consultaRepoMock.Setup(r => r.ObterPorIdAsync(consulta.Id)).ReturnsAsync(consulta);
+        _docRepoMock.Setup(r => r.ObterPorConsultaAsync(consulta.Id)).ReturnsAsync([]);
+        ComoTutor(consulta.TutorId);
+
+        var resultado = await CriarServico().ObterPorConsultaAsync(consulta.Id);
+
+        Assert.Empty(resultado);
+    }
+
+    [Fact]
+    public async Task ObterPorConsultaAsync_TutorDeOutraConsulta_LancaAcessoNegadoRN105()
+    {
+        var consulta = CriarConsultaValidada();
+        _consultaRepoMock.Setup(r => r.ObterPorIdAsync(consulta.Id)).ReturnsAsync(consulta);
+        ComoTutor(Guid.NewGuid());
+
+        var ex = await Assert.ThrowsAsync<AcessoNegadoException>(
+            () => CriarServico().ObterPorConsultaAsync(consulta.Id));
+
+        Assert.Equal("RN-105", ex.Codigo);
+        _docRepoMock.Verify(r => r.ObterPorConsultaAsync(It.IsAny<Guid>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ObterPorConsultaAsync_VeterinarioDeForaSemColmeia_LancaAcessoNegadoERegistraATentativa()
+    {
+        var vetId = Guid.NewGuid();
+        var consulta = CriarConsultaValidada();
+
+        _consultaRepoMock.Setup(r => r.ObterPorIdAsync(consulta.Id)).ReturnsAsync(consulta);
+        _colmeiaMock.Setup(c => c.PodeAcessarAsync(vetId, consulta.AnimalId, EscopoAcessoColmeia.Documentos))
+            .ReturnsAsync(false);
+        ComoVeterinario(vetId);
+
+        var ex = await Assert.ThrowsAsync<AcessoNegadoException>(
+            () => CriarServico().ObterPorConsultaAsync(consulta.Id));
+
+        Assert.Equal("RN-105", ex.Codigo);
+
+        // RN-067: a tentativa negada tambem vira log — e o registro que sustenta a
+        // colmeia juridicamente, e ele ficaria pela metade se so o acesso concedido
+        // fosse gravado
+        _colmeiaMock.Verify(c => c.RegistrarAcessoAsync(
+            consulta.AnimalId, EscopoAcessoColmeia.Documentos, false, It.IsAny<string>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task ObterPorConsultaAsync_VeterinarioDeForaComColmeia_LeERegistraOAcesso()
+    {
+        var vetId = Guid.NewGuid();
+        var consulta = CriarConsultaValidada();
+
+        _consultaRepoMock.Setup(r => r.ObterPorIdAsync(consulta.Id)).ReturnsAsync(consulta);
+        _docRepoMock.Setup(r => r.ObterPorConsultaAsync(consulta.Id)).ReturnsAsync([]);
+        _colmeiaMock.Setup(c => c.PodeAcessarAsync(vetId, consulta.AnimalId, EscopoAcessoColmeia.Documentos))
+            .ReturnsAsync(true);
+        ComoVeterinario(vetId);
+
+        await CriarServico().ObterPorConsultaAsync(consulta.Id);
+
+        _colmeiaMock.Verify(c => c.RegistrarAcessoAsync(
+            consulta.AnimalId, EscopoAcessoColmeia.Documentos, true, It.IsAny<string>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task ObterPorConsultaAsync_VeterinarioDaConsulta_LeERegistraOProprioAcesso()
+    {
+        var consulta = CriarConsultaValidada();
+
+        _consultaRepoMock.Setup(r => r.ObterPorIdAsync(consulta.Id)).ReturnsAsync(consulta);
+        _docRepoMock.Setup(r => r.ObterPorConsultaAsync(consulta.Id)).ReturnsAsync([]);
+        ComoVeterinario(consulta.VeterinarioId);
+
+        await CriarServico().ObterPorConsultaAsync(consulta.Id);
+
+        // Registrar so o acesso "de fora" deixaria metade da historia fora do log
+        _colmeiaMock.Verify(c => c.RegistrarAcessoAsync(
+            consulta.AnimalId, EscopoAcessoColmeia.Documentos, true, It.IsAny<string>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task GerarAsync_PorOutroVeterinario_LancaAcessoNegadoRN105()
+    {
+        var consulta = CriarConsultaValidada();
+        CenarioCompleto(consulta);
+        ComoVeterinario(Guid.NewGuid());
+
+        var factory = new Mock<IDocumentoFactory>();
+        factory.Setup(f => f.TipoSuportado).Returns(TipoDocumento.Prontuario);
+
+        var ex = await Assert.ThrowsAsync<AcessoNegadoException>(
+            () => CriarServico(factory.Object).GerarAsync(consulta.Id, TipoDocumento.Prontuario));
+
+        Assert.Equal("RN-105", ex.Codigo);
+        factory.Verify(f => f.Criar(It.IsAny<ContextoDoDocumentoDto>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task PublicarAsync_PorOutroVeterinario_LancaAcessoNegadoRN105()
+    {
+        var doc = DocumentoPublicavel();
+        var consulta = await _consultaRepoMock.Object.ObterPorIdAsync(doc.ConsultaId!.Value);
+
+        ComoVeterinario(Guid.NewGuid());
+
+        var ex = await Assert.ThrowsAsync<AcessoNegadoException>(
+            () => CriarServico().PublicarAsync(doc.Id));
+
+        Assert.Equal("RN-105", ex.Codigo);
+        Assert.NotNull(consulta);
+        Assert.Null(doc.PublicadoEm);
+    }
+
+    [Fact]
+    public async Task MarcarComoLidoAsync_PorVeterinario_LancaAcessoNegadoRN106()
+    {
+        var doc = DocumentoPublicavel();
+        doc.Publicar(DateTime.UtcNow);
+
+        ComoVeterinario(Guid.NewGuid());
+
+        var ex = await Assert.ThrowsAsync<AcessoNegadoException>(
+            () => CriarServico().MarcarComoLidoAsync(doc.Id));
+
+        // A leitura confirmada e ato do Responsavel: e ela que prova que a orientacao
+        // chegou (RN-090). O profissional marcando pelo app dele produziria um dado
+        // falso — RN-106, porque o escopo violado e o do Responsavel.
+        Assert.Equal("RN-106", ex.Codigo);
+        Assert.Null(doc.LidoEm);
+    }
+
+    [Fact]
+    public async Task PublicarAsync_NotificaOResponsavel()
+    {
+        var doc = DocumentoPublicavel();
+        var consulta = await _consultaRepoMock.Object.ObterPorIdAsync(doc.ConsultaId!.Value);
+
+        await CriarServico().PublicarAsync(doc.Id);
+
+        _notificacoesMock.Verify(n => n.CriarAsync(It.Is<Vetly.Application.DTOs.Notificacao.CriarNotificacaoDto>(
+            d => d.TutorId == consulta!.TutorId && d.Tipo == TipoNotificacao.DocumentoPublicado)), Times.Once);
+    }
+
+    // ── RN-083: o PDF e anexo, nao e o documento ────────────────────────────
+
+    [Fact]
+    public async Task GerarAsync_QuandoORenderizadorFalha_MantemODocumentoSemPdf()
+    {
+        var consulta = CriarConsultaValidada();
+        CenarioCompleto(consulta);
+
+        _pdfMock.Setup(p => p.Renderizar(It.IsAny<string>(), It.IsAny<string>()))
+            .Throws(new InvalidOperationException("fonte indisponivel"));
+
+        var factory = new Mock<IDocumentoFactory>();
+        factory.Setup(f => f.TipoSuportado).Returns(TipoDocumento.Prontuario);
+        factory.Setup(f => f.Criar(It.IsAny<ContextoDoDocumentoDto>()))
+            .Returns((ContextoDoDocumentoDto ctx) =>
+            {
+                var d = new Documento(TipoDocumento.Prontuario, "12345-SP", ctx.ConsultaId);
+                d.RegistrarConteudo("PRONTUARIO VETERINARIO");
+                return d;
+            });
+
+        var resultado = await CriarServico(factory.Object).GerarAsync(consulta.Id, TipoDocumento.Prontuario);
+
+        // O conteudo clinico ja esta gravado e o PDF pode ser produzido depois:
+        // derrubar a geracao inteira faria o vet perder o atendimento que aprovou
+        Assert.Equal(TipoDocumento.Prontuario, resultado.TipoDocumento);
+        Assert.Null(resultado.PdfMidiaId);
+        _midiaRepoMock.Verify(r => r.SalvarAsync(), Times.Never);
     }
 }

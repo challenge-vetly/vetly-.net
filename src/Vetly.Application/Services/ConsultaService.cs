@@ -29,6 +29,7 @@ public class ConsultaService : IConsultaService
     private readonly IFilaDeJobs _fila;
     private readonly IFidelidadeService _fidelidade;
     private readonly IAvaliacaoService _avaliacoes;
+    private readonly IColmeiaService _colmeia;
 
     public ConsultaService(
         IConsultaRepository repo,
@@ -42,7 +43,8 @@ public class ConsultaService : IConsultaService
         IAgendaRepository agendaRepo,
         IFilaDeJobs fila,
         IFidelidadeService fidelidade,
-        IAvaliacaoService avaliacoes)
+        IAvaliacaoService avaliacoes,
+        IColmeiaService colmeia)
     {
         _repo = repo;
         _pagamentoRepo = pagamentoRepo;
@@ -56,6 +58,7 @@ public class ConsultaService : IConsultaService
         _fila = fila;
         _fidelidade = fidelidade;
         _avaliacoes = avaliacoes;
+        _colmeia = colmeia;
     }
 
     /// <summary>
@@ -202,14 +205,61 @@ public class ConsultaService : IConsultaService
 
     public async Task<IEnumerable<ConsultaDto>> ObterPorVeterinarioAsync(Guid veterinarioId)
     {
+        // RN-105: o veterinario ve a propria agenda. O id vem do token, e nao da rota
+        // — aceitar o parametro do cliente seria deixar qualquer profissional listar a
+        // agenda de outro trocando um Guid na URL.
+        if (_usuario.EhVeterinario && _usuario.VeterinarioId is { } vetId && vetId != veterinarioId)
+            throw new AcessoNegadoException("RN-105", "Esta agenda nao pertence ao seu escopo de acesso.");
+
+        if (_usuario.EhTutor)
+            throw new AcessoNegadoException("RN-106", "Esta agenda nao pertence ao seu escopo de acesso.");
+
         var consultas = await _repo.ObterPorVeterinarioAsync(veterinarioId);
+
         return consultas.Select(MapearParaDto);
     }
 
     public async Task<IEnumerable<ConsultaDto>> ObterPorAnimalAsync(Guid animalId)
     {
+        var animal = await _animalRepo.ObterPorIdAsync(animalId)
+            ?? throw new NotFoundException("Animal", animalId);
+
+        await GarantirAcessoAoAnimalAsync(animal);
+
         var consultas = await _repo.ObterPorAnimalAsync(animalId);
+
         return consultas.Select(MapearParaDto);
+    }
+
+    /// <summary>
+    /// Quem alcanca o historico de consultas de um animal (RN-105/RN-106): o
+    /// Responsavel dono, o veterinario que o atende, e o de fora com colmeia vigente.
+    /// </summary>
+    private async Task GarantirAcessoAoAnimalAsync(Animal animal)
+    {
+        if (_usuario.EhAdmin)
+            return;
+
+        if (_usuario.EhTutor && _usuario.TutorId == animal.TutorId)
+            return;
+
+        if (_usuario.EhVeterinario && _usuario.VeterinarioId is { } vetId)
+        {
+            if (await _animalRepo.VeterinarioAtendeAnimalAsync(vetId, animal.Id))
+                return;
+
+            var autorizado = await _colmeia.PodeAcessarAsync(
+                vetId, animal.Id, EscopoAcessoColmeia.HistoricoCompleto);
+
+            await _colmeia.RegistrarAcessoAsync(
+                animal.Id, EscopoAcessoColmeia.HistoricoCompleto, autorizado,
+                "GET /api/consultas/animal");
+
+            if (autorizado)
+                return;
+        }
+
+        throw new AcessoNegadoException("RN-105", "Este animal nao pertence ao seu escopo de acesso.");
     }
 
     /// <summary>
@@ -219,6 +269,14 @@ public class ConsultaService : IConsultaService
     {
         GarantirModalidadePresencial(dto.Modalidade);
 
+        // RN-040/RN-105: quem lanca atendimento de balcao e quem atende. Um
+        // veterinario nao agenda no nome de outro.
+        var veterinarioId = _usuario.EhAdmin
+            ? dto.VeterinarioId
+            : _usuario.VeterinarioId
+              ?? throw new AcessoNegadoException("RN-105",
+                  "Somente o veterinario ou a administracao lanca atendimento de emergencia.");
+
         var pagamento = await _pagamentoRepo.ObterPorIdAsync(dto.PagamentoId)
             ?? throw new NotFoundException("Pagamento", dto.PagamentoId);
 
@@ -226,7 +284,19 @@ public class ConsultaService : IConsultaService
             throw new BusinessRuleException("RN-006",
                 "A consulta so pode ser agendada apos confirmacao do pagamento.");
 
-        var consulta = new Consulta(dto.DataHora, dto.Modalidade, dto.VeterinarioId, dto.AnimalId, dto.TutorId);
+        // O pagamento tem de ser de quem esta sendo atendido: sem esta guarda, uma
+        // consulta poderia ser confirmada com a cobranca paga por outra pessoa.
+        if (pagamento.TutorId != dto.TutorId)
+            throw new BusinessRuleException("RN-006",
+                "O pagamento informado pertence a outro Responsavel.");
+
+        // Caucao e saldo de internacao nao confirmam consulta: sao outro ciclo de
+        // cobranca (RN-101), e reaproveita-los daria uma consulta paga por engano.
+        if (pagamento.InternacaoId is not null)
+            throw new BusinessRuleException("RN-101",
+                "Pagamento de internacao nao confirma consulta.");
+
+        var consulta = new Consulta(dto.DataHora, dto.Modalidade, veterinarioId, dto.AnimalId, dto.TutorId);
         consulta.ConfirmarPagamento();
 
         await _repo.AdicionarAsync(consulta);
@@ -256,14 +326,43 @@ public class ConsultaService : IConsultaService
     /// </summary>
     public async Task<ResultadoCancelamentoDto> CancelarAsync(Guid id)
     {
-        var consulta = await _repo.ObterPorIdAsync(id)
-            ?? throw new NotFoundException("Consulta", id);
+        var consulta = await ObterNoEscopoAsync(id);
 
         if (consulta.Cancelada)
             throw new BusinessRuleException("CONSULTA-001", "Esta consulta ja foi cancelada.");
 
+        // RN-038: so se cancela o que ainda vai acontecer. Realizada, no-show e
+        // expirada ja tiveram desfecho, e "cancelar" ali reescreveria historia — com
+        // reembolso de um atendimento que aconteceu, no pior caso.
+        if (consulta.Status is not (StatusConsulta.EmCheckout or StatusConsulta.Confirmada))
+            throw new ConflitoDeEstadoException("RN-038",
+                $"Consulta com status {consulta.Status} nao pode ser cancelada.");
+
         var pagamento = await _pagamentoRepo.ObterPorConsultaAsync(id)
             ?? throw new BusinessRuleException("CONSULTA-002", "Pagamento da consulta nao encontrado.");
+
+        // Checkout abandonado nao tem o que estornar: o dinheiro nunca entrou. Passar
+        // pela Strategy aqui produziria um "reembolso" de valor que ninguem pagou.
+        if (pagamento.StatusPagamento != StatusPagamento.Confirmado)
+        {
+            pagamento.Recusar();
+            consulta.Cancelar();
+
+            _repo.Atualizar(consulta);
+            _pagamentoRepo.Atualizar(pagamento);
+            await _repo.SalvarAsync();
+            await _pagamentoRepo.SalvarAsync();
+
+            await LiberarHorarioAsync(consulta);
+
+            return new ResultadoCancelamentoDto
+            {
+                ValorReembolso = 0m,
+                PercentualRetencao = 0m,
+                EstrategiaAplicada = "Checkout nao pago",
+                Descricao = "A cobranca nao chegou a ser confirmada; nao ha valor a reembolsar."
+            };
+        }
 
         // Seleciona a strategy de menor prioridade que seja aplicavel ao momento do cancelamento
         var strategy = _strategies
@@ -484,6 +583,11 @@ public class ConsultaService : IConsultaService
         var consulta = await _repo.ObterPorIdAsync(consultaId)
             ?? throw new NotFoundException("Consulta", consultaId);
 
+        // O fecho documental e ato do profissional: e a assinatura dele que a RN-087
+        // cobra. O Responsavel nao finaliza o proprio atendimento.
+        if (!_usuario.EhAdmin && _usuario.VeterinarioId != consulta.VeterinarioId)
+            throw new AcessoNegadoException("RN-105", "Esta consulta nao pertence ao seu escopo de acesso.");
+
         // C-04: a exigencia da RN-087 e sobre o documento que existe, nao sobre a
         // consulta. Consulta de rotina, vacinacao ou retorno frequentemente nao
         // prescrevem nada, e exigir receita em todas travaria o atendimento correto —
@@ -514,22 +618,48 @@ public class ConsultaService : IConsultaService
         var consulta = await _repo.ObterPorIdAsync(consultaId)
             ?? throw new NotFoundException("Consulta", consultaId);
 
+        // O briefing e do profissional que vai atender: e contexto clinico completo,
+        // nao vitrine (RN-105).
+        if (!_usuario.EhAdmin && _usuario.VeterinarioId != consulta.VeterinarioId)
+            throw new AcessoNegadoException("RN-105", "Esta consulta nao pertence ao seu escopo de acesso.");
+
         var animal = await _animalRepo.ObterPorIdAsync(consulta.AnimalId)
             ?? throw new NotFoundException("Animal", consulta.AnimalId);
 
-        var historico = (await _repo.ObterPorAnimalAsync(consulta.AnimalId))
-            .OrderByDescending(c => c.DataHora)
+        // RN-064/RN-066: com consentimento de rede vigente, o vet ve o historico
+        // inteiro; sem ele, ve apenas o que ele mesmo produziu. Este e o ponto em que
+        // a colmeia deixa de ser uma tabela e passa a filtrar dado clinico.
+        var vetId = _usuario.VeterinarioId ?? consulta.VeterinarioId;
+
+        var temColmeia = _usuario.EhAdmin || await _colmeia.PodeAcessarAsync(
+            vetId, animal.Id, EscopoAcessoColmeia.HistoricoCompleto);
+
+        // RN-067: todo acesso a prontuario gera entrada no log, visivel ao
+        // Responsavel. Inclusive o acesso restrito — saber que alguem olhou e viu
+        // pouco tambem e informacao.
+        await _colmeia.RegistrarAcessoAsync(
+            animal.Id, EscopoAcessoColmeia.HistoricoCompleto, temColmeia,
+            "GET /api/consultas/{id}/briefing");
+
+        var todasAsConsultas = (await _repo.ObterPorAnimalAsync(consulta.AnimalId))
+            .Where(c => c.Id != consultaId)
+            .OrderByDescending(c => c.DataHora);
+
+        var historico = (temColmeia ? todasAsConsultas : todasAsConsultas.Where(c => c.VeterinarioId == vetId))
             .Take(5)
             .Select(MapearParaDto)
             .ToList();
 
-        var exames = (await _animalRepo.ObterExamesAsync(consulta.AnimalId))
-            .OrderByDescending(e => e.DataSolicitacao)
+        var todosOsExames = (await _animalRepo.ObterExamesAsync(consulta.AnimalId))
+            .OrderByDescending(e => e.DataSolicitacao);
+
+        var exames = (temColmeia ? todosOsExames : todosOsExames.Where(e => e.VeterinarioId == vetId))
             .Take(3)
             .Select(e => new ExameDto
             {
                 Id = e.Id, AnimalId = e.AnimalId, VeterinarioId = e.VeterinarioId,
                 TipoSolicitacao = e.TipoSolicitacao, Resultado = e.Resultado,
+                MidiaIds = [.. e.Midias()],
                 LiberadoAoTutor = e.LiberadoAoTutor,
                 DataSolicitacao = e.DataSolicitacao, DataResultado = e.DataResultado
             })
@@ -545,12 +675,54 @@ public class ConsultaService : IConsultaService
                 IdadeEmAnos = animal.IdadeEmAnos(), TutorId = animal.TutorId,
                 AlertasAtivos = animal.AlertasAtivos, Ativo = animal.Ativo
             },
+
+            // RN-081: o peso decide se a IA sugere dose. Ele estar no briefing e o que
+            // permite ao vet resolver a falta ANTES de comecar, e nao no meio.
+            PesoKg = animal.PesoKg,
+            Alergias = [.. animal.Alergias],
+            CondicoesPreexistentes = [.. animal.CondicoesPreexistentes],
+
+            // RN-005/RN-036: a unica fonte de contexto previo vinda do Responsavel
+            PreSintomas = DesserializarPreSintomas(consulta.PreSintomas),
+            PreSintomasMidias = [.. MidiasDosPreSintomas(consulta.PreSintomasMidias)],
+
             HistoricoResumido = historico,
             AlertasAtivos = animal.AlertasAtivos,
             ExamesRecentes = exames,
-            UltimaConsulta = historico.Count > 0 ? historico[0].DataHora : null
+            UltimaConsulta = historico.Count > 0 ? historico[0].DataHora : null,
+
+            // Dizer que a visao esta restrita evita que o vet leia "sem historico"
+            // como "animal sem passado clinico" (RN-066)
+            HistoricoCompleto = temColmeia
         };
     }
+
+    /// <summary>
+    /// Le os pre-sintomas gravados. JSON invalido nao derruba o briefing: o vet perde
+    /// um campo, e nao a consulta inteira.
+    /// </summary>
+    private static PreSintomasDto? DesserializarPreSintomas(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return null;
+
+        try
+        {
+            return JsonSerializer.Deserialize<PreSintomasDto>(json, OpcoesDeJson);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>Ids das midias anexadas aos pre-sintomas, ja separados.</summary>
+    private static IEnumerable<Guid> MidiasDosPreSintomas(string? valor) =>
+        string.IsNullOrWhiteSpace(valor) || valor == ";"
+            ? []
+            : valor.Split(';', StringSplitOptions.RemoveEmptyEntries)
+                   .Select(id => Guid.TryParse(id, out var g) ? g : Guid.Empty)
+                   .Where(g => g != Guid.Empty);
 
     /// <summary>
     /// Devolve o horario da consulta a disponibilidade e avisa a lista de espera.
