@@ -18,11 +18,16 @@ namespace Vetly.Infrastructure.Adapters;
 /// propriedade que importa: <b>a URL não pode ser forjada nem reaproveitada depois
 /// de expirar</b> — sem isso, qualquer pessoa que descobrisse o padrão da chave
 /// leria áudio de consulta alheia.
+///
+/// A URL emitida é <b>absoluta</b> (<c>Storage:PublicBaseUrl</c> + <c>Storage:BaseUrl</c>):
+/// quem a consome está fora do processo da API — o motor de transcrição, o app —, e um
+/// caminho relativo não é resolvível por ninguém.
 /// </summary>
 public class StorageAdapterLocal : IStorageAdapter
 {
     private readonly string _raiz;
     private readonly string _baseUrl;
+    private readonly string _baseUrlPublica;
     private readonly byte[] _segredo;
     private readonly ILogger<StorageAdapterLocal> _logger;
 
@@ -35,6 +40,22 @@ public class StorageAdapterLocal : IStorageAdapter
             ?? Path.Combine(Path.GetTempPath(), "vetly-storage");
 
         _baseUrl = (Preenchido(config["Storage:BaseUrl"]) ?? "/api/storage").TrimEnd('/');
+
+        // A URL assinada e consumida por quem esta FORA do processo da API — hoje o
+        // motor de transcricao, amanha o app. Sem a origem na frente, "/api/storage/..."
+        // nao e resolvivel por ninguem, e o motor recebe um endereco que nao leva a
+        // lugar nenhum. Falha no arranque de proposito: despachar segmentos que jamais
+        // serao transcritos e pior que nao subir.
+        var publica = Preenchido(config["Storage:PublicBaseUrl"])
+            ?? throw new InvalidOperationException(
+                "Storage:PublicBaseUrl nao configurado. A URL assinada precisa ser absoluta " +
+                "(ex.: https://localhost:7262) — o motor de transcricao busca o audio de fora do processo.");
+
+        if (!Uri.TryCreate(publica, UriKind.Absolute, out _))
+            throw new InvalidOperationException(
+                $"Storage:PublicBaseUrl ('{publica}') nao e uma URL absoluta.");
+
+        _baseUrlPublica = publica.TrimEnd('/');
 
         var segredo = Preenchido(config["Storage:Segredo"]) ?? Preenchido(config["Jwt:Key"])
             ?? throw new InvalidOperationException("Storage:Segredo nao configurado.");
@@ -129,7 +150,7 @@ public class StorageAdapterLocal : IStorageAdapter
         var expiraEmUnix = expiraEm.ToUnixTimeSeconds();
         var assinatura = CalcularAssinatura(chave, operacao, expiraEmUnix);
 
-        var url = $"{_baseUrl}/{Uri.EscapeDataString(chave)}" +
+        var url = $"{_baseUrlPublica}{_baseUrl}/{Uri.EscapeDataString(chave)}" +
                   $"?operacao={operacao}&expiraEm={expiraEmUnix}&assinatura={Uri.EscapeDataString(assinatura)}";
 
         return new UrlAssinadaDto(url, expiraEm.UtcDateTime);

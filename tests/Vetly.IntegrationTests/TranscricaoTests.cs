@@ -136,6 +136,51 @@ public class TranscricaoTests
     }
 
     [Fact]
+    public async Task Despacho_UrlDeAudioRelativa_NaoVaiAoMotor()
+    {
+        var (sessao, segmento, midia) = Cenario();
+        var (captura, midias, storage) = Dependencias(sessao, segmento, midia);
+
+        // Storage mal configurado (Storage:PublicBaseUrl ausente) emite URL relativa
+        storage.Setup(s => s.GerarUrlDeLeituraAsync(midia.ChaveStorage, It.IsAny<TimeSpan>()))
+            .ReturnsAsync(new UrlAssinadaDto("/api/storage/audio?sig=abc", DateTime.UtcNow.AddMinutes(15)));
+
+        var stt = new Mock<ISttAdapter>();
+
+        var handler = new TranscreverSegmentoHandler(
+            captura.Object, midias.Object, storage.Object, stt.Object, Config(),
+            NullLogger<TranscreverSegmentoHandler>.Instance);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => handler.ExecutarAsync(
+            new Job(TipoJob.TranscreverSegmento, segmento.Id.ToString()), CancellationToken.None));
+
+        // Nenhum motor externo resolve "/api/storage/...": mandar assim seria despachar
+        // um segmento que jamais voltaria
+        stt.Verify(s => s.SolicitarTranscricaoAsync(It.IsAny<SolicitarTranscricaoRequest>()), Times.Never);
+        Assert.Equal(MotivoFalhaTranscricao.MotorIndisponivel, segmento.FalhaMotivo);
+    }
+
+    [Fact]
+    public async Task Despacho_UrlDeAudioAbsoluta_SegueParaOMotor()
+    {
+        var (sessao, segmento, midia) = Cenario();
+        var (captura, midias, storage) = Dependencias(sessao, segmento, midia);
+
+        var stt = new Mock<ISttAdapter>();
+        stt.Setup(s => s.SolicitarTranscricaoAsync(It.IsAny<SolicitarTranscricaoRequest>())).ReturnsAsync(true);
+
+        var handler = new TranscreverSegmentoHandler(
+            captura.Object, midias.Object, storage.Object, stt.Object, Config(),
+            NullLogger<TranscreverSegmentoHandler>.Instance);
+
+        await handler.ExecutarAsync(
+            new Job(TipoJob.TranscreverSegmento, segmento.Id.ToString()), CancellationToken.None);
+
+        stt.Verify(s => s.SolicitarTranscricaoAsync(It.IsAny<SolicitarTranscricaoRequest>()), Times.Once);
+        Assert.Equal(EstadoSegmentoAudio.Enviado, segmento.Estado);
+    }
+
+    [Fact]
     public async Task Despacho_PayloadInvalido_Falha()
     {
         var handler = new TranscreverSegmentoHandler(

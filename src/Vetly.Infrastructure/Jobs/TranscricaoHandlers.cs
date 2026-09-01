@@ -71,6 +71,24 @@ public class TranscreverSegmentoHandler : IJobHandler
         // URL temporaria: o motor busca o audio direto no storage, sem a API proxiar bytes
         var audio = await _storage.GerarUrlDeLeituraAsync(midia.ChaveStorage, ValidadeDaUrlDeAudio);
 
+        // O motor esta fora do processo: URL relativa e endereco que ele nao resolve.
+        // Conferir aqui, e nao so na configuracao do storage, porque este handler e o
+        // ultimo ponto antes de o endereco sair da Vetly — despachar lixo faria o
+        // segmento morrer no motor sem motivo aproveitavel no diagnostico.
+        if (!Uri.TryCreate(audio.Url, UriKind.Absolute, out _))
+        {
+            segmento.RegistrarFalha(MotivoFalhaTranscricao.MotorIndisponivel);
+            _captura.AtualizarSegmento(segmento);
+            await _captura.SalvarAsync();
+
+            _logger.LogError(
+                "URL de audio do segmento {SegmentoId} nao e absoluta ({Url}). " +
+                "Configure Storage:PublicBaseUrl.", segmento.Id, audio.Url);
+
+            throw new InvalidOperationException(
+                $"A URL de audio do segmento {segmento.Id} nao e absoluta e o motor nao conseguiria baixa-la.");
+        }
+
         // O token amarra o callback ao segmento; a base guarda so o hash dele
         var token = GerarToken(segmento.Id);
 
