@@ -253,6 +253,25 @@ public class TranscricaoTests
             new Job(TipoJob.TranscreverSegmentoSimulado, null), CancellationToken.None));
     }
 
+    // ── Varredura de segmento travado (§4.2) ─────────────────────────────────
+
+    [Fact]
+    public async Task Travado_OHandlerDelegaAVarreduraAoServicoDeCaptura()
+    {
+        var captura = new Mock<ICapturaService>();
+        captura.Setup(c => c.ResolverSegmentosTravadosAsync()).ReturnsAsync(2);
+
+        var handler = new VerificarTranscricaoTravadaHandler(
+            captura.Object, NullLogger<VerificarTranscricaoTravadaHandler>.Instance);
+
+        await handler.ExecutarAsync(
+            new Job(TipoJob.VerificarTranscricaoTravada), CancellationToken.None);
+
+        // A maquina de estados da sessao vive no servico: duplica-la no handler daria
+        // dois lugares para o mesmo desfecho
+        captura.Verify(c => c.ResolverSegmentosTravadosAsync(), Times.Once);
+    }
+
     // ── Estruturacao pela IA (RN-080) ────────────────────────────────────────
 
     [Fact]

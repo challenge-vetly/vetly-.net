@@ -39,5 +39,17 @@ public enum TipoJob
     /// Credita os pontos de fidelidade de uma consulta realizada (RN-052).
     /// Enfileirado quando o veterinário encerra o atendimento.
     /// </summary>
-    CreditarPontosDaConsulta = 6
+    CreditarPontosDaConsulta = 6,
+
+    /// <summary>
+    /// Varre os segmentos que saíram para o motor e cujo callback nunca voltou (§4.2).
+    /// Sem ele, motor que aceita e morre calado deixa a sessão presa para sempre.
+    /// </summary>
+    VerificarTranscricaoTravada = 7,
+
+    /// <summary>
+    /// Transcreve um segmento pelo Azure Speech, fora da requisição (§5.3).
+    /// O adaptador só enfileira; é aqui que o áudio é baixado e mandado ao Azure.
+    /// </summary>
+    TranscreverSegmentoAzure = 8
 }

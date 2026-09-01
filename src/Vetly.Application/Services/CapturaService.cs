@@ -16,6 +16,14 @@ namespace Vetly.Application.Services;
 /// </summary>
 public class CapturaService : ICapturaService
 {
+    /// <summary>
+    /// Quanto se espera pelo callback antes de dar o segmento como travado (§4.2).
+    ///
+    /// Três minutos para um trecho de ~30s é folga larga de propósito: o prazo existe
+    /// para pegar o motor que morreu calado, não para competir com o motor lento.
+    /// </summary>
+    public static readonly TimeSpan PrazoDoCallback = TimeSpan.FromMinutes(3);
+
     private readonly ICapturaRepository _repo;
     private readonly IConsultaRepository _consultaRepo;
     private readonly IVeterinarioRepository _vetRepo;
@@ -250,6 +258,56 @@ public class CapturaService : ICapturaService
         await _repo.SalvarAsync();
 
         await AvaliarDesfechoDaTranscricaoAsync(segmento.SessaoCapturaId);
+    }
+
+    /// <inheritdoc/>
+    public async Task<int> ResolverSegmentosTravadosAsync()
+    {
+        var agora = DateTime.UtcNow;
+        var travados = (await _repo.ObterSegmentosAguardandoCallbackAsync(agora - PrazoDoCallback)).ToList();
+
+        if (travados.Count == 0)
+            return 0;
+
+        // As sessoes tocadas sao avaliadas depois de gravar, e nao dentro do laco: o
+        // desfecho da sessao depende de TODOS os segmentos dela, e avaliar a cada
+        // trecho leria um estado que ainda esta pela metade.
+        var sessoes = new HashSet<Guid>();
+        var tratados = 0;
+
+        foreach (var segmento in travados)
+        {
+            // Reconfere no proprio agregado: entre a consulta e este ponto o callback
+            // pode ter chegado, e reenviar um trecho ja transcrito duplicaria o texto.
+            if (!segmento.AguardaCallbackHaMaisDe(PrazoDoCallback, agora))
+                continue;
+
+            // Timeout e nao AudioIlegivel: o audio pode estar perfeito — quem nao
+            // respondeu foi o motor, e o motivo e o que o veterinario le no aviso.
+            segmento.RegistrarFalha(MotivoFalhaTranscricao.Timeout);
+            _repo.AtualizarSegmento(segmento);
+
+            if (segmento.Estado == EstadoSegmentoAudio.Recebido)
+            {
+                await _fila.EnfileirarAsync(
+                    TipoJob.TranscreverSegmento, segmento.Id.ToString(), BackoffDaTentativa(segmento.Tentativas));
+            }
+
+            sessoes.Add(segmento.SessaoCapturaId);
+            tratados++;
+        }
+
+        if (tratados == 0)
+            return 0;
+
+        await _repo.SalvarAsync();
+
+        // Destravada a espera, a sessao pode finalmente progredir a TranscricaoParcial
+        // ou SemTranscricao — que e o estado terminal que o app fica esperando.
+        foreach (var sessaoId in sessoes)
+            await AvaliarDesfechoDaTranscricaoAsync(sessaoId);
+
+        return tratados;
     }
 
     /// <summary>

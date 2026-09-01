@@ -111,7 +111,7 @@ public class TranscreverSegmentoHandler : IJobHandler
             throw new InvalidOperationException("O motor de transcricao nao aceitou o segmento.");
         }
 
-        segmento.RegistrarDespacho(HashDoToken(token));
+        segmento.RegistrarDespacho(HashDoToken(token), DateTime.UtcNow);
         _captura.AtualizarSegmento(segmento);
         await _captura.SalvarAsync();
 
@@ -167,6 +167,47 @@ public class TranscreverSegmentoSimuladoHandler : IJobHandler
 
         _logger.LogInformation(
             "Transcricao simulada entregue para o segmento {SegmentoId}.", callback.SegmentoId);
+    }
+}
+
+/// <summary>
+/// Resolve os segmentos que saíram para o motor e cujo callback nunca voltou (§4.2).
+///
+/// O despacho aceito não é garantia de resposta: motor que aceita o trabalho e depois
+/// morre calado deixa o segmento em <c>Enviado</c> para sempre. Como o desfecho da
+/// sessão só é avaliado quando <b>todos</b> os trechos responderam, um único segmento
+/// pendurado prende a consulta inteira em <c>AguardandoTranscricao</c> — e o app, que
+/// faz polling do rascunho, nunca vê um estado terminal.
+///
+/// O trabalho de fato está no <c>ICapturaService</c>: é lá que vive a máquina de
+/// estados da sessão, e duplicá-la aqui daria dois lugares para o mesmo desfecho.
+/// </summary>
+public class VerificarTranscricaoTravadaHandler : IJobHandler
+{
+    private readonly ICapturaService _captura;
+    private readonly ILogger<VerificarTranscricaoTravadaHandler> _logger;
+
+    public VerificarTranscricaoTravadaHandler(
+        ICapturaService captura, ILogger<VerificarTranscricaoTravadaHandler> logger)
+    {
+        _captura = captura;
+        _logger = logger;
+    }
+
+    /// <inheritdoc/>
+    public TipoJob Tipo => TipoJob.VerificarTranscricaoTravada;
+
+    /// <inheritdoc/>
+    public async Task ExecutarAsync(Job job, CancellationToken cancellationToken)
+    {
+        var tratados = await _captura.ResolverSegmentosTravadosAsync();
+
+        if (tratados > 0)
+        {
+            _logger.LogWarning(
+                "{Quantidade} segmento(s) sem callback dentro do prazo foram tratados como travados.",
+                tratados);
+        }
     }
 }
 

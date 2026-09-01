@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Vetly.Application.DTOs.ListaEspera;
@@ -242,5 +242,63 @@ public class JobHandlersTests
             Assert.Single(restantes);
             Assert.Equal("chave-vigente", restantes[0].Chave);
         }
+    }
+
+    // ── Rotina de varredura de transcricao travada (§4.2) ────────────────────
+
+    private static SegmentoAudio SegmentoDespachadoHa(TimeSpan atras)
+    {
+        var segmento = new SegmentoAudio(Guid.NewGuid(), 0, Guid.NewGuid(), 30000, 0);
+        segmento.RegistrarDespacho(new string('a', 64), DateTime.UtcNow - atras);
+        return segmento;
+    }
+
+    [Fact]
+    public async Task VarrerTravadas_ComSegmentoVencido_EnfileiraAVerificacao()
+    {
+        var banco = $"jobs_{Guid.NewGuid()}";
+
+        await using (var ctx = CriarContexto(banco))
+        {
+            ctx.SegmentosDeAudio.Add(SegmentoDespachadoHa(TimeSpan.FromMinutes(5)));
+            await ctx.SaveChangesAsync();
+        }
+
+        var fila = new Mock<IFilaDeJobs>();
+
+        await using (var ctx = CriarContexto(banco))
+        {
+            var rotina = new VarrerTranscricoesTravadas(ctx, fila.Object);
+
+            Assert.Equal(1, await rotina.ExecutarAsync(CancellationToken.None));
+        }
+
+        fila.Verify(f => f.EnfileirarAsync(TipoJob.VerificarTranscricaoTravada, null, null), Times.Once);
+    }
+
+    [Fact]
+    public async Task VarrerTravadas_SegmentoRecemDespachado_NaoEnfileiraNada()
+    {
+        var banco = $"jobs_{Guid.NewGuid()}";
+
+        await using (var ctx = CriarContexto(banco))
+        {
+            ctx.SegmentosDeAudio.Add(SegmentoDespachadoHa(TimeSpan.FromSeconds(30)));
+            await ctx.SaveChangesAsync();
+        }
+
+        var fila = new Mock<IFilaDeJobs>();
+
+        await using (var ctx = CriarContexto(banco))
+        {
+            var rotina = new VarrerTranscricoesTravadas(ctx, fila.Object);
+
+            // O prazo existe para pegar o motor que morreu calado, nao para competir
+            // com o motor lento
+            Assert.Equal(0, await rotina.ExecutarAsync(CancellationToken.None));
+        }
+
+        fila.Verify(f => f.EnfileirarAsync(
+            It.IsAny<TipoJob>(), It.IsAny<string>(), It.IsAny<TimeSpan?>()), Times.Never);
     }
 }

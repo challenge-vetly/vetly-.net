@@ -21,4 +21,15 @@ public interface ICapturaService
 
     /// <summary>Registra o texto devolvido pelo motor de transcrição (§5.3).</summary>
     Task RegistrarCallbackAsync(CallbackDeTranscricaoDto dto);
+
+    /// <summary>
+    /// Resolve os segmentos cujo callback nunca voltou: reenvia enquanto houver
+    /// tentativa e dá o trecho como perdido quando não houver (§4.2).
+    ///
+    /// Devolve quantos segmentos foram tratados. Sem esta varredura, motor que aceita
+    /// o despacho e depois morre calado prende a sessão em
+    /// <c>AguardandoTranscricao</c> para sempre — e o app, que faz polling do
+    /// rascunho, nunca chega a um estado terminal.
+    /// </summary>
+    Task<int> ResolverSegmentosTravadosAsync();
 }

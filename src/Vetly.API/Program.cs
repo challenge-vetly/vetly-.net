@@ -322,6 +322,12 @@ builder.Services.AddScoped<IJobHandler, TranscreverSegmentoSimuladoHandler>();
 builder.Services.AddScoped<IJobHandler, EstruturarConsultaHandler>();
 builder.Services.AddScoped<IJobHandler, CreditarPontosHandler>();
 
+// §4.2: sem esta varredura, motor que aceita o despacho e morre calado deixa a sessao
+// presa em AguardandoTranscricao para sempre — e o app, que faz polling do rascunho,
+// nunca chega a um estado terminal.
+builder.Services.AddScoped<IJobHandler, VerificarTranscricaoTravadaHandler>();
+
+builder.Services.AddScoped<IRotinaPeriodica, VarrerTranscricoesTravadas>();
 builder.Services.AddScoped<IRotinaPeriodica, ExpirarLocksDeCheckout>();
 builder.Services.AddScoped<IRotinaPeriodica, LimparIdempotenciaVencida>();
 builder.Services.AddScoped<IRotinaPeriodica, ExpirarPontosVencidos>();

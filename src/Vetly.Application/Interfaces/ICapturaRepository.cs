@@ -22,6 +22,12 @@ public interface ICapturaRepository
 
     Task<IEnumerable<SegmentoAudio>> ObterSegmentosAsync(Guid sessaoId);
 
+    /// <summary>
+    /// Segmentos despachados ao motor cujo callback não voltou até <paramref name="limite"/>
+    /// — a varredura de trecho travado (§4.2).
+    /// </summary>
+    Task<IEnumerable<SegmentoAudio>> ObterSegmentosAguardandoCallbackAsync(DateTime limite);
+
     Task AdicionarSegmentoAsync(SegmentoAudio segmento);
     void AtualizarSegmento(SegmentoAudio segmento);
 

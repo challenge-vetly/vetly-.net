@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Vetly.Application.Interfaces;
 using Vetly.Domain.Entities;
+using Vetly.Domain.Enums;
 using Vetly.Infrastructure.Data;
 
 namespace Vetly.Infrastructure.Repositories;
@@ -41,6 +42,14 @@ public class CapturaRepository : ICapturaRepository
         await _context.SegmentosDeAudio
             .Where(s => s.SessaoCapturaId == sessaoId)
             .OrderBy(s => s.Sequencia)
+            .ToListAsync();
+
+    /// <inheritdoc/>
+    public async Task<IEnumerable<SegmentoAudio>> ObterSegmentosAguardandoCallbackAsync(DateTime limite) =>
+        await _context.SegmentosDeAudio
+            .Where(s => s.Estado == EstadoSegmentoAudio.Enviado &&
+                        s.DespachadoEm != null && s.DespachadoEm < limite)
+            .OrderBy(s => s.DespachadoEm)
             .ToListAsync();
 
     /// <inheritdoc/>

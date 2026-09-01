@@ -52,6 +52,13 @@ public class SegmentoAudio
     [MaxLength(64)]
     public string? CallbackTokenHash { get; private set; }
 
+    /// <summary>
+    /// Quando o segmento foi entregue ao motor. É o relógio a partir do qual se conta
+    /// o tempo de espera pelo callback (§4.2): sem ele não há como distinguir um
+    /// segmento que acabou de sair de um que o motor engoliu e nunca respondeu.
+    /// </summary>
+    public DateTime? DespachadoEm { get; private set; }
+
     public DateTime CriadoEm { get; private set; }
 
     /// <summary>Construtor privado reservado ao EF Core.</summary>
@@ -76,13 +83,32 @@ public class SegmentoAudio
         CriadoEm = DateTime.UtcNow;
     }
 
-    /// <summary>Marca o despacho ao motor de transcrição e guarda o hash do token.</summary>
-    public void RegistrarDespacho(string callbackTokenHash)
+    /// <summary>
+    /// Marca o despacho ao motor de transcrição e guarda o hash do token.
+    ///
+    /// O instante vem de fora, como em <see cref="Job.RegistrarFalha"/>: é dele que a
+    /// varredura de trecho travado conta o prazo, e um relógio que a entidade lê
+    /// sozinha não é observável de fora.
+    /// </summary>
+    public void RegistrarDespacho(string callbackTokenHash, DateTime agora)
     {
         Estado = EstadoSegmentoAudio.Enviado;
         CallbackTokenHash = callbackTokenHash;
+        DespachadoEm = agora;
         Tentativas++;
     }
+
+    /// <summary>
+    /// Verdadeiro quando o segmento saiu para o motor e o callback não voltou dentro
+    /// do prazo (§4.2).
+    ///
+    /// Sem isto o segmento fica em <c>Enviado</c> para sempre quando o motor aceita e
+    /// depois morre calado — e a sessão inteira trava em <c>AguardandoTranscricao</c>,
+    /// porque o desfecho só é avaliado quando <b>todos</b> os trechos responderam.
+    /// </summary>
+    public bool AguardaCallbackHaMaisDe(TimeSpan prazo, DateTime agora) =>
+        Estado == EstadoSegmentoAudio.Enviado &&
+        DespachadoEm is { } despacho && agora - despacho > prazo;
 
     /// <summary>Registra o texto recebido do motor.</summary>
     public void RegistrarTranscricao() => Estado = EstadoSegmentoAudio.Transcrito;
