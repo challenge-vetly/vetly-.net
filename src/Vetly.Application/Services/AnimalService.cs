@@ -246,14 +246,84 @@ public class AnimalService : IAnimalService
         await GarantirAcessoAoAnimalAsync(animal);
 
         var prontuarios = await _repo.ObterHistoricoLongitudinalAsync(animalId);
+
+        // RN-068: ocultar e escolha de exibicao do Responsavel, nao supressao de
+        // registro. O profissional e o Admin continuam vendo tudo — o prontuario tem
+        // guarda regulatoria, e um historico que some da vista de quem prescreve seria
+        // perigoso, nao discreto.
+        if (_usuario.EhTutor)
+            prontuarios = prontuarios.Where(p => !p.Oculto);
+
         return prontuarios.Select(p => new ProntuarioDto
         {
             Id = p.Id, ConsultaId = p.ConsultaId, AnimalId = p.AnimalId,
             DadosClinicos = p.DadosClinicos, VersaoOriginalId = p.VersaoOriginalId,
             DataCorrecao = p.DataCorrecao, JustificativaCorrecao = p.JustificativaCorrecao,
             CrmvSolicitanteCorrecao = p.CrmvSolicitanteCorrecao,
-            DataCriacao = p.DataCriacao, ExigeJustificativa = p.ExigeJustificativa()
+            DataCriacao = p.DataCriacao, ExigeJustificativa = p.ExigeJustificativa(),
+            Oculto = p.Oculto
         });
+    }
+
+    /// <inheritdoc/>
+    public async Task<ProntuarioDto> DefinirVisibilidadeDoHistoricoAsync(
+        Guid animalId, Guid registroId, bool oculto)
+    {
+        var animal = await _repo.ObterPorIdAsync(animalId)
+            ?? throw new NotFoundException("Animal", animalId);
+
+        // Ocultar do proprio board e decisao do dono. O veterinario nao decide o que o
+        // Responsavel enxerga sobre o proprio animal (RN-068/RN-106).
+        GarantirQueEODono(animal);
+
+        var prontuario = (await _repo.ObterHistoricoLongitudinalAsync(animalId))
+            .FirstOrDefault(p => p.Id == registroId)
+            ?? throw new NotFoundException("Prontuario", registroId);
+
+        // RN-068: alerta de seguranca nao se esconde. Um registro que documenta uma
+        // alergia e justamente o que precisa estar visivel quando o animal chega
+        // desacordado num plantao que nao e o de sempre — deixar o dono oculta-lo
+        // transformaria uma preferencia de tela em risco clinico.
+        if (oculto && CarregaAlertaDeSeguranca(prontuario, animal))
+            throw new BusinessRuleException("RN-068",
+                "Registro com alerta de seguranca nao pode ser ocultado.");
+
+        prontuario.DefinirVisibilidade(oculto);
+
+        _repo.Atualizar(animal); // o prontuario e rastreado pelo mesmo contexto
+        await _repo.SalvarAsync();
+
+        return new ProntuarioDto
+        {
+            Id = prontuario.Id,
+            ConsultaId = prontuario.ConsultaId,
+            AnimalId = prontuario.AnimalId,
+            DadosClinicos = prontuario.DadosClinicos,
+            VersaoOriginalId = prontuario.VersaoOriginalId,
+            DataCorrecao = prontuario.DataCorrecao,
+            JustificativaCorrecao = prontuario.JustificativaCorrecao,
+            CrmvSolicitanteCorrecao = prontuario.CrmvSolicitanteCorrecao,
+            DataCriacao = prontuario.DataCriacao,
+            ExigeJustificativa = prontuario.ExigeJustificativa(),
+            Oculto = prontuario.Oculto
+        };
+    }
+
+    /// <summary>
+    /// Verdadeiro quando o registro menciona um alerta ativo do animal ou uma alergia
+    /// conhecida (RN-068).
+    ///
+    /// A checagem e por texto porque o prontuario e texto: nao ha campo estruturado
+    /// ligando registro a alerta. E deliberadamente conservadora — na duvida, o
+    /// registro permanece visivel, que e o lado seguro do erro.
+    /// </summary>
+    private static bool CarregaAlertaDeSeguranca(Prontuario prontuario, Animal animal)
+    {
+        var texto = prontuario.DadosClinicos;
+
+        return animal.AlertasAtivos.Concat(animal.Alergias)
+            .Where(termo => !string.IsNullOrWhiteSpace(termo))
+            .Any(termo => texto.Contains(termo, StringComparison.OrdinalIgnoreCase));
     }
 
     public async Task<IEnumerable<ExameDto>> ObterExamesAsync(Guid animalId)
@@ -284,6 +354,25 @@ public class AnimalService : IAnimalService
 
         await _repo.AdicionarAsync(animal);
         await _repo.SalvarAsync();
+
+        // RN-046: o board nasce preenchido. Cadastrar o pet e informar a carteira de
+        // vacinacao e, na cabeca do Responsavel, a mesma acao — deixar as obrigacoes
+        // para uma chamada separada faria o board aparecer vazio logo depois de ele ter
+        // digitado exatamente os dados que o preenchem.
+        //
+        // Falha aqui nao desfaz o cadastro: o animal existe, e as obrigacoes podem ser
+        // derivadas depois pela rota propria. Perder o pet recem-cadastrado por causa
+        // do board seria trocar o essencial pelo acessorio.
+        try
+        {
+            await _obrigacoes.DerivarDaCarteiraAsync(animal.Id);
+        }
+        catch (Exception)
+        {
+            // Silencio deliberado: a derivacao e conveniencia, e a rota
+            // POST /api/animais/{id}/obrigacoes/derivar segue disponivel.
+        }
+
         return MapearParaDto(animal);
     }
 

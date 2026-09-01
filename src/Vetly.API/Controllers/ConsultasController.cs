@@ -430,6 +430,22 @@ public class ConsultasController : ControllerBase
     /// consulta seguiu pelo prontuario manual (RN-085) — <c>GET
     /// /api/consultas/{id}/captura</c> mostra em que ponto do ciclo a sessao esta.
     /// </remarks>
+    [HttpPost("{id:guid}/retorno")]
+    [Authorize(Policy = "VeterinarioOuAdmin")]
+    [Idempotente]
+    [ProducesResponseType(typeof(RetornoAgendadoDto), StatusCodes.Status201Created)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
+    public async Task<IActionResult> AgendarRetorno(Guid id, [FromBody] AgendarRetornoDto dto)
+    {
+        var retorno = await _service.AgendarRetornoAsync(id, dto);
+
+        return CreatedAtAction(nameof(ObterPorId), new { id = retorno.ConsultaId }, retorno);
+    }
+
     [HttpGet("{id:guid}/rascunho")]
     [ProducesResponseType(typeof(RascunhoIaDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]

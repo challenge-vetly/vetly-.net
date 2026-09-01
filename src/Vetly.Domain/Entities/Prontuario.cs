@@ -46,6 +46,18 @@ public class Prontuario
     /// <summary>Data e hora de criação do prontuário original.</summary>
     public DateTime DataCriacao { get; private set; }
 
+    /// <summary>
+    /// Oculto da visão do Responsável no app (RN-068).
+    ///
+    /// O registro <b>não</b> é apagado: a guarda regulatória do prontuário permanece, o
+    /// veterinário segue vendo, e a auditoria também. O que muda é o board do pet, onde
+    /// um episódio antigo e resolvido pode ser mais ruído que informação.
+    ///
+    /// Registro que carrega alerta de segurança não é ocultável — esconder uma alergia
+    /// do próprio dono é o oposto do que o board existe para fazer.
+    /// </summary>
+    public bool Oculto { get; private set; }
+
     /// <summary>Construtor privado reservado ao EF Core para materialização de entidades.</summary>
     private Prontuario()
     {
@@ -81,6 +93,14 @@ public class Prontuario
     /// Indica se a correção deste prontuário exige justificativa.
     /// Verdadeiro quando já passou mais de 24h da criação (RN-089).
     /// </summary>
+    /// <summary>
+    /// Oculta ou volta a exibir o registro no board do Responsável (RN-068).
+    ///
+    /// A guarda sobre alerta de segurança fica no serviço, que é quem enxerga o animal
+    /// e sabe quais alertas estão ativos — a entidade sozinha só vê o próprio texto.
+    /// </summary>
+    public void DefinirVisibilidade(bool oculto) => Oculto = oculto;
+
     public bool ExigeJustificativa() =>
         DataCriacao < DateTime.UtcNow.AddHours(-24);
 }

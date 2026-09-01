@@ -152,4 +152,118 @@ public class ReguaDeLembretesTests
         Assert.Equal(0, criados);
         _notificacoes.Verify(r => r.SalvarAsync(), Times.Never);
     }
+
+    // ── RN-094/RN-095: a regua avanca sozinha nos marcos de 7, 3 e 1 dia ────
+
+    private AgendarTentativasDaRegua CriarRotinaDaRegua() =>
+        new(_lembretes.Object, _notificacoes.Object,
+            NullLogger<AgendarTentativasDaRegua>.Instance);
+
+    /// <summary>Uma regua aberta com o evento a tantos dias daqui.</summary>
+    private LembreteAgendado ReguaComEventoEm(double dias)
+    {
+        var lembrete = new LembreteAgendado(
+            _animalId, _tutorId, TipoLembrete.Vacina, DateTime.UtcNow.AddDays(dias));
+
+        _lembretes.Setup(r => r.ObterAtivosAteAsync(It.IsAny<DateTime>())).ReturnsAsync([lembrete]);
+        _lembretes.Setup(r => r.Atualizar(It.IsAny<LembreteAgendado>()));
+
+        return lembrete;
+    }
+
+    [Fact]
+    public async Task Regua_EventoDistante_NaoTentaNada()
+    {
+        var lembrete = ReguaComEventoEm(30);
+
+        var tentativas = await CriarRotinaDaRegua().ExecutarAsync(CancellationToken.None);
+
+        Assert.Equal(0, tentativas);
+        Assert.Equal(0, lembrete.TentativasRealizadas);
+    }
+
+    [Fact]
+    public async Task Regua_NoPrimeiroMarco_FazUmaTentativa()
+    {
+        var lembrete = ReguaComEventoEm(6);
+
+        var tentativas = await CriarRotinaDaRegua().ExecutarAsync(CancellationToken.None);
+
+        // Sete dias e planejamento: da tempo de marcar
+        Assert.Equal(1, tentativas);
+        Assert.Equal(1, lembrete.TentativasRealizadas);
+        Assert.Single(_criadas);
+        Assert.Equal(_tutorId, _criadas[0].TutorId);
+    }
+
+    [Fact]
+    public async Task Regua_NoMesmoMarco_NaoRepeteATentativa()
+    {
+        var lembrete = ReguaComEventoEm(6);
+
+        var rotina = CriarRotinaDaRegua();
+        await rotina.ExecutarAsync(CancellationToken.None);
+        var segunda = await rotina.ExecutarAsync(CancellationToken.None);
+
+        // A rotina roda todo dia; o marco e que decide quando ela avisa
+        Assert.Equal(0, segunda);
+        Assert.Equal(1, lembrete.TentativasRealizadas);
+    }
+
+    [Fact]
+    public async Task Regua_ComMarcosVencidosDeUmaVez_AvancaUmDegrauPorExecucao()
+    {
+        var lembrete = ReguaComEventoEm(0.5);
+
+        var rotina = CriarRotinaDaRegua();
+
+        await rotina.ExecutarAsync(CancellationToken.None);
+        Assert.Equal(1, lembrete.TentativasRealizadas);
+
+        await rotina.ExecutarAsync(CancellationToken.None);
+        Assert.Equal(2, lembrete.TentativasRealizadas);
+
+        // Uma regua que ficou parada nao vira tres notificacoes no mesmo minuto
+        Assert.Equal(2, _criadas.Count);
+    }
+
+    [Fact]
+    public async Task Regua_TresTentativasSemResposta_EscalaParaAClinica()
+    {
+        var lembrete = ReguaComEventoEm(0.5);
+
+        var rotina = CriarRotinaDaRegua();
+
+        for (var i = 0; i < 3; i++)
+            await rotina.ExecutarAsync(CancellationToken.None);
+
+        // RN-095: o alerta a clinica existe para pegar o animal que sumiu — e ele
+        // depende de tentativas que, antes desta rotina, nunca aconteciam
+        Assert.Equal(3, lembrete.TentativasRealizadas);
+        Assert.True(lembrete.AlertaEnviadoClinica);
+    }
+
+    [Fact]
+    public async Task Regua_EventoJaVencido_AvisaComTextoDeAtraso()
+    {
+        ReguaComEventoEm(-2);
+
+        await CriarRotinaDaRegua().ExecutarAsync(CancellationToken.None);
+
+        // A regua nao para de existir porque a data passou: e ai que ela mais importa
+        Assert.Single(_criadas);
+        Assert.Contains("atraso", _criadas[0].Titulo, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Regua_SemNenhumLembreteAtivo_NaoFazNada()
+    {
+        _lembretes.Setup(r => r.ObterAtivosAteAsync(It.IsAny<DateTime>())).ReturnsAsync([]);
+
+        var tentativas = await CriarRotinaDaRegua().ExecutarAsync(CancellationToken.None);
+
+        Assert.Equal(0, tentativas);
+        Assert.Empty(_criadas);
+        _notificacoes.Verify(r => r.SalvarAsync(), Times.Never);
+    }
 }

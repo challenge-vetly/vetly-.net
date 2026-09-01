@@ -1,5 +1,7 @@
 using Moq;
+using Vetly.Application.DTOs.Colmeia;
 using Vetly.Application.DTOs.Consulta;
+using Vetly.Application.DTOs.Notificacao;
 using Vetly.Application.Exceptions;
 using Vetly.Application.Interfaces;
 using Vetly.Application.Services;
@@ -29,11 +31,13 @@ public class ConsultaServiceTests
     private readonly Mock<IFidelidadeService> _fidelidadeMock = new();
     private readonly Mock<IAvaliacaoService> _avaliacoesMock = new();
     private readonly Mock<IColmeiaService> _colmeiaMock = new();
+    private readonly Mock<INotificacaoService> _notificacoesMock = new();
 
     private ConsultaService CriarServico(params ICancelamentoStrategy[] strategies) =>
         new(_repoMock.Object, _pagamentoRepoMock.Object, _documentoRepoMock.Object,
             _animalRepoMock.Object, _vetRepoMock.Object, _empresaRepoMock.Object,
-            strategies, _usuarioMock.Object, _agendaRepoMock.Object, _filaMock.Object, _fidelidadeMock.Object, _avaliacoesMock.Object, _colmeiaMock.Object);
+            strategies, _usuarioMock.Object, _agendaRepoMock.Object, _filaMock.Object, _fidelidadeMock.Object, _avaliacoesMock.Object, _colmeiaMock.Object,
+            _notificacoesMock.Object);
 
     /// <summary>Por padrao os testes rodam como Admin, que enxerga todo o escopo.</summary>
     public ConsultaServiceTests() => _usuarioMock.SetupGet(u => u.EhAdmin).Returns(true);
@@ -1068,5 +1072,134 @@ public class ConsultaServiceTests
 
         Assert.Equal(StatusConsulta.Realizada, consulta.Status);
         Assert.False(consulta.Finalizada);
+    }
+
+    // ── RN-013/RN-090: o retorno ───────────────────────────────────────────
+
+    /// <summary>Uma consulta ja realizada e um horario livre do mesmo profissional.</summary>
+    private (Consulta Origem, Slot Novo) CenarioDeRetorno()
+    {
+        var vetId = Guid.NewGuid();
+        var origem = CriarConsulta(vetId, Guid.NewGuid(), Guid.NewGuid());
+        origem.ConfirmarPagamento();
+        origem.Realizar();
+
+        var slot = new Slot(vetId, DateTime.UtcNow.AddDays(10), DateTime.UtcNow.AddDays(10).AddMinutes(30));
+
+        _repoMock.Setup(r => r.ObterPorIdAsync(origem.Id)).ReturnsAsync(origem);
+        _repoMock.Setup(r => r.AdicionarAsync(It.IsAny<Consulta>())).Returns(Task.CompletedTask);
+        _repoMock.Setup(r => r.SalvarAsync()).ReturnsAsync(1);
+        _agendaRepoMock.Setup(r => r.ObterSlotAsync(slot.Id)).ReturnsAsync(slot);
+        _agendaRepoMock.Setup(r => r.SalvarAsync()).ReturnsAsync(1);
+
+        return (origem, slot);
+    }
+
+    [Fact]
+    public async Task AgendarRetornoAsync_CriaConsultaConfirmadaSemCobranca()
+    {
+        var (origem, slot) = CenarioDeRetorno();
+
+        Consulta? criada = null;
+        _repoMock.Setup(r => r.AdicionarAsync(It.IsAny<Consulta>()))
+            .Callback<Consulta>(c => criada = c).Returns(Task.CompletedTask);
+
+        var resultado = await CriarServico().AgendarRetornoAsync(
+            origem.Id, new AgendarRetornoDto { SlotId = slot.Id, Motivo = "Revisar a cicatrizacao" });
+
+        // O retorno e a segunda metade de um tratamento ja pago: cobrar por ele
+        // empurraria o Responsavel a nao voltar (RN-013)
+        Assert.Equal(origem.Id, resultado.ConsultaOrigemId);
+        Assert.Equal(OrigemConsulta.Retorno, criada!.Origem);
+        Assert.Equal(StatusConsulta.Confirmada, criada.Status);
+        Assert.Equal(StatusPagamento.Confirmado, criada.StatusPagamento);
+        Assert.Equal(origem.AnimalId, criada.AnimalId);
+        Assert.Equal(origem.VeterinarioId, criada.VeterinarioId);
+
+        // O horario e ocupado de vez: deixa-lo em lock de dez minutos so o devolveria
+        // a fila, porque nao ha pagamento a aguardar
+        Assert.Equal(EstadoSlot.Confirmado, slot.Estado);
+    }
+
+    [Fact]
+    public async Task AgendarRetornoAsync_EstendeAColmeiaENotificaOResponsavel()
+    {
+        var (origem, slot) = CenarioDeRetorno();
+
+        var expira = DateTime.UtcNow.AddDays(20);
+        _colmeiaMock.Setup(c => c.EstenderAsync(origem.AnimalId, origem.VeterinarioId, It.IsAny<DateTime>()))
+            .ReturnsAsync(new AcessoColmeiaDto { ExpiraEm = expira });
+
+        var resultado = await CriarServico().AgendarRetornoAsync(
+            origem.Id, new AgendarRetornoDto { SlotId = slot.Id });
+
+        // O profissional nao pode perder o historico no meio do tratamento que ele
+        // mesmo esta conduzindo (RN-090)
+        Assert.Equal(expira, resultado.ColmeiaEstendidaAte);
+
+        _notificacoesMock.Verify(n => n.CriarAsync(It.Is<CriarNotificacaoDto>(
+            d => d.TutorId == origem.TutorId && d.Corpo.Contains("sem custo"))), Times.Once);
+    }
+
+    [Fact]
+    public async Task AgendarRetornoAsync_SemColmeiaAEstender_SegueComVisaoRestrita()
+    {
+        var (origem, slot) = CenarioDeRetorno();
+
+        _colmeiaMock.Setup(c => c.EstenderAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<DateTime>()))
+            .ReturnsAsync((AcessoColmeiaDto?)null);
+
+        var resultado = await CriarServico().AgendarRetornoAsync(
+            origem.Id, new AgendarRetornoDto { SlotId = slot.Id });
+
+        // Nao havia autorizacao a estender: o retorno acontece, com a visao restrita
+        // ao que o proprio veterinario produziu (RN-066)
+        Assert.Null(resultado.ColmeiaEstendidaAte);
+        Assert.NotEqual(Guid.Empty, resultado.ConsultaId);
+    }
+
+    [Fact]
+    public async Task AgendarRetornoAsync_PorOutroVeterinario_LancaAcessoNegadoRN105()
+    {
+        var (origem, slot) = CenarioDeRetorno();
+        ComoVeterinario(Guid.NewGuid());
+
+        var ex = await Assert.ThrowsAsync<AcessoNegadoException>(
+            () => CriarServico().AgendarRetornoAsync(origem.Id, new AgendarRetornoDto { SlotId = slot.Id }));
+
+        // Retorno e decisao clinica de quem conduziu o caso, nao agendamento que o
+        // Responsavel faz por conta propria
+        Assert.Equal("RN-105", ex.Codigo);
+        Assert.Equal(EstadoSlot.Livre, slot.Estado);
+    }
+
+    [Fact]
+    public async Task AgendarRetornoAsync_ConsultaAindaNaoRealizada_LancaConflitoDeEstado()
+    {
+        var origem = CriarConsulta(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
+        origem.ConfirmarPagamento();
+
+        _repoMock.Setup(r => r.ObterPorIdAsync(origem.Id)).ReturnsAsync(origem);
+
+        var ex = await Assert.ThrowsAsync<ConflitoDeEstadoException>(
+            () => CriarServico().AgendarRetornoAsync(origem.Id, new AgendarRetornoDto { SlotId = Guid.NewGuid() }));
+
+        // Marcar retorno de consulta ainda em aberto criaria um segundo agendamento
+        // gratuito antes de o primeiro ter sido pago
+        Assert.Equal("RN-013", ex.Codigo);
+    }
+
+    [Fact]
+    public async Task AgendarRetornoAsync_ComHorarioDeOutroProfissional_LancaBusinessRuleRN013()
+    {
+        var (origem, _) = CenarioDeRetorno();
+
+        var deOutro = new Slot(Guid.NewGuid(), DateTime.UtcNow.AddDays(10), DateTime.UtcNow.AddDays(10).AddMinutes(30));
+        _agendaRepoMock.Setup(r => r.ObterSlotAsync(deOutro.Id)).ReturnsAsync(deOutro);
+
+        var ex = await Assert.ThrowsAsync<BusinessRuleException>(
+            () => CriarServico().AgendarRetornoAsync(origem.Id, new AgendarRetornoDto { SlotId = deOutro.Id }));
+
+        Assert.Equal("RN-013", ex.Codigo);
     }
 }

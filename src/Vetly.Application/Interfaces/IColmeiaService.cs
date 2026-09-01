@@ -27,6 +27,34 @@ public interface IColmeiaService
 
     /// <summary>Registra o acesso na trilha, permitido ou negado.</summary>
     Task RegistrarAcessoAsync(Guid animalId, EscopoAcessoColmeia escopo, bool permitido, string? rota);
+
+    /// <summary>
+    /// Estende a autorização vigente do par animal/veterinário até depois do retorno
+    /// (RN-090).
+    ///
+    /// Não concede nada novo: só o Responsável concede, e essa regra não se dobra por
+    /// conveniência do fluxo. O que se evita aqui é o profissional perder o acesso ao
+    /// histórico no meio de um tratamento que ele mesmo está conduzindo — sem
+    /// autorização vigente, não há o que estender, e o retorno acontece com a visão
+    /// restrita.
+    ///
+    /// Devolve <c>null</c> quando não havia autorização a estender.
+    /// </summary>
+    Task<AcessoColmeiaDto?> EstenderAsync(Guid animalId, Guid veterinarioId, DateTime ate);
+
+    /// <summary>
+    /// Abre o acesso do profissional ao histórico do animal que ele vai atender
+    /// (RN-064/RN-090).
+    ///
+    /// Roda na confirmação do pagamento, sem interação: agendar com um profissional
+    /// <b>é</b> autorizá-lo a ler o histórico do animal — exigir um segundo
+    /// consentimento explícito para isso levaria o Responsável a chegar na consulta com
+    /// o veterinário às cegas, que é o problema que a colmeia existe para resolver.
+    ///
+    /// Escopo restrito ao atendimento e validade curta: é acesso para atender, não
+    /// procuração. Autorização vigente não é duplicada.
+    /// </summary>
+    Task<AcessoColmeiaDto?> AbrirParaAtendimentoAsync(Guid animalId, Guid veterinarioId, DateTime ate);
 }
 
 /// <summary>

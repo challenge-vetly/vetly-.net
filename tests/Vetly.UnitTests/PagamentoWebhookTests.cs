@@ -47,12 +47,13 @@ public class PagamentoWebhookTests
     }
 
     private readonly Mock<IFidelidadeService> _fidelidade = new();
+    private readonly Mock<IColmeiaService> _colmeia = new();
 
     private PagamentoService CriarServico() =>
         new(_repo.Object, _vetRepo.Object, _consultaRepo.Object, _empresaRepo.Object,
             _adaptador.Object, _agendaRepo.Object, _fila.Object,
             [new SplitBasicoStrategy(), new SplitProfissionalStrategy(), new SplitEnterpriseStrategy()],
-            _fidelidade.Object, _usuario.Object);
+            _fidelidade.Object, _usuario.Object, _colmeia.Object);
 
     /// <summary>Monta consulta em checkout, com horario travado e pagamento pendente.</summary>
     private (Pagamento Pagamento, Consulta Consulta, Slot Slot) CenarioEmCheckout()
@@ -769,5 +770,34 @@ public class PagamentoWebhookTests
         // Venceu por tempo: ressuscita-lo estenderia a validade por um motivo que nao
         // tem nada a ver com o vencimento
         Assert.Equal(StatusCupom.Expirado, cupom.Status);
+    }
+
+    // ── RN-064: agendar E autorizar a leitura do historico ──────────────────
+
+    [Fact]
+    public async Task Webhook_Confirmado_AbreAColmeiaParaOProfissionalQueVaiAtender()
+    {
+        var (_, consulta, _) = CenarioEmCheckout();
+        EventoDoProvedor(StatusPagamento.Confirmado);
+
+        await CriarServico().ProcessarWebhookAsync("{}", "assinatura");
+
+        // Exigir um segundo consentimento explicito levaria o Responsavel a chegar na
+        // consulta com o veterinario as cegas — o problema que a colmeia resolve
+        _colmeia.Verify(c => c.AbrirParaAtendimentoAsync(
+            consulta.AnimalId, consulta.VeterinarioId, It.IsAny<DateTime>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Webhook_Recusado_NaoAbreColmeia()
+    {
+        CenarioEmCheckout();
+        EventoDoProvedor(StatusPagamento.Recusado);
+
+        await CriarServico().ProcessarWebhookAsync("{}", "assinatura");
+
+        // Consulta que nao vai acontecer nao justifica acesso a historico nenhum
+        _colmeia.Verify(c => c.AbrirParaAtendimentoAsync(
+            It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<DateTime>()), Times.Never);
     }
 }

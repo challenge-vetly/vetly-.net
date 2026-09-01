@@ -149,6 +149,69 @@ public class ColmeiaService : IColmeiaService
     }
 
     /// <summary>
+    /// <inheritdoc/>
+    public async Task<AcessoColmeiaDto?> EstenderAsync(Guid animalId, Guid veterinarioId, DateTime ate)
+    {
+        var acesso = await _repo.ObterVigenteAsync(animalId, veterinarioId, DateTime.UtcNow);
+
+        // Sem autorização vigente não há o que estender. Criar uma aqui seria a clínica
+        // se autoconcedendo acesso — exatamente o que a guarda de ConcederAsync impede,
+        // contornada por outra porta (RN-090).
+        if (acesso is null)
+            return null;
+
+        acesso.Prorrogar(ate);
+
+        _repo.Atualizar(acesso);
+        await _repo.SalvarAsync();
+
+        return Mapear(acesso);
+    }
+
+    /// <inheritdoc/>
+    public async Task<AcessoColmeiaDto?> AbrirParaAtendimentoAsync(
+        Guid animalId, Guid veterinarioId, DateTime ate)
+    {
+        var animal = await _animalRepo.ObterPorIdAsync(animalId);
+
+        if (animal is null)
+            return null;
+
+        var agora = DateTime.UtcNow;
+
+        // Já há autorização viva: prorrogar até o fim do atendimento é o suficiente, e
+        // criar uma segunda deixaria o Responsável com duas linhas na tela sem saber
+        // qual vale (RN-090).
+        var existente = await _repo.ObterVigenteAsync(animalId, veterinarioId, agora);
+
+        if (existente is not null)
+        {
+            existente.Prorrogar(ate);
+            _repo.Atualizar(existente);
+            await _repo.SalvarAsync();
+
+            return Mapear(existente);
+        }
+
+        var validade = ate > agora ? ate - agora : AcessoColmeia.ValidadePadrao;
+
+        var vet = await _vetRepo.ObterPorIdAsync(veterinarioId);
+
+        // Escopo minimo, e nao historico completo: o profissional que vai atender
+        // recebe o ultimo atendimento, o bastante para nao comecar as cegas. Para ver
+        // o historico inteiro de outra clinica, o Responsavel concede explicitamente
+        // — e essa concessao continua sendo so dele (RN-066).
+        var acesso = new AcessoColmeia(
+            animalId, animal.TutorId, veterinarioId, EscopoAcessoColmeia.UltimaConsulta,
+            validade, vet?.EmpresaId, "Concedido automaticamente pelo agendamento");
+
+        await _repo.AdicionarAsync(acesso);
+        await _repo.SalvarAsync();
+
+        return Mapear(acesso);
+    }
+
+    /// <summary>
     /// As autorizações e o log são do Responsável: é ele quem precisa ver quem alcança
     /// o histórico do seu animal (RN-090/RN-105).
     /// </summary>

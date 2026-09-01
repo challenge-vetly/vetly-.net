@@ -225,4 +225,145 @@ public class AnimalServiceTests
 
         Assert.Equal("RN-105", ex.Codigo);
     }
+
+    // ── RN-068: ocultar do board nao e apagar ──────────────────────────────
+
+    private (Animal Animal, Prontuario Registro) CenarioDeHistorico(string dadosClinicos = "Consulta de rotina.")
+    {
+        var tutorId = Guid.NewGuid();
+        var animal = CriarAnimalDe(tutorId);
+        var registro = new Prontuario(Guid.NewGuid(), animal.Id, dadosClinicos);
+
+        _repoMock.Setup(r => r.ObterPorIdAsync(animal.Id)).ReturnsAsync(animal);
+        _repoMock.Setup(r => r.ObterHistoricoLongitudinalAsync(animal.Id)).ReturnsAsync([registro]);
+        _repoMock.Setup(r => r.Atualizar(It.IsAny<Animal>()));
+        _repoMock.Setup(r => r.SalvarAsync()).ReturnsAsync(1);
+
+        _usuarioMock.SetupGet(u => u.EhAdmin).Returns(false);
+        _usuarioMock.SetupGet(u => u.EhTutor).Returns(true);
+        _usuarioMock.SetupGet(u => u.TutorId).Returns(tutorId);
+
+        return (animal, registro);
+    }
+
+    [Fact]
+    public async Task OcultarDoHistorico_PeloDono_EscondeSemApagar()
+    {
+        var (animal, registro) = CenarioDeHistorico();
+
+        var resultado = await CriarServico().DefinirVisibilidadeDoHistoricoAsync(
+            animal.Id, registro.Id, oculto: true);
+
+        Assert.True(resultado.Oculto);
+        Assert.True(registro.Oculto);
+
+        // O registro continua existindo: a guarda regulatoria do prontuario permanece
+        Assert.Equal("Consulta de rotina.", registro.DadosClinicos);
+    }
+
+    [Fact]
+    public async Task ObterHistorico_ComoTutor_OmiteOQueEleOcultou()
+    {
+        var (animal, registro) = CenarioDeHistorico();
+        registro.DefinirVisibilidade(true);
+
+        var historico = await CriarServico().ObterHistoricoAsync(animal.Id);
+
+        Assert.Empty(historico);
+    }
+
+    [Fact]
+    public async Task ObterHistorico_ComoAdmin_ContinuaVendoOOculto()
+    {
+        var (animal, registro) = CenarioDeHistorico();
+        registro.DefinirVisibilidade(true);
+
+        _usuarioMock.SetupGet(u => u.EhTutor).Returns(false);
+        _usuarioMock.SetupGet(u => u.EhAdmin).Returns(true);
+
+        var historico = (await CriarServico().ObterHistoricoAsync(animal.Id)).ToList();
+
+        // Um historico que some da vista de quem prescreve seria perigoso, nao discreto
+        Assert.Single(historico);
+        Assert.True(historico[0].Oculto);
+    }
+
+    [Fact]
+    public async Task OcultarDoHistorico_RegistroComAlertaDeSeguranca_LancaBusinessRuleRN068()
+    {
+        var (animal, registro) = CenarioDeHistorico("Reacao a Dipirona durante o pos-operatorio.");
+        animal.DefinirPerfilClinico(alergias: ["Dipirona"]);
+
+        var ex = await Assert.ThrowsAsync<BusinessRuleException>(
+            () => CriarServico().DefinirVisibilidadeDoHistoricoAsync(animal.Id, registro.Id, oculto: true));
+
+        // Esconder uma alergia do proprio dono e o oposto do que o board existe para
+        // fazer — e o risco aparece quando o animal chega desacordado num plantao que
+        // nao e o de sempre
+        Assert.Equal("RN-068", ex.Codigo);
+        Assert.False(registro.Oculto);
+    }
+
+    [Fact]
+    public async Task ExibirDeNovo_RegistroComAlerta_ESempreAceito()
+    {
+        var (animal, registro) = CenarioDeHistorico("Reacao a Dipirona durante o pos-operatorio.");
+        animal.DefinirPerfilClinico(alergias: ["Dipirona"]);
+        registro.DefinirVisibilidade(true);
+
+        var resultado = await CriarServico().DefinirVisibilidadeDoHistoricoAsync(
+            animal.Id, registro.Id, oculto: false);
+
+        // A guarda so vale numa direcao: voltar a exibir nunca esconde nada
+        Assert.False(resultado.Oculto);
+    }
+
+    [Fact]
+    public async Task OcultarDoHistorico_PorVeterinario_LancaAcessoNegadoRN105()
+    {
+        var animal = CriarAnimalDe(Guid.NewGuid());
+        var registro = new Prontuario(Guid.NewGuid(), animal.Id, "Consulta de rotina.");
+
+        _repoMock.Setup(r => r.ObterPorIdAsync(animal.Id)).ReturnsAsync(animal);
+        _repoMock.Setup(r => r.ObterHistoricoLongitudinalAsync(animal.Id)).ReturnsAsync([registro]);
+        ComoVeterinario(Guid.NewGuid());
+
+        var ex = await Assert.ThrowsAsync<AcessoNegadoException>(
+            () => CriarServico().DefinirVisibilidadeDoHistoricoAsync(animal.Id, registro.Id, oculto: true));
+
+        // O veterinario nao decide o que o Responsavel enxerga sobre o proprio animal
+        Assert.Equal("RN-105", ex.Codigo);
+    }
+
+    // ── RN-046: o board nasce preenchido ───────────────────────────────────
+
+    [Fact]
+    public async Task CriarAsync_DerivaAsObrigacoesDaCarteira()
+    {
+        _repoMock.Setup(r => r.AdicionarAsync(It.IsAny<Animal>())).Returns(Task.CompletedTask);
+        _repoMock.Setup(r => r.SalvarAsync()).ReturnsAsync(1);
+
+        var resultado = await CriarServico().CriarAsync(CriarDto());
+
+        // Cadastrar o pet e informar a carteira e, para o Responsavel, a mesma acao:
+        // deixar as obrigacoes para uma chamada separada faria o board aparecer vazio
+        // logo depois de ele ter digitado exatamente os dados que o preenchem
+        _obrigacoesMock.Verify(o => o.DerivarDaCarteiraAsync(resultado.Id), Times.Once);
+    }
+
+    [Fact]
+    public async Task CriarAsync_QuandoADerivacaoFalha_OAnimalContinuaCadastrado()
+    {
+        _repoMock.Setup(r => r.AdicionarAsync(It.IsAny<Animal>())).Returns(Task.CompletedTask);
+        _repoMock.Setup(r => r.SalvarAsync()).ReturnsAsync(1);
+        _obrigacoesMock.Setup(o => o.DerivarDaCarteiraAsync(It.IsAny<Guid>()))
+            .ThrowsAsync(new InvalidOperationException("board indisponivel"));
+
+        var resultado = await CriarServico().CriarAsync(CriarDto());
+
+        // Perder o pet recem-cadastrado por causa do board seria trocar o essencial
+        // pelo acessorio
+        Assert.NotEqual(Guid.Empty, resultado.Id);
+        Assert.Equal("Thor", resultado.Nome);
+    }
 }

@@ -85,6 +85,11 @@ public class ConsultaConfiguration : IEntityTypeConfiguration<Consulta>
         builder.Property(c => c.Origem)
             .HasConversion<int>().HasColumnName("ORIGEM").IsRequired();
 
+        // Nulo em tudo que nao e retorno, e por isso sem indice: a leitura por origem
+        // e rara, e um indice quase todo nulo custaria escrita sem pagar leitura.
+        builder.Property(c => c.ConsultaOrigemId)
+            .HasColumnType("CHAR(36)").HasColumnName("CONSULTA_ORIGEM_ID");
+
         // Estado da consulta na maquina de estados (RN-035/RN-038).
         // Fonte de verdade; CANCELADA e FINALIZADA seguem por dupla escrita.
         builder.Property(c => c.Status)

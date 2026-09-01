@@ -3,6 +3,7 @@ using Vetly.Application.DTOs.Colmeia;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Vetly.Application.DTOs.Animal;
+using Vetly.Application.DTOs.Prontuario;
 using Vetly.Application.Interfaces;
 
 namespace Vetly.API.Controllers;
@@ -93,6 +94,16 @@ public class AnimaisController : ControllerBase
     /// na consulta, e sem peso a IA nao sugere dose. O resto do cadastro e do
     /// Responsavel — um vet que atendeu uma vez nao renomeia o pet nem o desativa.
     /// </remarks>
+    [HttpPatch("{id:guid}/historico/{registroId:guid}/ocultar")]
+    [ProducesResponseType(typeof(ProntuarioDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
+    public async Task<IActionResult> OcultarDoHistorico(
+        Guid id, Guid registroId, [FromBody] OcultarRegistroDto dto) =>
+        Ok(await _service.DefinirVisibilidadeDoHistoricoAsync(id, registroId, dto.Oculto));
+
     [HttpPut("{id:guid}/peso")]
     [ProducesResponseType(typeof(AnimalDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]

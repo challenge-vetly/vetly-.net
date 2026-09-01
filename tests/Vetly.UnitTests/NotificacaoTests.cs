@@ -34,8 +34,11 @@ public class NotificacaoTests
             .ReturnsAsync(new ResultadoDoPushDto(Entregue: true, Erro: null, TokenInvalido: false));
     }
 
+    private readonly Mock<ITutorRepository> _tutores = new();
+
     private NotificacaoService CriarServico() =>
-        new(_repo.Object, _dispositivos.Object, _push.Object, _usuario.Object);
+        new(_repo.Object, _dispositivos.Object, _push.Object, _usuario.Object,
+            _tutores.Object);
 
     private Notificacao Notificacao(DateTime? agendadaPara = null)
     {
@@ -228,5 +231,113 @@ public class NotificacaoTests
 
         // O destino e rota interna, e nao URL: para onde ir e do app, nao da API
         Assert.Equal("/animais/abc/obrigacoes", enviado!.Value.Destino);
+    }
+
+    // ── RN-093: promocao e opt-in ──────────────────────────────────────────
+
+    private Tutor TutorComPromocoes(bool aceita)
+    {
+        var tutor = new Tutor("Ana Souza", "ana@exemplo.com", "11999998888");
+
+        if (aceita)
+            tutor.RegistrarConsentimento(FinalidadeConsentimento.Promocoes, true, DateTime.UtcNow);
+
+        _tutores.Setup(r => r.ObterPorIdAsync(It.IsAny<Guid>())).ReturnsAsync(tutor);
+        _tutores.Setup(r => r.SalvarAsync()).ReturnsAsync(1);
+        _usuario.SetupGet(u => u.TutorId).Returns(tutor.Id);
+
+        return tutor;
+    }
+
+    [Fact]
+    public async Task Criar_Promocao_SemOptIn_LancaBusinessRuleRN093()
+    {
+        var tutor = TutorComPromocoes(aceita: false);
+
+        var ex = await Assert.ThrowsAsync<BusinessRuleException>(
+            () => CriarServico().CriarAsync(new CriarNotificacaoDto
+            {
+                TutorId = tutor.Id,
+                Tipo = TipoNotificacao.Promocao,
+                Titulo = "Racao com 20% off",
+                Corpo = "So esta semana."
+            }));
+
+        // Opt-in, nunca opt-out: quem nunca escolheu nao recebe promocao
+        Assert.Equal("RN-093", ex.Codigo);
+        _repo.Verify(r => r.AdicionarAsync(It.IsAny<Notificacao>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Criar_Promocao_ComOptIn_Cria()
+    {
+        var tutor = TutorComPromocoes(aceita: true);
+
+        var resultado = await CriarServico().CriarAsync(new CriarNotificacaoDto
+        {
+            TutorId = tutor.Id,
+            Tipo = TipoNotificacao.Promocao,
+            Titulo = "Racao com 20% off",
+            Corpo = "So esta semana."
+        });
+
+        Assert.Equal(TipoNotificacao.Promocao, resultado.Tipo);
+    }
+
+    [Fact]
+    public async Task Criar_AvisoDeSaude_SemOptIn_Cria()
+    {
+        var tutor = TutorComPromocoes(aceita: false);
+
+        var resultado = await CriarServico().CriarAsync(new CriarNotificacaoDto
+        {
+            TutorId = tutor.Id,
+            Tipo = TipoNotificacao.ObrigacaoVencendo,
+            Titulo = "Cuidados chegando",
+            Corpo = "V10 vence em breve."
+        });
+
+        // Aviso de consulta, documento publicado e obrigacao vencendo sao o servico
+        // contratado: desliga-los faria o app deixar de avisar sobre a saude do animal
+        Assert.Equal(TipoNotificacao.ObrigacaoVencendo, resultado.Tipo);
+        _tutores.Verify(r => r.ObterPorIdAsync(It.IsAny<Guid>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Preferencias_PadraoEDesligado()
+    {
+        TutorComPromocoes(aceita: false);
+
+        var preferencias = await CriarServico().ObterPreferenciasAsync();
+
+        Assert.False(preferencias.AceitaPromocoes);
+    }
+
+    [Fact]
+    public async Task AtualizarPreferencias_LigaAsPromocoesNoRegistroDeConsentimento()
+    {
+        var tutor = TutorComPromocoes(aceita: false);
+
+        var preferencias = await CriarServico().AtualizarPreferenciasAsync(
+            new AtualizarPreferenciasDto { AceitaPromocoes = true });
+
+        Assert.True(preferencias.AceitaPromocoes);
+        Assert.NotNull(preferencias.AtualizadoEm);
+
+        // Duas fontes para a mesma vontade acabariam discordando: a que vale
+        // juridicamente e o registro de consentimento (RN-061)
+        Assert.True(tutor.Consentiu(FinalidadeConsentimento.Promocoes));
+    }
+
+    [Fact]
+    public async Task Preferencias_SemTokenDeResponsavel_LancaAcessoNegadoRN106()
+    {
+        _usuario.SetupGet(u => u.TutorId).Returns((Guid?)null);
+
+        var ex = await Assert.ThrowsAsync<AcessoNegadoException>(
+            () => CriarServico().ObterPreferenciasAsync());
+
+        // Aceitar um parametro aqui deixaria qualquer um religar as promocoes de outro
+        Assert.Equal("RN-106", ex.Codigo);
     }
 }

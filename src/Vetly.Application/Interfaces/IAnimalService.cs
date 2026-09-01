@@ -22,6 +22,16 @@ public interface IAnimalService
     /// veterinário faz no cadastro do animal, e continua limitada aos que ele atende.
     /// </summary>
     Task<AnimalDto> RegistrarPesoAsync(Guid animalId, decimal pesoKg);
+
+    /// <summary>
+    /// Oculta ou volta a exibir um registro do histórico no board do Responsável
+    /// (RN-068).
+    ///
+    /// O registro não é apagado: o profissional continua vendo, e a guarda regulatória
+    /// do prontuário permanece. Registro que carrega alerta de segurança não é
+    /// ocultável.
+    /// </summary>
+    Task<ProntuarioDto> DefinirVisibilidadeDoHistoricoAsync(Guid animalId, Guid registroId, bool oculto);
     Task<IEnumerable<ExameDto>> ObterExamesAsync(Guid animalId);
     Task<AnimalDto> CriarAsync(CriarAnimalDto dto);
     Task AtualizarAsync(Guid id, CriarAnimalDto dto);

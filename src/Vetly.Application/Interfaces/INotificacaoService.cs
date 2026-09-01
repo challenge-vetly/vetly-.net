@@ -11,6 +11,19 @@ public interface INotificacaoService
     /// <summary>Grava a notificação. O envio acontece depois, fora da requisição.</summary>
     Task<NotificacaoDto> CriarAsync(CriarNotificacaoDto dto);
 
+    /// <summary>
+    /// O que o Responsável escolheu receber (RN-093). O escopo vem do token.
+    /// </summary>
+    Task<PreferenciasDeNotificacaoDto> ObterPreferenciasAsync();
+
+    /// <summary>
+    /// Liga ou desliga as comunicações promocionais (RN-093).
+    ///
+    /// É a única preferência que existe: os demais avisos são o serviço contratado, e
+    /// desligá-los faria o app deixar de avisar sobre a saúde do animal.
+    /// </summary>
+    Task<PreferenciasDeNotificacaoDto> AtualizarPreferenciasAsync(AtualizarPreferenciasDto dto);
+
     /// <summary>Caixa de entrada do Responsável, da mais recente à mais antiga.</summary>
     Task<IEnumerable<NotificacaoDto>> ObterCaixaDeEntradaAsync(Guid tutorId, bool apenasNaoLidas);
 

@@ -3,6 +3,7 @@ using Vetly.Application.DTOs.Animal;
 using Vetly.Application.DTOs.Cancelamento;
 using Vetly.Application.DTOs.Comum;
 using Vetly.Application.DTOs.Consulta;
+using Vetly.Application.DTOs.Notificacao;
 using Vetly.Application.DTOs.Exame;
 using Vetly.Application.Exceptions;
 using Vetly.Application.Interfaces;
@@ -30,6 +31,7 @@ public class ConsultaService : IConsultaService
     private readonly IFidelidadeService _fidelidade;
     private readonly IAvaliacaoService _avaliacoes;
     private readonly IColmeiaService _colmeia;
+    private readonly INotificacaoService _notificacoes;
 
     public ConsultaService(
         IConsultaRepository repo,
@@ -44,7 +46,8 @@ public class ConsultaService : IConsultaService
         IFilaDeJobs fila,
         IFidelidadeService fidelidade,
         IAvaliacaoService avaliacoes,
-        IColmeiaService colmeia)
+        IColmeiaService colmeia,
+        INotificacaoService notificacoes)
     {
         _repo = repo;
         _pagamentoRepo = pagamentoRepo;
@@ -59,6 +62,7 @@ public class ConsultaService : IConsultaService
         _fidelidade = fidelidade;
         _avaliacoes = avaliacoes;
         _colmeia = colmeia;
+        _notificacoes = notificacoes;
     }
 
     /// <summary>
@@ -515,6 +519,90 @@ public class ConsultaService : IConsultaService
             StatusPagamento = consulta.StatusPagamento
         };
     }
+
+    /// <inheritdoc/>
+    public async Task<RetornoAgendadoDto> AgendarRetornoAsync(Guid consultaId, AgendarRetornoDto dto)
+    {
+        var origem = await _repo.ObterPorIdAsync(consultaId)
+            ?? throw new NotFoundException("Consulta", consultaId);
+
+        // RN-105: quem marca o retorno e quem conduziu o caso. E decisao clinica —
+        // "volte em dez dias para eu ver a cicatrizacao" — e nao um agendamento que o
+        // Responsavel faz por conta propria; para isso existe o checkout normal.
+        if (!_usuario.EhAdmin && _usuario.VeterinarioId != origem.VeterinarioId)
+            throw new AcessoNegadoException("RN-105", "Esta consulta nao pertence ao seu escopo de acesso.");
+
+        // So se marca retorno do que aconteceu. Marcar retorno de uma consulta ainda
+        // em checkout criaria um segundo agendamento gratuito antes de o primeiro ter
+        // sido pago (RN-013).
+        if (origem.Status != StatusConsulta.Realizada)
+            throw new ConflitoDeEstadoException("RN-013",
+                $"Consulta com status {origem.Status} nao permite agendar retorno.");
+
+        if (origem.Origem == OrigemConsulta.Retorno)
+            throw new BusinessRuleException("RN-013",
+                "Retorno de retorno nao e retorno: agende uma nova consulta.");
+
+        var slot = await _agendaRepo.ObterSlotAsync(dto.SlotId)
+            ?? throw new NotFoundException("Horario", dto.SlotId);
+
+        if (slot.VeterinarioId != origem.VeterinarioId)
+            throw new BusinessRuleException("RN-013",
+                "O retorno e com o mesmo profissional que conduziu o atendimento.");
+
+        if (slot.Inicio <= DateTime.UtcNow)
+            throw new BusinessRuleException("RN-034", "Este horario ja passou.");
+
+        var retorno = Consulta.ParaRetorno(origem, slot.Inicio, slot.Id);
+
+        // O horario e ocupado de vez, sem passar por checkout: nao ha pagamento a
+        // aguardar, e deixa-lo em lock de dez minutos so o devolveria a fila.
+        if (!slot.TravarParaCheckout(retorno.Id, DateTime.UtcNow))
+            throw new ConflitoDeEstadoException("RN-035", "Este horario acabou de ser reservado por outra pessoa.");
+
+        slot.Confirmar();
+
+        _agendaRepo.AtualizarSlot(slot);
+        await _agendaRepo.SalvarAsync();
+
+        await _repo.AdicionarAsync(retorno);
+        await _repo.SalvarAsync();
+
+        // RN-090: o profissional nao pode perder o historico no meio do tratamento que
+        // ele mesmo esta conduzindo. A autorizacao e prorrogada ate depois do retorno —
+        // e so prorrogada: conceder do zero seria a clinica se autoconcedendo acesso.
+        var acesso = await _colmeia.EstenderAsync(
+            origem.AnimalId, origem.VeterinarioId, slot.Fim.AddDays(DiasDeColmeiaAposORetorno));
+
+        await _notificacoes.CriarAsync(new CriarNotificacaoDto
+        {
+            TutorId = origem.TutorId,
+            Tipo = TipoNotificacao.ConsultaConfirmada,
+            Titulo = "Retorno agendado",
+            Corpo = string.IsNullOrWhiteSpace(dto.Motivo)
+                ? $"Seu retorno foi marcado para {slot.Inicio:dd/MM/yyyy HH:mm} (UTC), sem custo adicional."
+                : $"Retorno marcado para {slot.Inicio:dd/MM/yyyy HH:mm} (UTC), sem custo adicional: {dto.Motivo}",
+            AnimalId = origem.AnimalId,
+            ConsultaId = retorno.Id,
+            Destino = $"/consultas/{retorno.Id}"
+        });
+
+        return new RetornoAgendadoDto
+        {
+            ConsultaId = retorno.Id,
+            ConsultaOrigemId = origem.Id,
+            DataHora = retorno.DataHora,
+            VeterinarioId = retorno.VeterinarioId,
+            AnimalId = retorno.AnimalId,
+            ColmeiaEstendidaAte = acesso?.ExpiraEm
+        };
+    }
+
+    /// <summary>
+    /// Folga de colmeia depois do retorno. Uma semana cobre o laudo que sai depois da
+    /// consulta e a duvida que aparece no dia seguinte, sem virar acesso permanente.
+    /// </summary>
+    private const int DiasDeColmeiaAposORetorno = 7;
 
     /// <inheritdoc/>
     public async Task<NoShowRegistradoDto> RegistrarNoShowAsync(Guid consultaId)
