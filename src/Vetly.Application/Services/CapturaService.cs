@@ -240,7 +240,10 @@ public class CapturaService : ICapturaService
 
             // Ainda ha tentativa: o segmento volta para a fila
             if (segmento.Estado == EstadoSegmentoAudio.Recebido)
-                await _fila.EnfileirarAsync(TipoJob.TranscreverSegmento, segmento.Id.ToString(), TimeSpan.FromSeconds(30));
+            {
+                await _fila.EnfileirarAsync(
+                    TipoJob.TranscreverSegmento, segmento.Id.ToString(), BackoffDaTentativa(segmento.Tentativas));
+            }
         }
 
         _repo.AtualizarSegmento(segmento);
@@ -248,6 +251,20 @@ public class CapturaService : ICapturaService
 
         await AvaliarDesfechoDaTranscricaoAsync(segmento.SessaoCapturaId);
     }
+
+    /// <summary>
+    /// Espera antes de tentar de novo, por número de tentativas já feitas (§4.2).
+    ///
+    /// Crescente e não fixa: a primeira falha costuma ser transitória e 10s bastam;
+    /// insistir no mesmo intervalo contra um motor que caiu de vez só consome o worker
+    /// e adia o desfecho, que é o que o veterinário está esperando.
+    /// </summary>
+    public static TimeSpan BackoffDaTentativa(int tentativas) => tentativas switch
+    {
+        <= 1 => TimeSpan.FromSeconds(10),
+        2 => TimeSpan.FromSeconds(30),
+        _ => TimeSpan.FromSeconds(90)
+    };
 
     /// <summary>
     /// Confere que o callback é a resposta <b>deste</b> segmento (RN-009).

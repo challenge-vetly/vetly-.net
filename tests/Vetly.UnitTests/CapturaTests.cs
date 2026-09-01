@@ -379,6 +379,42 @@ public class CapturaTests
             TipoJob.TranscreverSegmento, segmento.Id.ToString(), It.IsAny<TimeSpan?>()), Times.Once);
     }
 
+    [Theory]
+    [InlineData(1, 10)]
+    [InlineData(2, 30)]
+    [InlineData(3, 90)]
+    public void Backoff_CresceConformeAEspecificacao(int tentativas, int segundosEsperados)
+    {
+        // §4.2: 10s / 30s / 90s. Espera fixa insistiria no mesmo intervalo contra um
+        // motor que caiu de vez, adiando o desfecho que o veterinario esta esperando.
+        Assert.Equal(
+            TimeSpan.FromSeconds(segundosEsperados), CapturaService.BackoffDaTentativa(tentativas));
+    }
+
+    [Fact]
+    public async Task Callback_ComFalha_ReenfileiraComOBackoffDaPrimeiraTentativa()
+    {
+        var sessao = SessaoAberta();
+        var midia = AudioNoStorage();
+        var segmento = SegmentoDespachado(sessao.Id, midia.Id);
+        _repo.Setup(r => r.ObterSegmentoAsync(segmento.Id)).ReturnsAsync(segmento);
+        _repo.Setup(r => r.ObterSegmentosAsync(sessao.Id)).ReturnsAsync([segmento]);
+
+        TimeSpan? atraso = null;
+        _fila.Setup(f => f.EnfileirarAsync(
+                TipoJob.TranscreverSegmento, It.IsAny<string>(), It.IsAny<TimeSpan?>()))
+            .Callback<TipoJob, string?, TimeSpan?>((_, _, a) => atraso = a)
+            .Returns(Task.CompletedTask);
+
+        await CriarServico().RegistrarCallbackAsync(new CallbackDeTranscricaoDto
+        {
+            CallbackToken = TokenDoCallback,
+            SegmentoId = segmento.Id, Status = "Falha", Motivo = MotivoFalhaTranscricao.MotorIndisponivel
+        });
+
+        Assert.Equal(TimeSpan.FromSeconds(10), atraso);
+    }
+
     [Fact]
     public async Task Callback_FalhaDepoisDeTresTentativas_DaOTrechoComoPerdido()
     {
