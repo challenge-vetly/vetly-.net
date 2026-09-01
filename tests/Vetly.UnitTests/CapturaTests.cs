@@ -469,4 +469,25 @@ public class CapturaTests
         Assert.EndsWith("segunda parte", estado.TextoParcial);
         Assert.Equal(2, estado.SegmentosTranscritos);
     }
+
+    // ── P-01: encerrar o atendimento nao fecha a documentacao ───────────────
+
+    [Fact]
+    public async Task Encerrar_NaoMarcaAConsultaComoFinalizada()
+    {
+        var sessao = SessaoAberta();
+        var midia = AudioNoStorage();
+        var segmento = new SegmentoAudio(sessao.Id, 0, midia.Id, 30000, 0);
+        segmento.RegistrarTranscricao();
+        _repo.Setup(r => r.ObterSegmentosAsync(sessao.Id)).ReturnsAsync([segmento]);
+
+        await CriarServico().EncerrarAsync(_consulta.Id);
+
+        // Entre encerrar e finalizar existe o trabalho documental: revisar o rascunho
+        // da IA, gerar o prontuario, assinar a receita. Marcar Finalizada aqui daria
+        // por fechada uma documentacao que sequer comecou, e a RN-087 nunca chegaria
+        // a ser cobrada.
+        Assert.Equal(StatusConsulta.Realizada, _consulta.Status);
+        Assert.False(_consulta.Finalizada);
+    }
 }

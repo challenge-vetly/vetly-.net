@@ -181,8 +181,12 @@ public class CapturaService : ICapturaService
         _repo.AtualizarSessao(sessao);
 
         // RN-038: encerrar e o que marca a consulta como realizada, e e o que dispara
-        // a avaliacao (RN-055) e a pontuacao (RN-052) nas ondas seguintes.
-        consulta.Finalizar();
+        // a avaliacao (RN-055) e a pontuacao (RN-052).
+        //
+        // Realizar e nao Finalizar: o atendimento acabou, mas o prontuario ainda nao
+        // foi gerado nem a receita assinada. Marcar Finalizada aqui daria por fechada
+        // uma documentacao que sequer comecou, e a RN-087 nunca seria cobrada.
+        consulta.Realizar();
         consulta.RegistrarEncerramento(sessao.EncerradaEm!.Value);
         _consultaRepo.Atualizar(consulta);
 

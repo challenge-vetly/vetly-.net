@@ -600,6 +600,16 @@ public class ConsultaService : IConsultaService
         if (!_usuario.EhAdmin && _usuario.VeterinarioId != consulta.VeterinarioId)
             throw new AcessoNegadoException("RN-105", "Esta consulta nao pertence ao seu escopo de acesso.");
 
+        // P-01: finalizar e o fecho documental do que ja aconteceu. Consulta ainda em
+        // checkout ou apenas confirmada nao tem o que documentar, e cancelada ou
+        // no-show nunca vai ter — finalizar ali produziria prontuario de atendimento
+        // que nao houve. O caminho e encerrar primeiro (RN-008).
+        if (consulta.Status != StatusConsulta.Realizada)
+            throw new ConflitoDeEstadoException("RN-038",
+                consulta.Status is StatusConsulta.EmCheckout or StatusConsulta.Confirmada
+                    ? "Encerre o atendimento antes de finalizar a consulta."
+                    : $"Consulta com status {consulta.Status} nao pode ser finalizada.");
+
         // C-04: a exigencia da RN-087 e sobre o documento que existe, nao sobre a
         // consulta. Consulta de rotina, vacinacao ou retorno frequentemente nao
         // prescrevem nada, e exigir receita em todas travaria o atendimento correto —

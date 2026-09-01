@@ -518,6 +518,12 @@ public class ConsultaServiceTests
             DateTime.UtcNow.AddDays(1), ModalidadeAtendimento.Presencial,
             Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
 
+        // Finalizar e o fecho documental do que ja aconteceu: o atendimento tem de ter
+        // sido encerrado antes (P-01). As assercoes de RN-087 seguem as mesmas — o que
+        // mudou foi que a consulta agora precisa chegar aqui pelo caminho real.
+        consulta.ConfirmarPagamento();
+        consulta.Realizar();
+
         _repoMock.Setup(r => r.ObterPorIdAsync(consulta.Id)).ReturnsAsync(consulta);
         _repoMock.Setup(r => r.Atualizar(It.IsAny<Consulta>()));
         _repoMock.Setup(r => r.SalvarAsync()).ReturnsAsync(1);
@@ -997,5 +1003,70 @@ public class ConsultaServiceTests
             () => CriarServico().RemarcarAsync(consulta.Id, new RemarcarConsultaDto { NovoSlotId = novoSlot.Id }));
 
         Assert.Equal("RN-035", ex.Codigo);
+    }
+
+    // ── P-01: finalizar e o fecho documental do que ja aconteceu ────────────
+
+    [Fact]
+    public async Task FinalizarAsync_ConsultaApenasConfirmada_LancaConflitoEPedeOEncerramento()
+    {
+        var consulta = CriarConsulta(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
+        consulta.ConfirmarPagamento();
+
+        _repoMock.Setup(r => r.ObterPorIdAsync(consulta.Id)).ReturnsAsync(consulta);
+
+        var ex = await Assert.ThrowsAsync<ConflitoDeEstadoException>(
+            () => CriarServico().FinalizarAsync(consulta.Id));
+
+        Assert.Equal("RN-038", ex.Codigo);
+        Assert.Contains("Encerre o atendimento", ex.Message);
+
+        // Finalizar antes de atender produziria prontuario de atendimento que nao houve
+        Assert.False(consulta.Finalizada);
+    }
+
+    [Fact]
+    public async Task FinalizarAsync_ConsultaCancelada_LancaConflitoDeEstadoRN038()
+    {
+        var consulta = CriarConsulta(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
+        consulta.Cancelar();
+
+        _repoMock.Setup(r => r.ObterPorIdAsync(consulta.Id)).ReturnsAsync(consulta);
+
+        var ex = await Assert.ThrowsAsync<ConflitoDeEstadoException>(
+            () => CriarServico().FinalizarAsync(consulta.Id));
+
+        Assert.Equal("RN-038", ex.Codigo);
+        Assert.False(consulta.Finalizada);
+    }
+
+    [Fact]
+    public async Task FinalizarAsync_DepoisDeEncerrada_Fecha()
+    {
+        var consulta = CriarConsulta(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
+        consulta.ConfirmarPagamento();
+        consulta.Realizar();
+
+        _repoMock.Setup(r => r.ObterPorIdAsync(consulta.Id)).ReturnsAsync(consulta);
+        _repoMock.Setup(r => r.Atualizar(It.IsAny<Consulta>()));
+        _repoMock.Setup(r => r.SalvarAsync()).ReturnsAsync(1);
+        _documentoRepoMock.Setup(r => r.ObterPorConsultaAsync(consulta.Id)).ReturnsAsync([]);
+
+        await CriarServico().FinalizarAsync(consulta.Id);
+
+        Assert.True(consulta.Finalizada);
+        Assert.Equal(StatusConsulta.Realizada, consulta.Status);
+    }
+
+    [Fact]
+    public void Realizar_MarcaOAtendimentoSemFecharADocumentacao()
+    {
+        var consulta = CriarConsulta(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
+        consulta.ConfirmarPagamento();
+
+        consulta.Realizar();
+
+        Assert.Equal(StatusConsulta.Realizada, consulta.Status);
+        Assert.False(consulta.Finalizada);
     }
 }
