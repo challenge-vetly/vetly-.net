@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Vetly.Application.Exceptions;
 using Vetly.Application.Interfaces;
 using Vetly.Domain.Entities;
 using Vetly.Domain.Enums;
@@ -101,5 +102,35 @@ public class AgendaRepository : IAgendaRepository
     public void AtualizarServico(Servico servico) => _context.Servicos.Update(servico);
 
     /// <inheritdoc/>
-    public async Task<int> SalvarAsync() => await _context.SaveChangesAsync();
+    ///
+    /// <remarks>
+    /// Traduz a colisao de concorrencia do slot em conflito de estado (RN-035).
+    ///
+    /// O <c>DbUpdateConcurrencyException</c> e detalhe do EF Core e nao deve subir para
+    /// a Application — mas o significado dele aqui e exato e precisa chegar ao cliente:
+    /// outra pessoa ficou com o horario entre a leitura e a gravacao. A traducao vive
+    /// nesta fronteira justamente para que a camada de cima continue sem conhecer o
+    /// ORM, e para que qualquer chamador que grave slot ganhe o 409 de graca.
+    ///
+    /// A mensagem e a mesma da guarda otimista do servico de proposito: para quem
+    /// esta do outro lado, perder o horario para outra pessoa e perder o horario para
+    /// outra pessoa — nao interessa se a corrida foi decidida em memoria ou no banco.
+    /// </remarks>
+    public async Task<int> SalvarAsync()
+    {
+        try
+        {
+            return await _context.SaveChangesAsync();
+        }
+        catch (DbUpdateConcurrencyException ex) when (ex.Entries.Any(e => e.Entity is Slot))
+        {
+            // O contexto ficou com o slot em estado sujo: sem descartar o rastreamento,
+            // a proxima gravacao desta requisicao repetiria a mesma falha.
+            foreach (var entrada in ex.Entries)
+                entrada.State = EntityState.Detached;
+
+            throw new ConflitoDeEstadoException("RN-035",
+                "Este horario acabou de ser reservado por outra pessoa.");
+        }
+    }
 }

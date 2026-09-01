@@ -938,4 +938,64 @@ public class ConsultaServiceTests
 
         Assert.Equal("RN-105", ex.Codigo);
     }
+
+    // ── RN-035/RN-038: remarcacao confere o estado antes de travar ──────────
+
+    [Fact]
+    public async Task RemarcarAsync_ConsultaJaRealizada_LancaConflitoENaoTravaONovoHorario()
+    {
+        var vetId = Guid.NewGuid();
+        var consulta = CriarConsulta(vetId, Guid.NewGuid(), Guid.NewGuid());
+        consulta.ConfirmarPagamento();
+        consulta.Finalizar();
+
+        var novoSlot = new Slot(vetId, DateTime.UtcNow.AddDays(3), DateTime.UtcNow.AddDays(3).AddMinutes(30));
+
+        _repoMock.Setup(r => r.ObterPorIdAsync(consulta.Id)).ReturnsAsync(consulta);
+        _agendaRepoMock.Setup(r => r.ObterSlotAsync(novoSlot.Id)).ReturnsAsync(novoSlot);
+
+        var ex = await Assert.ThrowsAsync<ConflitoDeEstadoException>(
+            () => CriarServico().RemarcarAsync(consulta.Id, new RemarcarConsultaDto { NovoSlotId = novoSlot.Id }));
+
+        Assert.Equal("RN-038", ex.Codigo);
+
+        // Travar primeiro e recusar depois prenderia o horario a uma consulta que
+        // nunca vai ocupa-lo, e ele so voltaria a fila dez minutos adiante
+        Assert.Equal(EstadoSlot.Livre, novoSlot.Estado);
+        _agendaRepoMock.Verify(r => r.AtualizarSlot(It.IsAny<Slot>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task RemarcarAsync_ConsultaCancelada_LancaConflitoDeEstadoRN038()
+    {
+        var vetId = Guid.NewGuid();
+        var consulta = CriarConsulta(vetId, Guid.NewGuid(), Guid.NewGuid());
+        consulta.Cancelar();
+
+        _repoMock.Setup(r => r.ObterPorIdAsync(consulta.Id)).ReturnsAsync(consulta);
+
+        var ex = await Assert.ThrowsAsync<ConflitoDeEstadoException>(
+            () => CriarServico().RemarcarAsync(consulta.Id, new RemarcarConsultaDto { NovoSlotId = Guid.NewGuid() }));
+
+        Assert.Equal("RN-038", ex.Codigo);
+    }
+
+    [Fact]
+    public async Task RemarcarAsync_HorarioJaTravadoPorOutro_LancaConflitoDeEstadoRN035()
+    {
+        var vetId = Guid.NewGuid();
+        var consulta = CriarConsulta(vetId, Guid.NewGuid(), Guid.NewGuid());
+        consulta.ConfirmarPagamento();
+
+        var novoSlot = new Slot(vetId, DateTime.UtcNow.AddDays(3), DateTime.UtcNow.AddDays(3).AddMinutes(30));
+        novoSlot.TravarParaCheckout(Guid.NewGuid(), DateTime.UtcNow);
+
+        _repoMock.Setup(r => r.ObterPorIdAsync(consulta.Id)).ReturnsAsync(consulta);
+        _agendaRepoMock.Setup(r => r.ObterSlotAsync(novoSlot.Id)).ReturnsAsync(novoSlot);
+
+        var ex = await Assert.ThrowsAsync<ConflitoDeEstadoException>(
+            () => CriarServico().RemarcarAsync(consulta.Id, new RemarcarConsultaDto { NovoSlotId = novoSlot.Id }));
+
+        Assert.Equal("RN-035", ex.Codigo);
+    }
 }
