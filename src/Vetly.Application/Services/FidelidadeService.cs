@@ -227,6 +227,23 @@ public class FidelidadeService : IFidelidadeService
     }
 
     /// <inheritdoc/>
+    public async Task ReverterUsoDoCupomAsync(Guid cupomId)
+    {
+        var cupom = await _repo.ObterCupomAsync(cupomId);
+
+        // Cupom inexistente nao e erro aqui: este caminho roda dentro do webhook, e
+        // derrubar o processamento do pagamento por causa do cupom deixaria o
+        // pagamento sem desfecho — que e o dado que importa.
+        if (cupom is null)
+            return;
+
+        cupom.ReverterUso();
+
+        _repo.AtualizarCupom(cupom);
+        await _repo.SalvarAsync();
+    }
+
+    /// <inheritdoc/>
     public async Task<int> EstornarPorConsultaAsync(Guid consultaId)
     {
         var credito = await _repo.ObterCreditoDaConsultaAsync(consultaId);

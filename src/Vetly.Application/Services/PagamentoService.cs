@@ -79,7 +79,9 @@ public class PagamentoService : IPagamentoService
     /// </summary>
     public async Task<CobrancaCriadaRespostaDto> CriarCobrancaAsync(CriarPagamentoDto dto)
     {
-        var pagamento = new Pagamento(dto.TutorId, dto.Valor, dto.MeioPagamento, dto.ConsultaId, dto.InternacaoId);
+        var (tutorId, valor) = await ValidarPedidoDeCobrancaAsync(dto);
+
+        var pagamento = new Pagamento(tutorId, valor, dto.MeioPagamento, dto.ConsultaId, dto.InternacaoId);
         pagamento.DefinirTipo(dto.InternacaoId is null ? TipoPagamento.Consulta : TipoPagamento.Caucao);
 
         // O split e calculado pela Vetly, nunca pelo provedor (RN-051/RN-070)
@@ -89,7 +91,16 @@ public class PagamentoService : IPagamentoService
         // do valor. Nao reduz o bruto: reduz a comissao e o repasse, cada um na sua
         // parte.
         if (dto.CupomId is { } cupomId)
+        {
+            // RN-051: a fidelidade e da consulta. Internacao tem caucao e saldo
+            // apurados por procedimento, e nao passa pelo split que financia o
+            // desconto — aplicar cupom ali abateria de uma comissao que nao existe.
+            if (dto.InternacaoId is not null)
+                throw new BusinessRuleException("RN-051",
+                    "Cupom de fidelidade nao se aplica a internacao.");
+
             split = await AplicarCupomAsync(pagamento, split, cupomId);
+        }
 
         var chave = pagamento.Id.ToString();
         var cobranca = await _adaptador.CriarCobrancaAsync(
@@ -140,6 +151,75 @@ public class PagamentoService : IPagamentoService
                 ReferenciaExterna = cobranca.ReferenciaExterna
             }
         };
+    }
+
+    /// <summary>
+    /// Confere o pedido de cobranca antes de qualquer coisa sair para o provedor, e
+    /// devolve o Responsavel e o valor que de fato valem.
+    ///
+    /// Sem isto, <c>POST /api/pagamentos</c> era uma rota em que o cliente escolhia
+    /// quem paga, quanto paga e por qual atendimento — as tres coisas que o servidor
+    /// tem de decidir sozinho.
+    /// </summary>
+    private async Task<(Guid TutorId, decimal Valor)> ValidarPedidoDeCobrancaAsync(CriarPagamentoDto dto)
+    {
+        // O pagador vem do token. Cobrar em nome de outro Responsavel geraria divida
+        // no nome de quem nao pediu nada (RN-106).
+        var tutorId = _usuario.EhTutor && _usuario.TutorId is { } doToken ? doToken : dto.TutorId;
+
+        if (tutorId == Guid.Empty)
+            throw new BusinessRuleException("RN-006", "A cobranca precisa de um Responsavel.");
+
+        // Cobranca de internacao vem do InternacaoService, que ja apurou o valor pelos
+        // procedimentos do dia (RN-100/RN-101). Nao ha servico de catalogo ali.
+        if (dto.InternacaoId is not null)
+            return (tutorId, dto.Valor);
+
+        if (dto.ConsultaId is not { } consultaId)
+            return (tutorId, dto.Valor);
+
+        var consulta = await _consultaRepo.ObterPorIdAsync(consultaId)
+            ?? throw new NotFoundException("Consulta", consultaId);
+
+        if (consulta.TutorId != tutorId)
+            throw new AcessoNegadoException("RN-106", "Esta consulta nao pertence ao seu escopo de acesso.");
+
+        // Cobrar consulta ja realizada, cancelada ou expirada seria cobrar por um
+        // atendimento que nao vai acontecer, ou por um que ja foi pago (RN-006).
+        if (consulta.Status is not (StatusConsulta.EmCheckout or StatusConsulta.Confirmada))
+            throw new ConflitoDeEstadoException("RN-006",
+                $"Consulta com status {consulta.Status} nao aceita nova cobranca.");
+
+        // Duas cobrancas para a mesma consulta cobrariam duas vezes pelo mesmo
+        // atendimento. A recusada nao conta: ela e justamente a que precisa de outra.
+        var existente = await _repo.ObterPorConsultaAsync(consultaId);
+
+        if (existente is not null && existente.StatusPagamento != StatusPagamento.Recusado)
+            throw new ConflitoDeEstadoException("RN-006",
+                "Esta consulta ja tem uma cobranca em aberto ou confirmada.");
+
+        // O lock do horario tem de estar valendo. Cobrar por um slot que ja voltou a
+        // fila entregaria dinheiro sem entregar horario (RN-035).
+        if (consulta.SlotId is { } slotId)
+        {
+            var slot = await _agendaRepo.ObterSlotAsync(slotId);
+
+            if (slot is null || slot.LockConsultaId != consulta.Id)
+                throw new ConflitoDeEstadoException("RN-035",
+                    "Este horario acabou de ser reservado por outra pessoa.");
+        }
+
+        // O preco e o do catalogo, nunca o do corpo da requisicao: aceitar o valor do
+        // cliente e aceitar que ele pague o que quiser (RN-032).
+        if (consulta.ServicoId is { } servicoId)
+        {
+            var servico = await _agendaRepo.ObterServicoAsync(servicoId)
+                ?? throw new NotFoundException("Servico", servicoId);
+
+            return (tutorId, servico.Valor);
+        }
+
+        return (tutorId, dto.Valor);
     }
 
     /// <inheritdoc/>
@@ -274,6 +354,13 @@ public class PagamentoService : IPagamentoService
         _repo.Atualizar(pagamento);
         await _repo.SalvarAsync();
 
+        // O cupom foi marcado como usado na criacao da cobranca, para que o
+        // Responsavel visse o desconto antes de decidir pagar. Se o pagamento nao
+        // vingou, o desconto nao foi usado: manter o cupom queimado cobraria os pontos
+        // por um beneficio que ninguem recebeu (RN-053).
+        if (pagamento.CupomId is { } cupomId)
+            await _fidelidade.ReverterUsoDoCupomAsync(cupomId);
+
         var consulta = await AtualizarConsultaAsync(pagamento, confirmada: false);
 
         return new ResultadoDoWebhookDto
@@ -344,6 +431,14 @@ public class PagamentoService : IPagamentoService
         if (cupom.Desconto > pagamento.Valor)
             throw new BusinessRuleException("RN-054",
                 "O desconto do cupom excede o valor da cobranca.");
+
+        // A Vetly banca a fidelidade que oferece, mas nao paga para atender: a parte
+        // dela nunca pode passar da propria comissao. Sem esta guarda, um cupom grande
+        // numa consulta barata produziria comissao negativa — a plataforma pagando
+        // para que a consulta acontecesse (RN-051/RN-070).
+        if (cupom.DescontoVetly > split.Comissao)
+            throw new BusinessRuleException("RN-051",
+                "O desconto do cupom excede a comissao desta transacao.");
 
         // A parte de cada um sai do proprio bolso: a da Vetly, da comissao; a do
         // prestador, do repasse. Somadas, fecham o desconto — e o bruto continua
@@ -416,7 +511,15 @@ public class PagamentoService : IPagamentoService
 
         var split = strategy.Calcular(pagamento.Valor);
 
-        pagamento.RegistrarSplit(split.Plano, split.TakeRate, split.Comissao, split.Repasse, destinatarioId);
+        // O split e recalculado sobre o BRUTO, porque o take rate incide sobre o preco
+        // do servico. Mas o desconto ja concedido tem de ser reabatido: sem isto,
+        // reprocessar o split de um pagamento com cupom devolveria a comissao inteira
+        // a Vetly e o repasse inteiro ao prestador — ninguem pagaria a fidelidade que
+        // o Responsavel ja recebeu (RN-051/RN-072).
+        var comissao = split.Comissao - (pagamento.DescontoVetly ?? 0m);
+        var repasse = split.Repasse - (pagamento.DescontoPrestador ?? 0m);
+
+        pagamento.RegistrarSplit(split.Plano, split.TakeRate, comissao, repasse, destinatarioId);
         _repo.Atualizar(pagamento);
         await _repo.SalvarAsync();
         return MapearParaDto(pagamento);

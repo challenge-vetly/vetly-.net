@@ -53,6 +53,16 @@ public interface IFidelidadeService
     Task MarcarCupomComoUsadoAsync(Guid cupomId);
 
     /// <summary>
+    /// Devolve à vigência um cupom marcado como usado numa cobrança que não vingou
+    /// (RN-053).
+    ///
+    /// Os pontos não voltam ao saldo — eles saíram no resgate, e é o cupom que os
+    /// representa. O que volta é a possibilidade de usá-lo, dentro da validade que
+    /// ele já tinha: o Responsável não perde o benefício porque o cartão foi recusado.
+    /// </summary>
+    Task ReverterUsoDoCupomAsync(Guid cupomId);
+
+    /// <summary>
     /// Estorna os pontos de uma consulta cancelada ou reembolsada (RN-052). Devolve
     /// quantos pontos foram estornados.
     /// </summary>

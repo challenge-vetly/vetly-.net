@@ -126,6 +126,24 @@ public class CupomResgate
     }
 
     /// <summary>
+    /// Devolve o cupom à vigência depois de uma cobrança que não se concretizou
+    /// (RN-053).
+    ///
+    /// Só faz sentido sobre um cupom resgatado: um expirado venceu por tempo, e
+    /// ressuscitá-lo estenderia a validade por um erro que não foi do Responsável —
+    /// mas também não foi da plataforma. A validade original é preservada de
+    /// propósito: se ela já passou, a próxima leitura o trata como vencido.
+    /// </summary>
+    public void ReverterUso()
+    {
+        if (Status != StatusCupom.Resgatado)
+            return;
+
+        Status = StatusCupom.Emitido;
+        ResgatadoEm = null;
+    }
+
+    /// <summary>
     /// Marca o cupom como vencido. Os pontos <b>não</b> voltam ao saldo (RN-053).
     /// </summary>
     public void Expirar()

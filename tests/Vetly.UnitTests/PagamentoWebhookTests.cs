@@ -62,8 +62,13 @@ public class PagamentoWebhookTests
 
         var slot = new Slot(vet.Id, DateTime.UtcNow.AddDays(2), DateTime.UtcNow.AddDays(2).AddMinutes(30));
 
+        // O preco vem do catalogo, e nao do corpo da requisicao: a cobranca so sai
+        // depois de o servico ser lido (RN-032). Sem registra-lo aqui, o cenario nao
+        // representa mais um checkout de verdade.
+        var servico = new Servico(vet.Id, TipoServico.ConsultaRotina, 200m, 30);
+
         var consulta = Consulta.ParaCheckout(
-            slot.Inicio, vet.Id, Guid.NewGuid(), Guid.NewGuid(), slot.Id, Guid.NewGuid());
+            slot.Inicio, vet.Id, Guid.NewGuid(), Guid.NewGuid(), slot.Id, servico.Id);
 
         slot.TravarParaCheckout(consulta.Id, DateTime.UtcNow);
 
@@ -75,6 +80,7 @@ public class PagamentoWebhookTests
         _consultaRepo.Setup(r => r.ObterPorIdAsync(consulta.Id)).ReturnsAsync(consulta);
         _vetRepo.Setup(r => r.ObterPorIdAsync(vet.Id)).ReturnsAsync(vet);
         _agendaRepo.Setup(r => r.ObterSlotAsync(slot.Id)).ReturnsAsync(slot);
+        _agendaRepo.Setup(r => r.ObterServicoAsync(servico.Id)).ReturnsAsync(servico);
 
         return (pagamento, consulta, slot);
     }
@@ -290,7 +296,9 @@ public class PagamentoWebhookTests
 
         var resposta = await CriarServico().CriarCobrancaAsync(new CriarPagamentoDto
         {
-            TutorId = Guid.NewGuid(), Valor = 200m, MeioPagamento = MeioPagamento.Pix, ConsultaId = consulta.Id
+            // O Responsavel tem de ser o da consulta: cobrar de outro geraria divida
+            // no nome de quem nao pediu nada (RN-106)
+            TutorId = consulta.TutorId, Valor = 200m, MeioPagamento = MeioPagamento.Pix, ConsultaId = consulta.Id
         });
 
         // O split e calculado pela Vetly, nunca pelo provedor (RN-051/RN-070)
@@ -480,5 +488,286 @@ public class PagamentoWebhookTests
 
         Assert.Equal(EstadoSlot.Confirmado, slot.Estado);
         Assert.Equal(consulta.Id, slot.LockConsultaId);
+    }
+
+    // ── RN-006/RN-032: a cobranca nao aceita o que o cliente mandar ─────────
+
+    [Fact]
+    public async Task CriarCobranca_IgnoraOValorDoCorpoEUsaOPrecoDoCatalogo()
+    {
+        var (_, consulta, _) = CenarioEmCheckout();
+
+        Pagamento? criado = null;
+        _repo.Setup(r => r.AdicionarAsync(It.IsAny<Pagamento>()))
+            .Callback<Pagamento>(p => criado = p).Returns(Task.CompletedTask);
+
+        var resposta = await CriarServico().CriarCobrancaAsync(new CriarPagamentoDto
+        {
+            TutorId = consulta.TutorId,
+            ConsultaId = consulta.Id,
+            Valor = 1m, // o cliente tentando pagar um real pela consulta de duzentos
+            MeioPagamento = MeioPagamento.Pix
+        });
+
+        // Aceitar o valor do corpo e aceitar que o cliente pague o que quiser (RN-032)
+        Assert.Equal(200m, resposta.Valor);
+        Assert.Equal(200m, criado!.Valor);
+    }
+
+    [Fact]
+    public async Task CriarCobranca_ComoTutor_IgnoraOTutorIdDoCorpo()
+    {
+        var (_, consulta, _) = CenarioEmCheckout();
+
+        _usuario.SetupGet(u => u.EhAdmin).Returns(false);
+        _usuario.SetupGet(u => u.EhTutor).Returns(true);
+        _usuario.SetupGet(u => u.TutorId).Returns(consulta.TutorId);
+
+        Pagamento? criado = null;
+        _repo.Setup(r => r.AdicionarAsync(It.IsAny<Pagamento>()))
+            .Callback<Pagamento>(p => criado = p).Returns(Task.CompletedTask);
+
+        await CriarServico().CriarCobrancaAsync(new CriarPagamentoDto
+        {
+            TutorId = Guid.NewGuid(), // outro Responsavel qualquer, vindo do cliente
+            ConsultaId = consulta.Id,
+            Valor = 200m,
+            MeioPagamento = MeioPagamento.Pix
+        });
+
+        // O pagador vem do token: cobrar em nome de outro geraria divida no nome de
+        // quem nao pediu nada (RN-106)
+        Assert.Equal(consulta.TutorId, criado!.TutorId);
+    }
+
+    [Fact]
+    public async Task CriarCobranca_ConsultaDeOutroResponsavel_LancaAcessoNegadoRN106()
+    {
+        var (_, consulta, _) = CenarioEmCheckout();
+
+        var ex = await Assert.ThrowsAsync<AcessoNegadoException>(
+            () => CriarServico().CriarCobrancaAsync(new CriarPagamentoDto
+            {
+                TutorId = Guid.NewGuid(),
+                ConsultaId = consulta.Id,
+                Valor = 200m,
+                MeioPagamento = MeioPagamento.Pix
+            }));
+
+        Assert.Equal("RN-106", ex.Codigo);
+        _adaptador.Verify(a => a.CriarCobrancaAsync(It.IsAny<CriarCobrancaRequest>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task CriarCobranca_ConsultaJaComCobrancaPendente_LancaConflitoDeEstado()
+    {
+        var (pagamento, consulta, _) = CenarioEmCheckout();
+
+        _repo.Setup(r => r.ObterPorConsultaAsync(consulta.Id)).ReturnsAsync(pagamento);
+
+        var ex = await Assert.ThrowsAsync<ConflitoDeEstadoException>(
+            () => CriarServico().CriarCobrancaAsync(new CriarPagamentoDto
+            {
+                TutorId = consulta.TutorId,
+                ConsultaId = consulta.Id,
+                Valor = 200m,
+                MeioPagamento = MeioPagamento.Pix
+            }));
+
+        // Duas cobrancas para a mesma consulta cobrariam duas vezes pelo mesmo
+        // atendimento
+        Assert.Equal("RN-006", ex.Codigo);
+    }
+
+    [Fact]
+    public async Task CriarCobranca_DepoisDeUmaRecusada_ESemNovaCobranca_Segue()
+    {
+        var (_, consulta, _) = CenarioEmCheckout();
+
+        var recusado = new Pagamento(consulta.TutorId, 200m, MeioPagamento.Pix, consulta.Id);
+        recusado.Recusar();
+
+        _repo.Setup(r => r.ObterPorConsultaAsync(consulta.Id)).ReturnsAsync(recusado);
+
+        var resposta = await CriarServico().CriarCobrancaAsync(new CriarPagamentoDto
+        {
+            TutorId = consulta.TutorId,
+            ConsultaId = consulta.Id,
+            Valor = 200m,
+            MeioPagamento = MeioPagamento.Pix
+        });
+
+        // A recusada nao bloqueia: ela e justamente a que precisa de outra tentativa
+        Assert.Equal(StatusPagamento.Pendente, resposta.StatusPagamento);
+    }
+
+    [Fact]
+    public async Task CriarCobranca_ConsultaJaRealizada_LancaConflitoDeEstado()
+    {
+        var (_, consulta, _) = CenarioEmCheckout();
+        consulta.ConfirmarPagamento();
+        consulta.Finalizar();
+
+        var ex = await Assert.ThrowsAsync<ConflitoDeEstadoException>(
+            () => CriarServico().CriarCobrancaAsync(new CriarPagamentoDto
+            {
+                TutorId = consulta.TutorId,
+                ConsultaId = consulta.Id,
+                Valor = 200m,
+                MeioPagamento = MeioPagamento.Pix
+            }));
+
+        Assert.Equal("RN-006", ex.Codigo);
+    }
+
+    [Fact]
+    public async Task CriarCobranca_ComOHorarioJaPerdido_LancaConflitoDeEstadoRN035()
+    {
+        var (_, consulta, slot) = CenarioEmCheckout();
+
+        // O lock expirou e o horario foi para outra pessoa enquanto o Responsavel
+        // demorava na tela de pagamento
+        slot.Liberar();
+        slot.TravarParaCheckout(Guid.NewGuid(), DateTime.UtcNow);
+
+        var ex = await Assert.ThrowsAsync<ConflitoDeEstadoException>(
+            () => CriarServico().CriarCobrancaAsync(new CriarPagamentoDto
+            {
+                TutorId = consulta.TutorId,
+                ConsultaId = consulta.Id,
+                Valor = 200m,
+                MeioPagamento = MeioPagamento.Pix
+            }));
+
+        // Cobrar por um slot que ja voltou a fila entregaria dinheiro sem entregar
+        // horario
+        Assert.Equal("RN-035", ex.Codigo);
+        _adaptador.Verify(a => a.CriarCobrancaAsync(It.IsAny<CriarCobrancaRequest>()), Times.Never);
+    }
+
+    // ── RN-051: os limites do cupom ─────────────────────────────────────────
+
+    [Fact]
+    public async Task Cupom_MaiorQueAComissao_LancaBusinessRuleRN051()
+    {
+        var (_, consulta, _) = CenarioEmCheckout();
+
+        // Comissao do plano Profissional sobre R$ 200 = R$ 24. Um cupom de R$ 100 na
+        // faixa 30/70 poe R$ 30 na conta da Vetly — mais do que ela ganha na transacao.
+        var cupom = CupomDe(100.00m);
+
+        var ex = await Assert.ThrowsAsync<BusinessRuleException>(
+            () => CriarServico().CriarCobrancaAsync(new CriarPagamentoDto
+            {
+                TutorId = consulta.TutorId,
+                ConsultaId = consulta.Id,
+                Valor = 200m,
+                MeioPagamento = MeioPagamento.Pix,
+                CupomId = cupom.Id
+            }));
+
+        // A Vetly banca a fidelidade que oferece, mas nao paga para atender
+        Assert.Equal("RN-051", ex.Codigo);
+        _fidelidade.Verify(f => f.MarcarCupomComoUsadoAsync(It.IsAny<Guid>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Cupom_EmInternacao_LancaBusinessRuleRN051()
+    {
+        var cupom = CupomDe(10.00m);
+
+        var ex = await Assert.ThrowsAsync<BusinessRuleException>(
+            () => CriarServico().CriarCobrancaAsync(new CriarPagamentoDto
+            {
+                TutorId = Guid.NewGuid(),
+                InternacaoId = Guid.NewGuid(),
+                Valor = 400m,
+                MeioPagamento = MeioPagamento.Pix,
+                CupomId = cupom.Id
+            }));
+
+        // Internacao nao passa pelo split que financia o desconto: aplicar cupom ali
+        // abateria de uma comissao que nao existe
+        Assert.Equal("RN-051", ex.Codigo);
+    }
+
+    // ── RN-053: pagamento recusado devolve o cupom ──────────────────────────
+
+    [Fact]
+    public async Task Webhook_Recusado_DevolveOCupomAVigencia()
+    {
+        var (_, consulta, _) = CenarioEmCheckout();
+        var cupom = CupomDe(10.00m);
+
+        Pagamento? criado = null;
+        _repo.Setup(r => r.AdicionarAsync(It.IsAny<Pagamento>()))
+            .Callback<Pagamento>(p => criado = p).Returns(Task.CompletedTask);
+
+        await CriarServico().CriarCobrancaAsync(new CriarPagamentoDto
+        {
+            TutorId = consulta.TutorId,
+            ConsultaId = consulta.Id,
+            Valor = 200m,
+            MeioPagamento = MeioPagamento.Pix,
+            CupomId = cupom.Id
+        });
+
+        _repo.Setup(r => r.ObterPorReferenciaExternaAsync(Referencia)).ReturnsAsync(criado!);
+        EventoDoProvedor(StatusPagamento.Recusado);
+
+        await CriarServico().ProcessarWebhookAsync("{}", "assinatura");
+
+        // O desconto nao foi usado: manter o cupom queimado cobraria os pontos por um
+        // beneficio que ninguem recebeu
+        _fidelidade.Verify(f => f.ReverterUsoDoCupomAsync(cupom.Id), Times.Once);
+    }
+
+    [Fact]
+    public async Task Webhook_Confirmado_NaoDevolveOCupom()
+    {
+        var (pagamento, _, _) = CenarioEmCheckout();
+
+        EventoDoProvedor(StatusPagamento.Confirmado);
+
+        await CriarServico().ProcessarWebhookAsync("{}", "assinatura");
+
+        Assert.Equal(StatusPagamento.Confirmado, pagamento.StatusPagamento);
+        _fidelidade.Verify(f => f.ReverterUsoDoCupomAsync(It.IsAny<Guid>()), Times.Never);
+    }
+
+    [Fact]
+    public void ReverterUso_DevolveOCupomAVigenciaSemEstenderAValidade()
+    {
+        var cupom = new CupomResgate(
+            Guid.NewGuid(), "item-ref", "Racao premium", CategoriaItem.Alimentacao,
+            pontosDebitados: 300, desconto: 9.00m);
+
+        var validadeOriginal = cupom.ExpiraEm;
+
+        cupom.Resgatar(DateTime.UtcNow);
+        Assert.Equal(StatusCupom.Resgatado, cupom.Status);
+
+        cupom.ReverterUso();
+
+        Assert.Equal(StatusCupom.Emitido, cupom.Status);
+        Assert.Null(cupom.ResgatadoEm);
+
+        // A validade nao se estende: o cupom volta com o prazo que ja tinha
+        Assert.Equal(validadeOriginal, cupom.ExpiraEm);
+    }
+
+    [Fact]
+    public void ReverterUso_EmCupomExpirado_NaoORessuscita()
+    {
+        var cupom = new CupomResgate(
+            Guid.NewGuid(), "item-ref", "Racao premium", CategoriaItem.Alimentacao,
+            pontosDebitados: 300, desconto: 9.00m);
+
+        cupom.Expirar();
+        cupom.ReverterUso();
+
+        // Venceu por tempo: ressuscita-lo estenderia a validade por um motivo que nao
+        // tem nada a ver com o vencimento
+        Assert.Equal(StatusCupom.Expirado, cupom.Status);
     }
 }
