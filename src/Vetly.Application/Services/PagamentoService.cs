@@ -306,7 +306,12 @@ public class PagamentoService : IPagamentoService
         {
             var slot = await _agendaRepo.ObterSlotAsync(slotId);
 
-            if (slot is not null)
+            // So mexe no horario que ESTA consulta esta segurando. O webhook e
+            // assincrono e pode chegar depois de o lock ter expirado e o slot ter sido
+            // tomado por outra pessoa — confirmar ali daria o horario ao pagamento
+            // atrasado, e liberar ali derrubaria a reserva de quem chegou legitimamente
+            // depois. Nos dois casos a vitima e quem nao errou nada (RN-035).
+            if (slot is not null && slot.LockConsultaId == consulta.Id)
             {
                 if (confirmada) slot.Confirmar();
                 else slot.Liberar();

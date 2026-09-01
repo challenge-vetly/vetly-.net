@@ -427,4 +427,58 @@ public class PagamentoWebhookTests
 
         Assert.Equal("RN-106", ex.Codigo);
     }
+
+    // ── RN-035: o webhook chega tarde, o horario ja mudou de dono ───────────
+
+    [Fact]
+    public async Task Webhook_Confirmado_QuandoOSlotJaEDeOutraConsulta_NaoTocaNoHorario()
+    {
+        var (_, _, slot) = CenarioEmCheckout();
+
+        // O lock expirou e outra pessoa levou o horario enquanto o provedor demorava
+        var outraConsulta = Guid.NewGuid();
+        slot.Liberar();
+        slot.TravarParaCheckout(outraConsulta, DateTime.UtcNow);
+
+        EventoDoProvedor(StatusPagamento.Confirmado);
+
+        await CriarServico().ProcessarWebhookAsync("{}", "assinatura");
+
+        // Confirmar aqui daria o horario ao pagamento atrasado, por cima de quem
+        // chegou legitimamente depois
+        Assert.Equal(EstadoSlot.EmCheckout, slot.Estado);
+        Assert.Equal(outraConsulta, slot.LockConsultaId);
+        _agendaRepo.Verify(r => r.AtualizarSlot(It.IsAny<Slot>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Webhook_Recusado_QuandoOSlotJaEDeOutraConsulta_NaoLiberaOHorarioDeQuemChegouDepois()
+    {
+        var (_, _, slot) = CenarioEmCheckout();
+
+        var outraConsulta = Guid.NewGuid();
+        slot.Liberar();
+        slot.TravarParaCheckout(outraConsulta, DateTime.UtcNow);
+
+        EventoDoProvedor(StatusPagamento.Recusado);
+
+        await CriarServico().ProcessarWebhookAsync("{}", "assinatura");
+
+        // Liberar aqui derrubaria a reserva de quem nao errou nada
+        Assert.Equal(EstadoSlot.EmCheckout, slot.Estado);
+        Assert.Equal(outraConsulta, slot.LockConsultaId);
+    }
+
+    [Fact]
+    public async Task Webhook_Confirmado_QuandoOSlotAindaEDaConsulta_ConfirmaOHorario()
+    {
+        var (_, consulta, slot) = CenarioEmCheckout();
+
+        EventoDoProvedor(StatusPagamento.Confirmado);
+
+        await CriarServico().ProcessarWebhookAsync("{}", "assinatura");
+
+        Assert.Equal(EstadoSlot.Confirmado, slot.Estado);
+        Assert.Equal(consulta.Id, slot.LockConsultaId);
+    }
 }

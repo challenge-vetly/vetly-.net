@@ -457,6 +457,13 @@ public class ConsultaService : IConsultaService
     {
         var consulta = await ObterNoEscopoAsync(consultaId);
 
+        // A conferencia de estado vem ANTES de travar o novo horario: travar primeiro e
+        // recusar depois deixaria o slot preso a uma consulta que nunca vai ocupa-lo, e
+        // ele so voltaria a fila quando o lock expirasse dez minutos adiante (RN-035).
+        if (consulta.Status is not (StatusConsulta.EmCheckout or StatusConsulta.Confirmada))
+            throw new ConflitoDeEstadoException("RN-038",
+                $"Consulta com status {consulta.Status} nao pode ser remarcada.");
+
         if (consulta.ContadorRemarcacoes >= Consulta.LimiteDeRemarcacoes)
             throw new BusinessRuleException("RN-043",
                 $"Esta consulta ja atingiu o limite de {Consulta.LimiteDeRemarcacoes} remarcacoes. " +
@@ -468,6 +475,11 @@ public class ConsultaService : IConsultaService
         if (novoSlot.VeterinarioId != consulta.VeterinarioId)
             throw new ValidationException("novoSlotId",
                 "A remarcacao mantem o mesmo veterinario. Para trocar de profissional, cancele e agende de novo.");
+
+        // Remarcar para o mesmo horario nao e remarcacao: gastaria uma das tres da
+        // RN-043 e, pior, liberaria no fim o slot que acabou de ser travado.
+        if (novoSlot.Id == consulta.SlotId)
+            throw new BusinessRuleException("RN-043", "Este ja e o horario da consulta.");
 
         // Trava antes de mover: sem isso, duas remarcacoes simultaneas mandariam dois
         // animais para o mesmo horario (RN-035).
