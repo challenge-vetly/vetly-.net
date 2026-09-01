@@ -54,4 +54,30 @@ public class ContextoDaEstruturacaoDto
     /// relato está incompleto para não preencher lacunas por conta própria (§7.3).
     /// </summary>
     public bool TranscricaoParcial { get; set; }
+
+    /// <summary>
+    /// Queixa que o Responsável descreveu ao agendar (RN-005/RN-036).
+    ///
+    /// É o único relato que vem de quem convive com o animal, e frequentemente traz o
+    /// que a consulta não repete em voz alta: há quantos dias começou, se parou de
+    /// comer, se o comportamento mudou. Sem isso a anamnese sai só com o que foi dito
+    /// na sala, que é a parte mais curta da história.
+    /// </summary>
+    public string? PreSintomas { get; set; }
+
+    /// <summary>
+    /// Alertas de segurança ativos do animal (RN-068). Nunca são ocultáveis, e por
+    /// isso entram no contexto mesmo quando o resto do histórico não entra.
+    /// </summary>
+    public List<string> AlertasAtivos { get; set; } = [];
+
+    /// <summary>
+    /// Resumo dos atendimentos anteriores que a IA pode considerar.
+    ///
+    /// Passa pelo mesmo filtro de colmeia da leitura humana (RN-064/RN-066): sem
+    /// consentimento de rede, entra apenas o que o próprio veterinário produziu. Uma
+    /// IA que lesse o histórico inteiro quando o profissional não pode lê-lo seria uma
+    /// forma indireta de contornar o consentimento.
+    /// </summary>
+    public List<string> HistoricoRelevante { get; set; } = [];
 }

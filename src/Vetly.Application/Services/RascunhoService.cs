@@ -22,19 +22,22 @@ public class RascunhoService : IRascunhoService
     private readonly IAnimalRepository _animalRepo;
     private readonly IOllamaService _ia;
     private readonly IUsuarioAtual _usuario;
+    private readonly IColmeiaService _colmeia;
 
     public RascunhoService(
         ICapturaRepository repo,
         IConsultaRepository consultaRepo,
         IAnimalRepository animalRepo,
         IOllamaService ia,
-        IUsuarioAtual usuario)
+        IUsuarioAtual usuario,
+        IColmeiaService colmeia)
     {
         _repo = repo;
         _consultaRepo = consultaRepo;
         _animalRepo = animalRepo;
         _ia = ia;
         _usuario = usuario;
+        _colmeia = colmeia;
     }
 
     /// <inheritdoc/>
@@ -72,7 +75,7 @@ public class RascunhoService : IRascunhoService
 
         var animal = await _animalRepo.ObterPorIdAsync(consulta.AnimalId);
 
-        var contexto = MontarContexto(transcricao, animal, parcial);
+        var contexto = await MontarContextoAsync(transcricao, consulta, animal, parcial);
 
         var comecou = DateTime.UtcNow;
         ConsultaEstruturadaDto estruturada;
@@ -190,18 +193,95 @@ public class RascunhoService : IRascunhoService
     /// Dados do animal entram no contexto porque mudam a leitura clínica do que foi
     /// dito. Animal não encontrado não impede a estruturação — o texto é o essencial.
     /// </summary>
-    private static ContextoDaEstruturacaoDto MontarContexto(string transcricao, Animal? animal, bool parcial) => new()
+    private async Task<ContextoDaEstruturacaoDto> MontarContextoAsync(
+        string transcricao, Consulta consulta, Animal? animal, bool parcial)
     {
-        Transcricao = transcricao,
-        Especie = animal?.Especie ?? string.Empty,
-        Raca = animal?.Raca ?? string.Empty,
-        IdadeAnos = animal is null ? 0 : Math.Max(0, (int)((DateTime.UtcNow - animal.DataNascimento).TotalDays / 365.25)),
-        PesoKg = animal?.PesoKg,
-        Sexo = animal?.Sexo?.ToString(),
-        Alergias = animal is null ? [] : [.. animal.Alergias],
-        CondicoesPreexistentes = animal is null ? [] : [.. animal.CondicoesPreexistentes],
-        TranscricaoParcial = parcial
-    };
+        var contexto = new ContextoDaEstruturacaoDto
+        {
+            Transcricao = transcricao,
+            Especie = animal?.Especie ?? string.Empty,
+            Raca = animal?.Raca ?? string.Empty,
+            IdadeAnos = animal is null ? 0 : Math.Max(0, (int)((DateTime.UtcNow - animal.DataNascimento).TotalDays / 365.25)),
+            PesoKg = animal?.PesoKg,
+            Sexo = animal?.Sexo?.ToString(),
+            Alergias = animal is null ? [] : [.. animal.Alergias],
+            CondicoesPreexistentes = animal is null ? [] : [.. animal.CondicoesPreexistentes],
+
+            // RN-068: alerta de seguranca nao e ocultavel e nao depende de colmeia.
+            // Ele entra no contexto mesmo quando o historico nao entra — e justamente
+            // o dado cuja ausencia pode custar caro numa prescricao.
+            AlertasAtivos = animal is null ? [] : [.. animal.AlertasAtivos],
+
+            // RN-005/RN-036: o relato de quem convive com o animal. Frequentemente traz
+            // o que a consulta nao repete em voz alta.
+            PreSintomas = consulta.PreSintomas,
+
+            TranscricaoParcial = parcial
+        };
+
+        if (animal is not null)
+            contexto.HistoricoRelevante = [.. await HistoricoNoEscopoAsync(consulta, animal)];
+
+        return contexto;
+    }
+
+    /// <summary>
+    /// Resumo dos atendimentos anteriores que a IA pode considerar, pelo mesmo filtro
+    /// de colmeia da leitura humana (RN-064/RN-066).
+    ///
+    /// Uma IA que lesse o histórico inteiro quando o profissional não pode lê-lo seria
+    /// uma forma indireta de contornar o consentimento: o texto voltaria ao vet dentro
+    /// do rascunho, sem nunca ter passado pela guarda. O filtro aqui é o mesmo do
+    /// briefing — e o acesso também vira log (RN-067), porque quem lê em nome do
+    /// veterinário continua sendo o veterinário.
+    /// </summary>
+    private async Task<IEnumerable<string>> HistoricoNoEscopoAsync(Consulta consulta, Animal animal)
+    {
+        var vetId = consulta.VeterinarioId;
+
+        var temColmeia = await _colmeia.PodeAcessarAsync(
+            vetId, animal.Id, EscopoAcessoColmeia.HistoricoCompleto);
+
+        await _colmeia.RegistrarAcessoAsync(
+            animal.Id, EscopoAcessoColmeia.HistoricoCompleto, temColmeia,
+            "IA: estruturacao do prontuario");
+
+        // O historico clinico vive no prontuario; a consulta diz apenas quem o
+        // produziu, que e o que o filtro de colmeia precisa saber.
+        var consultas = (await _consultaRepo.ObterPorAnimalAsync(animal.Id))
+            .ToDictionary(c => c.Id, c => c);
+
+        var prontuarios = (await _animalRepo.ObterHistoricoLongitudinalAsync(animal.Id))
+            .Where(p => p.ConsultaId != consulta.Id);
+
+        if (!temColmeia)
+        {
+            prontuarios = prontuarios.Where(p =>
+                consultas.TryGetValue(p.ConsultaId, out var c) && c.VeterinarioId == vetId);
+        }
+
+        // Tres atendimentos bastam: contexto demais dilui a transcricao, que e o que a
+        // IA tem de estruturar de fato.
+        return prontuarios
+            .OrderByDescending(p => p.DataCriacao)
+            .Take(3)
+            .Select(p => $"{p.DataCriacao:dd/MM/yyyy}: {Resumir(p.DadosClinicos)}");
+    }
+
+    /// <summary>
+    /// Corta o prontuario anterior no tamanho de um lembrete.
+    ///
+    /// O historico entra como contexto, nao como leitura: mandar prontuarios inteiros
+    /// afogaria a transcricao, que e o que a IA tem de estruturar de fato.
+    /// </summary>
+    private static string Resumir(string dadosClinicos)
+    {
+        const int Limite = 300;
+
+        var texto = dadosClinicos.ReplaceLineEndings(" ").Trim();
+
+        return texto.Length <= Limite ? texto : texto[..Limite] + "...";
+    }
 
     /// <summary>
     /// Avisos que acompanham o rascunho. São o que o veterinário precisa saber antes
