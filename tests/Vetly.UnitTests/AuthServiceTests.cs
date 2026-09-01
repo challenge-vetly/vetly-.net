@@ -361,4 +361,58 @@ public class AuthServiceTests
 
         Assert.Empty(perfil.Pendencias);
     }
+
+    // ── Paridade de mensagem no login ──────────────────────────────────────
+
+    [Fact]
+    public async Task Login_EmailInexistente_ESenhaErrada_DaoAMesmaResposta()
+    {
+        _tutorRepo.Setup(r => r.ObterPorEmailAsync(It.IsAny<string>())).ReturnsAsync((Tutor?)null);
+        _vetRepo.Setup(r => r.ObterPorEmailAsync(It.IsAny<string>())).ReturnsAsync((Veterinario?)null);
+
+        var inexistente = await Assert.ThrowsAsync<BusinessRuleException>(
+            () => CriarServico().LoginAsync(new LoginDto
+            {
+                Email = "ninguem@exemplo.com", Senha = "senha-forte-123"
+            }));
+
+        var tutor = new Tutor("Ana Souza", "ana@exemplo.com", "11999998888");
+        tutor.DefinirSenhaHash("hash-que-nao-confere");
+
+        _tutorRepo.Setup(r => r.ObterPorEmailAsync("ana@exemplo.com")).ReturnsAsync(tutor);
+        _hasher.Setup(h => h.Confere(It.IsAny<string>(), It.IsAny<string>())).Returns(false);
+
+        var senhaErrada = await Assert.ThrowsAsync<BusinessRuleException>(
+            () => CriarServico().LoginAsync(new LoginDto
+            {
+                Email = "ana@exemplo.com", Senha = "senha-errada"
+            }));
+
+        // Distinguir os dois casos entregaria a um atacante a lista de contas
+        // existentes: a resposta tem de ser identica, codigo e texto
+        Assert.Equal(inexistente.Codigo, senhaErrada.Codigo);
+        Assert.Equal(inexistente.Message, senhaErrada.Message);
+    }
+
+    [Fact]
+    public async Task Login_ResponsavelDesativado_DaAMesmaRespostaDeCredencialInvalida()
+    {
+        var tutor = new Tutor("Ana Souza", "ana@exemplo.com", "11999998888");
+        tutor.DefinirSenhaHash("hash");
+        tutor.Desativar();
+
+        _tutorRepo.Setup(r => r.ObterPorEmailAsync("ana@exemplo.com")).ReturnsAsync(tutor);
+        _hasher.Setup(h => h.Confere(It.IsAny<string>(), It.IsAny<string>())).Returns(true);
+
+        var ex = await Assert.ThrowsAsync<BusinessRuleException>(
+            () => CriarServico().LoginAsync(new LoginDto
+            {
+                Email = "ana@exemplo.com", Senha = "senha-forte-123"
+            }));
+
+        // Conta desativada tambem nao se anuncia: "esta conta existe mas foi
+        // desativada" ja e informacao demais para quem esta tentando adivinhar
+        Assert.Equal("AUTH-001", ex.Codigo);
+        Assert.Equal("E-mail ou senha invalidos.", ex.Message);
+    }
 }

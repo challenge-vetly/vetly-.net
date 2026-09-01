@@ -182,6 +182,15 @@ public class Pagamento
     {
         if (ConsultaId.HasValue && ConsultaId.Value != consultaId)
             throw new InvalidOperationException("Pagamento ja esta vinculado a outra consulta.");
+
+        // Caução e saldo de internação são outro ciclo de cobrança (RN-101). Deixar um
+        // deles virar pagamento de consulta faria uma consulta ser dada como paga com
+        // dinheiro que cobria a diária do animal internado — e o acerto da internação
+        // ficaria descoberto sem que ninguém percebesse.
+        if (InternacaoId.HasValue)
+            throw new InvalidOperationException(
+                "Pagamento de internacao nao pode ser vinculado a consulta.");
+
         ConsultaId = consultaId;
     }
 

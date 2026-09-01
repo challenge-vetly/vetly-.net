@@ -201,4 +201,45 @@ public class PagamentoServiceTests
         Assert.Throws<ArgumentException>(() =>
             pagamento.RegistrarSplit(PlanoAssinatura.Basico, 15m, 30m, 100m, Guid.NewGuid()));
     }
+
+    // ── RN-101: caucao nao paga consulta ───────────────────────────────────
+
+    [Fact]
+    public void VincularConsulta_EmPagamentoDeInternacao_LancaInvalidOperation()
+    {
+        var pagamento = new Pagamento(
+            Guid.NewGuid(), 400m, MeioPagamento.Pix, internacaoId: Guid.NewGuid());
+
+        var ex = Assert.Throws<InvalidOperationException>(
+            () => pagamento.VincularConsulta(Guid.NewGuid()));
+
+        // Uma consulta dada como paga com o dinheiro da diaria deixaria o acerto da
+        // internacao descoberto sem que ninguem percebesse
+        Assert.Contains("internacao", ex.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Null(pagamento.ConsultaId);
+    }
+
+    [Fact]
+    public void VincularConsulta_EmPagamentoDeConsulta_Vincula()
+    {
+        var pagamento = new Pagamento(Guid.NewGuid(), 200m, MeioPagamento.Pix);
+        var consultaId = Guid.NewGuid();
+
+        pagamento.VincularConsulta(consultaId);
+
+        Assert.Equal(consultaId, pagamento.ConsultaId);
+    }
+
+    [Fact]
+    public void VincularConsulta_RepetindoOMesmoId_EIdempotente()
+    {
+        var pagamento = new Pagamento(Guid.NewGuid(), 200m, MeioPagamento.Pix);
+        var consultaId = Guid.NewGuid();
+
+        pagamento.VincularConsulta(consultaId);
+        pagamento.VincularConsulta(consultaId);
+
+        // Reentrega de webhook nao pode virar erro
+        Assert.Equal(consultaId, pagamento.ConsultaId);
+    }
 }

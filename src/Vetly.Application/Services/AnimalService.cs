@@ -333,10 +333,19 @@ public class AnimalService : IAnimalService
         await GarantirAcessoAoAnimalAsync(animal);
 
         var exames = await _repo.ObterExamesAsync(animalId);
+
+        // RN-104: a mesma regra do ExameService vale aqui. Esta rota chegava ao
+        // resultado sem passar pela liberacao — o dado que o veterinario ainda nao
+        // interpretou aparecia pela porta dos fundos, e um numero solto no app vira
+        // diagnostico caseiro.
+        if (_usuario.EhTutor)
+            exames = exames.Where(e => e.LiberadoAoTutor);
+
         return exames.Select(e => new ExameDto
         {
             Id = e.Id, AnimalId = e.AnimalId, VeterinarioId = e.VeterinarioId,
             TipoSolicitacao = e.TipoSolicitacao, Resultado = e.Resultado,
+            MidiaIds = [.. e.Midias()],
             LiberadoAoTutor = e.LiberadoAoTutor,
             DataSolicitacao = e.DataSolicitacao, DataResultado = e.DataResultado
         });

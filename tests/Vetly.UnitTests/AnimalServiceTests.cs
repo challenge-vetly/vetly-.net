@@ -366,4 +366,76 @@ public class AnimalServiceTests
         Assert.NotEqual(Guid.Empty, resultado.Id);
         Assert.Equal("Thor", resultado.Nome);
     }
+
+    // ── RN-104: o exame do animal tambem respeita a liberacao ──────────────
+
+    [Fact]
+    public async Task ObterExames_ComoTutor_OmiteOQueNaoFoiLiberado()
+    {
+        var tutorId = Guid.NewGuid();
+        var animal = CriarAnimalDe(tutorId);
+
+        var liberado = new Exame(animal.Id, Guid.NewGuid(), "Ultrassom");
+        liberado.RegistrarResultado("Sem alteracoes");
+        liberado.LiberarAoTutor();
+
+        var pendente = new Exame(animal.Id, Guid.NewGuid(), "Hemograma");
+        pendente.RegistrarResultado("Leucocitos 22.000/uL");
+
+        _repoMock.Setup(r => r.ObterPorIdAsync(animal.Id)).ReturnsAsync(animal);
+        _repoMock.Setup(r => r.ObterExamesAsync(animal.Id)).ReturnsAsync([liberado, pendente]);
+
+        _usuarioMock.SetupGet(u => u.EhAdmin).Returns(false);
+        _usuarioMock.SetupGet(u => u.EhTutor).Returns(true);
+        _usuarioMock.SetupGet(u => u.TutorId).Returns(tutorId);
+
+        var exames = (await CriarServico().ObterExamesAsync(animal.Id)).ToList();
+
+        // Esta rota chegava ao resultado sem passar pela liberacao: o dado que o
+        // veterinario ainda nao interpretou aparecia pela porta dos fundos
+        Assert.Single(exames);
+        Assert.Equal(liberado.Id, exames[0].Id);
+    }
+
+    [Fact]
+    public async Task ObterExames_ComoVeterinario_VeOsNaoLiberados()
+    {
+        var vetId = Guid.NewGuid();
+        var animal = CriarAnimalDe(Guid.NewGuid());
+
+        var pendente = new Exame(animal.Id, vetId, "Hemograma");
+        pendente.RegistrarResultado("Leucocitos 22.000/uL");
+
+        _repoMock.Setup(r => r.ObterPorIdAsync(animal.Id)).ReturnsAsync(animal);
+        _repoMock.Setup(r => r.ObterExamesAsync(animal.Id)).ReturnsAsync([pendente]);
+        _repoMock.Setup(r => r.VeterinarioAtendeAnimalAsync(vetId, animal.Id)).ReturnsAsync(true);
+        ComoVeterinario(vetId);
+
+        var exames = (await CriarServico().ObterExamesAsync(animal.Id)).ToList();
+
+        // A liberacao existe para proteger o Responsavel da leitura sem interpretacao,
+        // e nao para esconder do profissional o exame que ele mesmo pediu
+        Assert.Single(exames);
+        Assert.False(exames[0].LiberadoAoTutor);
+    }
+
+    [Fact]
+    public async Task ObterExames_LevaAsMidiasDoLaudo()
+    {
+        var animal = CriarAnimalDe(Guid.NewGuid());
+        var midia = Guid.NewGuid();
+
+        var exame = new Exame(animal.Id, Guid.NewGuid(), "Ultrassom");
+        exame.RegistrarResultado("Imagem sem alteracoes");
+        exame.AnexarMidias([midia]);
+        exame.LiberarAoTutor();
+
+        _repoMock.Setup(r => r.ObterPorIdAsync(animal.Id)).ReturnsAsync(animal);
+        _repoMock.Setup(r => r.ObterExamesAsync(animal.Id)).ReturnsAsync([exame]);
+
+        var exames = (await CriarServico().ObterExamesAsync(animal.Id)).ToList();
+
+        // Laudo de imagem sem a imagem e meia informacao (RN-103)
+        Assert.Equal([midia], exames[0].MidiaIds);
+    }
 }
