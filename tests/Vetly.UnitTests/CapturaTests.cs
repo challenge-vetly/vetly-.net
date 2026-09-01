@@ -291,12 +291,32 @@ public class CapturaTests
 
     // ── Callback do motor (§5.3) ─────────────────────────────────────────────
 
+    /// <summary>
+    /// Token que o job de despacho entrega ao motor. Os cenarios de callback precisam
+    /// nascer despachados: o servico so aceita a resposta que traz o token do proprio
+    /// segmento (RN-009).
+    /// </summary>
+    private const string TokenDoCallback = "token-de-teste-do-segmento";
+
+    private static string HashDoToken(string token) =>
+        Convert.ToHexString(
+            System.Security.Cryptography.SHA256.HashData(
+                System.Text.Encoding.UTF8.GetBytes(token))).ToLowerInvariant();
+
+    /// <summary>Um segmento ja despachado ao motor, com o hash do token gravado.</summary>
+    private static SegmentoAudio SegmentoDespachado(Guid sessaoId, Guid midiaId, int sequencia = 0)
+    {
+        var segmento = new SegmentoAudio(sessaoId, sequencia, midiaId, 30000, 0);
+        segmento.RegistrarDespacho(HashDoToken(TokenDoCallback));
+        return segmento;
+    }
+
     [Fact]
     public async Task Callback_ComTexto_RegistraATranscricao()
     {
         var sessao = SessaoAberta();
         var midia = AudioNoStorage();
-        var segmento = new SegmentoAudio(sessao.Id, 0, midia.Id, 30000, 0);
+        var segmento = SegmentoDespachado(sessao.Id, midia.Id);
         _repo.Setup(r => r.ObterSegmentoAsync(segmento.Id)).ReturnsAsync(segmento);
         _repo.Setup(r => r.ObterSegmentosAsync(sessao.Id)).ReturnsAsync([segmento]);
 
@@ -306,6 +326,7 @@ public class CapturaTests
 
         await CriarServico().RegistrarCallbackAsync(new CallbackDeTranscricaoDto
         {
+            CallbackToken = TokenDoCallback,
             SegmentoId = segmento.Id,
             Status = "Ok",
             Texto = "Paciente apresenta vomito ha um dia.",
@@ -323,12 +344,13 @@ public class CapturaTests
     {
         var sessao = SessaoAberta();
         var midia = AudioNoStorage();
-        var segmento = new SegmentoAudio(sessao.Id, 0, midia.Id, 30000, 0);
+        var segmento = SegmentoDespachado(sessao.Id, midia.Id);
         segmento.RegistrarTranscricao();
         _repo.Setup(r => r.ObterSegmentoAsync(segmento.Id)).ReturnsAsync(segmento);
 
         await CriarServico().RegistrarCallbackAsync(new CallbackDeTranscricaoDto
         {
+            CallbackToken = TokenDoCallback,
             SegmentoId = segmento.Id, Status = "Ok", Texto = "texto repetido"
         });
 
@@ -341,13 +363,13 @@ public class CapturaTests
     {
         var sessao = SessaoAberta();
         var midia = AudioNoStorage();
-        var segmento = new SegmentoAudio(sessao.Id, 0, midia.Id, 30000, 0);
-        segmento.RegistrarDespacho("hash");
+        var segmento = SegmentoDespachado(sessao.Id, midia.Id);
         _repo.Setup(r => r.ObterSegmentoAsync(segmento.Id)).ReturnsAsync(segmento);
         _repo.Setup(r => r.ObterSegmentosAsync(sessao.Id)).ReturnsAsync([segmento]);
 
         await CriarServico().RegistrarCallbackAsync(new CallbackDeTranscricaoDto
         {
+            CallbackToken = TokenDoCallback,
             SegmentoId = segmento.Id, Status = "Falha", Motivo = MotivoFalhaTranscricao.MotorIndisponivel
         });
 
@@ -362,16 +384,17 @@ public class CapturaTests
     {
         var sessao = SessaoAberta();
         var midia = AudioNoStorage();
-        var segmento = new SegmentoAudio(sessao.Id, 0, midia.Id, 30000, 0);
+        var segmento = SegmentoDespachado(sessao.Id, midia.Id);
 
-        for (var i = 0; i < SegmentoAudio.MaximoDeTentativas; i++)
-            segmento.RegistrarDespacho("hash");
+        for (var i = 1; i < SegmentoAudio.MaximoDeTentativas; i++)
+            segmento.RegistrarDespacho(HashDoToken(TokenDoCallback));
 
         _repo.Setup(r => r.ObterSegmentoAsync(segmento.Id)).ReturnsAsync(segmento);
         _repo.Setup(r => r.ObterSegmentosAsync(sessao.Id)).ReturnsAsync([segmento]);
 
         await CriarServico().RegistrarCallbackAsync(new CallbackDeTranscricaoDto
         {
+            CallbackToken = TokenDoCallback,
             SegmentoId = segmento.Id, Status = "Falha", Motivo = MotivoFalhaTranscricao.AudioIlegivel
         });
 
@@ -388,12 +411,13 @@ public class CapturaTests
         sessao.Encerrar(segmentosRecebidos: 1);
 
         var midia = AudioNoStorage();
-        var segmento = new SegmentoAudio(sessao.Id, 0, midia.Id, 30000, 0);
+        var segmento = SegmentoDespachado(sessao.Id, midia.Id);
         _repo.Setup(r => r.ObterSegmentoAsync(segmento.Id)).ReturnsAsync(segmento);
         _repo.Setup(r => r.ObterSegmentosAsync(sessao.Id)).ReturnsAsync([segmento]);
 
         await CriarServico().RegistrarCallbackAsync(new CallbackDeTranscricaoDto
         {
+            CallbackToken = TokenDoCallback,
             SegmentoId = segmento.Id, Status = "Ok", Texto = "texto"
         });
 
@@ -407,12 +431,13 @@ public class CapturaTests
         sessao.Encerrar(segmentosRecebidos: 1);
 
         var midia = AudioNoStorage();
-        var segmento = new SegmentoAudio(sessao.Id, 0, midia.Id, 30000, 0);
+        var segmento = SegmentoDespachado(sessao.Id, midia.Id);
         _repo.Setup(r => r.ObterSegmentoAsync(segmento.Id)).ReturnsAsync(segmento);
         _repo.Setup(r => r.ObterSegmentosAsync(sessao.Id)).ReturnsAsync([segmento]);
 
         await CriarServico().RegistrarCallbackAsync(new CallbackDeTranscricaoDto
         {
+            CallbackToken = TokenDoCallback,
             SegmentoId = segmento.Id, Status = "Ok", Texto = "texto"
         });
 
@@ -477,7 +502,7 @@ public class CapturaTests
     {
         var sessao = SessaoAberta();
         var midia = AudioNoStorage();
-        var segmento = new SegmentoAudio(sessao.Id, 0, midia.Id, 30000, 0);
+        var segmento = SegmentoDespachado(sessao.Id, midia.Id);
         segmento.RegistrarTranscricao();
         _repo.Setup(r => r.ObterSegmentosAsync(sessao.Id)).ReturnsAsync([segmento]);
 
@@ -489,5 +514,91 @@ public class CapturaTests
         // a ser cobrada.
         Assert.Equal(StatusConsulta.Realizada, _consulta.Status);
         Assert.False(_consulta.Finalizada);
+    }
+
+    // ── RN-009: o callback tem de ser a resposta DESTE segmento ─────────────
+
+    [Fact]
+    public async Task Callback_SemToken_LancaAcessoNegadoRN009()
+    {
+        var sessao = SessaoAberta();
+        var midia = AudioNoStorage();
+        var segmento = SegmentoDespachado(sessao.Id, midia.Id);
+        _repo.Setup(r => r.ObterSegmentoAsync(segmento.Id)).ReturnsAsync(segmento);
+
+        var ex = await Assert.ThrowsAsync<AcessoNegadoException>(
+            () => CriarServico().RegistrarCallbackAsync(new CallbackDeTranscricaoDto
+            {
+                SegmentoId = segmento.Id, Status = "Ok", Texto = "texto injetado"
+            }));
+
+        // O token de servico no cabecalho autentica o fluxo como um todo. So ele
+        // deixaria quem o conhecesse escrever no prontuario de qualquer consulta,
+        // bastando acertar um id de segmento.
+        Assert.Equal("RN-009", ex.Codigo);
+        _repo.Verify(r => r.AdicionarTranscricaoAsync(It.IsAny<Transcricao>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Callback_ComTokenDeOutroSegmento_LancaAcessoNegadoRN009()
+    {
+        var sessao = SessaoAberta();
+        var midia = AudioNoStorage();
+        var segmento = SegmentoDespachado(sessao.Id, midia.Id);
+        _repo.Setup(r => r.ObterSegmentoAsync(segmento.Id)).ReturnsAsync(segmento);
+
+        var ex = await Assert.ThrowsAsync<AcessoNegadoException>(
+            () => CriarServico().RegistrarCallbackAsync(new CallbackDeTranscricaoDto
+            {
+                CallbackToken = "token-de-outro-segmento",
+                SegmentoId = segmento.Id,
+                Status = "Ok",
+                Texto = "texto injetado"
+            }));
+
+        Assert.Equal("RN-009", ex.Codigo);
+        Assert.Equal(EstadoSegmentoAudio.Enviado, segmento.Estado);
+    }
+
+    [Fact]
+    public async Task Callback_EmSegmentoNuncaDespachado_LancaAcessoNegadoRN009()
+    {
+        var sessao = SessaoAberta();
+        var midia = AudioNoStorage();
+        var segmento = new SegmentoAudio(sessao.Id, 0, midia.Id, 30000, 0);
+        _repo.Setup(r => r.ObterSegmentoAsync(segmento.Id)).ReturnsAsync(segmento);
+
+        var ex = await Assert.ThrowsAsync<AcessoNegadoException>(
+            () => CriarServico().RegistrarCallbackAsync(new CallbackDeTranscricaoDto
+            {
+                CallbackToken = TokenDoCallback,
+                SegmentoId = segmento.Id,
+                Status = "Ok",
+                Texto = "texto injetado"
+            }));
+
+        // Segmento sem hash gravado nunca foi mandado ao motor: nao ha callback
+        // legitimo possivel para ele
+        Assert.Equal("RN-009", ex.Codigo);
+    }
+
+    [Fact]
+    public async Task Callback_ComOTokenCerto_RegistraATranscricao()
+    {
+        var sessao = SessaoAberta();
+        var midia = AudioNoStorage();
+        var segmento = SegmentoDespachado(sessao.Id, midia.Id);
+        _repo.Setup(r => r.ObterSegmentoAsync(segmento.Id)).ReturnsAsync(segmento);
+        _repo.Setup(r => r.ObterSegmentosAsync(sessao.Id)).ReturnsAsync([segmento]);
+
+        await CriarServico().RegistrarCallbackAsync(new CallbackDeTranscricaoDto
+        {
+            CallbackToken = TokenDoCallback,
+            SegmentoId = segmento.Id,
+            Status = "Ok",
+            Texto = "Paciente apresenta vomito ha um dia."
+        });
+
+        Assert.Equal(EstadoSegmentoAudio.Transcrito, segmento.Estado);
     }
 }
