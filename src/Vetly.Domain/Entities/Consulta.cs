@@ -160,10 +160,25 @@ public class Consulta
     }
 
     /// <summary>
-    /// Finaliza a consulta após confirmação de receita assinada digitalmente (RN-087).
-    /// Hoje é o único evento que marca a consulta como <see cref="StatusConsulta.Realizada"/>;
-    /// quando <c>POST /api/consultas/{id}/encerrar</c> entrar (onda 5), ele passa a ser o
-    /// evento que fecha o atendimento, e <c>finalizar</c> vira o fecho documental (P-01).
+    /// Marca o atendimento como acontecido (RN-038, P-01).
+    ///
+    /// É o que <c>POST /api/consultas/{id}/encerrar</c> dispara: o veterinário terminou
+    /// de atender, a consulta virou <see cref="StatusConsulta.Realizada"/>, os pontos
+    /// são devidos (RN-052) e a avaliação pode ser pedida (RN-055).
+    ///
+    /// <b>Não</b> marca <c>Finalizada</c>: entre encerrar e finalizar existe o trabalho
+    /// documental — revisar o rascunho da IA, gerar o prontuário, assinar a receita.
+    /// Colapsar os dois eventos num só fazia a consulta nascer "finalizada" com
+    /// documento nenhum emitido, e a RN-087 nunca chegava a ser cobrada de verdade.
+    /// </summary>
+    public void Realizar() => Status = StatusConsulta.Realizada;
+
+    /// <summary>
+    /// Fecha o ciclo documental da consulta (RN-087).
+    ///
+    /// Só faz sentido sobre uma consulta já realizada: finalizar antes de atender
+    /// fecharia a documentação de um atendimento que não aconteceu. A guarda de estado
+    /// fica no serviço, que é quem tem o vocabulário para responder 409.
     /// </summary>
     public void Finalizar()
     {
