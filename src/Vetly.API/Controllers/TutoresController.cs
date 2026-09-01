@@ -23,6 +23,7 @@ public class TutoresController : ControllerBase
     {
         _service = service;
         _dispositivos = dispositivos;
+        _pagamentos = pagamentos;
     }
 
     /// <summary>
