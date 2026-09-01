@@ -132,6 +132,26 @@ public class OllamaService : IOllamaService
               "deixe o campo vazio quando o trecho correspondente nao aparecer na transcricao. "
             : string.Empty;
 
+        // Alerta de seguranca vem primeiro e destacado: e o dado cuja falta pode
+        // aparecer numa sugestao de dose (RN-068).
+        var alertas = contexto.AlertasAtivos.Count > 0
+            ? $"ALERTAS DE SEGURANCA DO ANIMAL: {string.Join("; ", contexto.AlertasAtivos)}. " +
+              "Considere-os obrigatoriamente na conduta.\n\n"
+            : string.Empty;
+
+        // O relato do Responsavel entra separado da transcricao e rotulado como tal: ele
+        // e observacao de leigo, nao achado clinico, e misturar os dois faria a IA tratar
+        // "ele parece triste" com o mesmo peso de um exame fisico (RN-005/RN-036).
+        var preSintomas = string.IsNullOrWhiteSpace(contexto.PreSintomas)
+            ? string.Empty
+            : $"Relato do Responsavel no agendamento (observacao de leigo, nao achado clinico):\n" +
+              $"{contexto.PreSintomas}\n\n";
+
+        var historico = contexto.HistoricoRelevante.Count > 0
+            ? $"Atendimentos anteriores deste animal:\n" +
+              string.Join("\n", contexto.HistoricoRelevante.Select(h => $"- {h}")) + "\n\n"
+            : string.Empty;
+
         var prompt =
             $"Voce e um assistente veterinario. Estruture a transcricao de uma consulta em prontuario, " +
             $"usando SOMENTE o que foi dito. Nao invente sintomas, medicamentos, doses nem achados. " +
@@ -139,8 +159,11 @@ public class OllamaService : IOllamaService
             $"Responda APENAS com um objeto JSON com os campos: anamnese, exameFisico, " +
             $"hipotesesDiagnosticas (array de strings, da mais provavel a menos), conduta e orientacoes. " +
             $"Campo sem informacao na transcricao deve vir como string vazia ou array vazio.\n\n" +
+            $"{alertas}" +
             $"Especie: {contexto.Especie}. Raca: {contexto.Raca}. Idade: {contexto.IdadeAnos} anos. " +
             $"Peso: {peso}. {string.Join(" ", conhecido)}\n\n" +
+            $"{preSintomas}" +
+            $"{historico}" +
             $"Transcricao da consulta:\n{contexto.Transcricao}";
 
         var resposta = await EnviarAsync(prompt);

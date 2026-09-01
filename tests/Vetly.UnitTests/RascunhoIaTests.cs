@@ -59,8 +59,11 @@ public class RascunhoIaTests
         _animalRepo.Setup(r => r.ObterPorIdAsync(_animal.Id)).ReturnsAsync(_animal);
     }
 
+    private readonly Mock<IColmeiaService> _colmeia = new();
+
     private RascunhoService CriarServico() =>
-        new(_repo.Object, _consultaRepo.Object, _animalRepo.Object, _ia.Object, _usuario.Object);
+        new(_repo.Object, _consultaRepo.Object, _animalRepo.Object, _ia.Object, _usuario.Object,
+            _colmeia.Object);
 
     private void IaResponde(ConsultaEstruturadaDto resposta) =>
         _ia.Setup(i => i.EstruturarConsultaAsync(It.IsAny<ContextoDaEstruturacaoDto>())).ReturnsAsync(resposta);
@@ -297,5 +300,139 @@ public class RascunhoIaTests
             "origem", "modelo", false, [], 10);
 
         Assert.False(comHipotese.EstaVazio());
+    }
+
+    // ── RN-005/RN-064/RN-068: o que a IA recebe alem da transcricao ─────────
+
+    [Fact]
+    public async Task Contexto_LevaOsPreSintomasDoResponsavel()
+    {
+        _consulta.RegistrarPreSintomas(
+            """{"queixaPrincipal":"Vomito ha 2 dias","duracaoEmDias":2}""");
+
+        ContextoDaEstruturacaoDto? contexto = null;
+        _ia.Setup(i => i.EstruturarConsultaAsync(It.IsAny<ContextoDaEstruturacaoDto>()))
+            .Callback<ContextoDaEstruturacaoDto>(c => contexto = c)
+            .ReturnsAsync(RespostaCompleta());
+
+        _sessao.RegistrarDesfechoDaTranscricao(transcritos: 1, falhados: 0);
+
+        await CriarServico().GerarAsync(_sessao.Id);
+
+        // E o unico relato de quem convive com o animal, e traz o que a consulta nao
+        // repete em voz alta (RN-005/RN-036)
+        Assert.NotNull(contexto);
+        Assert.Contains("Vomito ha 2 dias", contexto!.PreSintomas);
+    }
+
+    [Fact]
+    public async Task Contexto_LevaOsAlertasDeSegurancaMesmoSemColmeia()
+    {
+        _animal.AdicionarAlerta("Alergia a dipirona");
+
+        _colmeia.Setup(c => c.PodeAcessarAsync(
+                It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<EscopoAcessoColmeia>()))
+            .ReturnsAsync(false);
+
+        ContextoDaEstruturacaoDto? contexto = null;
+        _ia.Setup(i => i.EstruturarConsultaAsync(It.IsAny<ContextoDaEstruturacaoDto>()))
+            .Callback<ContextoDaEstruturacaoDto>(c => contexto = c)
+            .ReturnsAsync(RespostaCompleta());
+
+        _sessao.RegistrarDesfechoDaTranscricao(transcritos: 1, falhados: 0);
+
+        await CriarServico().GerarAsync(_sessao.Id);
+
+        // RN-068: alerta de seguranca nao e ocultavel e nao depende de consentimento —
+        // e o dado cuja ausencia pode aparecer numa sugestao de dose
+        Assert.Contains("Alergia a dipirona", contexto!.AlertasAtivos);
+    }
+
+    [Fact]
+    public async Task Contexto_SemColmeia_SoLevaOHistoricoDoProprioVeterinario()
+    {
+        var outraConsultaMinha = Guid.NewGuid();
+        var consultaDeOutro = Guid.NewGuid();
+
+        _consultaRepo.Setup(r => r.ObterPorAnimalAsync(_animal.Id)).ReturnsAsync(
+        [
+            _consulta,
+            new Consulta(DateTime.UtcNow.AddMonths(-2), ModalidadeAtendimento.Presencial,
+                _vet.Id, _animal.Id, _animal.TutorId),
+            new Consulta(DateTime.UtcNow.AddMonths(-1), ModalidadeAtendimento.Presencial,
+                Guid.NewGuid(), _animal.Id, _animal.TutorId)
+        ]);
+
+        _animalRepo.Setup(r => r.ObterHistoricoLongitudinalAsync(_animal.Id)).ReturnsAsync(
+        [
+            new Prontuario(outraConsultaMinha, _animal.Id, "Gastrite tratada com sucesso."),
+            new Prontuario(consultaDeOutro, _animal.Id, "Fratura tratada em outra clinica.")
+        ]);
+
+        _colmeia.Setup(c => c.PodeAcessarAsync(
+                _vet.Id, _animal.Id, EscopoAcessoColmeia.HistoricoCompleto))
+            .ReturnsAsync(false);
+
+        ContextoDaEstruturacaoDto? contexto = null;
+        _ia.Setup(i => i.EstruturarConsultaAsync(It.IsAny<ContextoDaEstruturacaoDto>()))
+            .Callback<ContextoDaEstruturacaoDto>(c => contexto = c)
+            .ReturnsAsync(RespostaCompleta());
+
+        _sessao.RegistrarDesfechoDaTranscricao(transcritos: 1, falhados: 0);
+
+        await CriarServico().GerarAsync(_sessao.Id);
+
+        // Uma IA que lesse o historico inteiro quando o profissional nao pode le-lo
+        // seria uma forma indireta de contornar o consentimento: o texto voltaria ao
+        // vet dentro do rascunho, sem nunca ter passado pela guarda (RN-064/RN-066)
+        Assert.Empty(contexto!.HistoricoRelevante);
+    }
+
+    [Fact]
+    public async Task Contexto_ComColmeia_LevaOHistoricoDaRede()
+    {
+        var consultaDeOutro = Guid.NewGuid();
+
+        _consultaRepo.Setup(r => r.ObterPorAnimalAsync(_animal.Id)).ReturnsAsync([_consulta]);
+
+        _animalRepo.Setup(r => r.ObterHistoricoLongitudinalAsync(_animal.Id)).ReturnsAsync(
+        [
+            new Prontuario(consultaDeOutro, _animal.Id, "Fratura tratada em outra clinica.")
+        ]);
+
+        _colmeia.Setup(c => c.PodeAcessarAsync(
+                _vet.Id, _animal.Id, EscopoAcessoColmeia.HistoricoCompleto))
+            .ReturnsAsync(true);
+
+        ContextoDaEstruturacaoDto? contexto = null;
+        _ia.Setup(i => i.EstruturarConsultaAsync(It.IsAny<ContextoDaEstruturacaoDto>()))
+            .Callback<ContextoDaEstruturacaoDto>(c => contexto = c)
+            .ReturnsAsync(RespostaCompleta());
+
+        _sessao.RegistrarDesfechoDaTranscricao(transcritos: 1, falhados: 0);
+
+        await CriarServico().GerarAsync(_sessao.Id);
+
+        Assert.Single(contexto!.HistoricoRelevante);
+        Assert.Contains("Fratura", contexto.HistoricoRelevante[0]);
+    }
+
+    [Fact]
+    public async Task Contexto_RegistraOAcessoDaIaAoHistorico()
+    {
+        _consultaRepo.Setup(r => r.ObterPorAnimalAsync(_animal.Id)).ReturnsAsync([_consulta]);
+        _animalRepo.Setup(r => r.ObterHistoricoLongitudinalAsync(_animal.Id)).ReturnsAsync([]);
+
+        IaResponde(RespostaCompleta());
+
+        _sessao.RegistrarDesfechoDaTranscricao(transcritos: 1, falhados: 0);
+
+        await CriarServico().GerarAsync(_sessao.Id);
+
+        // RN-067: quem le em nome do veterinario continua sendo o veterinario, e o
+        // Responsavel tem direito de ver isso no log
+        _colmeia.Verify(c => c.RegistrarAcessoAsync(
+            _animal.Id, EscopoAcessoColmeia.HistoricoCompleto, It.IsAny<bool>(), It.IsAny<string>()),
+            Times.Once);
     }
 }
