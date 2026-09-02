@@ -173,6 +173,25 @@ public class TranscricaoAzureTests
     }
 
     [Fact]
+    public async Task SucessoComTextoVazio_ViraFalhaEmVezDeTranscricaoEmBranco()
+    {
+        // Resposta REAL do Azure para um container que ele nao le (WebM/Opus, medido
+        // contra o servico): 200, "Success", texto vazio e confianca zero. Formato nao
+        // suportado nao falha — ele emudece. Sem esta guarda, entraria no prontuario
+        // uma transcricao em branco com cara de sucesso.
+        const string corpo = """
+            {"RecognitionStatus":"Success","DisplayText":"",
+             "NBest":[{"Confidence":0.0,"Lexical":"","ITN":"","MaskedITN":"","Display":""}]}
+            """;
+
+        var callback = await ExecutarAsync(Pedido(), HttpStatusCode.OK, corpo);
+
+        Assert.Equal("Falha", callback.Status);
+        Assert.Equal(MotivoFalhaTranscricao.AudioIlegivel, callback.Motivo);
+        Assert.Null(callback.Texto);
+    }
+
+    [Fact]
     public async Task Http400_ViraFalhaPorFormatoNaoSuportado()
     {
         var callback = await ExecutarAsync(Pedido(), HttpStatusCode.BadRequest, "{\"error\":\"bad audio\"}");

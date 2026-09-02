@@ -679,9 +679,17 @@ morreu calado.
 
 O front grava com a `MediaRecorder` do navegador, em **`audio/ogg;codecs=opus`, 16 kHz
 mono, trechos de 30 segundos**. Não é escolha estética: a REST API de reconhecimento
-de fala curta do Azure aceita **apenas WAV (PCM) e OGG (OPUS)**, ambos 16 kHz mono, e
-recusa WebM. O `MediaRecorder` grava OGG-OPUS nativamente, então o front não ganha
-dependência nenhuma por causa disso.
+de fala curta do Azure aceita **apenas WAV (PCM) e OGG (OPUS)**. O `MediaRecorder`
+grava OGG-OPUS nativamente, então o front não ganha dependência nenhuma por causa
+disso.
+
+**O WebM não dá erro — ele emudece.** Medido contra o serviço real: um WebM/Opus
+válido volta com `HTTP 200` e `RecognitionStatus: "Success"`, mas com `DisplayText`
+vazio e confiança `0.0`. O `Content-Type` declarado não muda nada, porque o Azure
+inspeciona o container e não confia no cabeçalho. É por isso que o adaptador mantém uma
+lista fechada de formatos e **recusa antes de chamar**: sem ela o trecho viraria
+`AudioIlegivel` depois de gastar chamada e retentativas, e o veterinário leria "áudio
+ilegível" quando o problema é o container.
 
 Os parâmetros não precisam ser adivinhados: vêm no `gravacao` da resposta de
 `/iniciar`. O front deve lê-los de lá, e não fixá-los no código.
