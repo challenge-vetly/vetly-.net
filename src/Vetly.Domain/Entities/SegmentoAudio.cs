@@ -99,16 +99,46 @@ public class SegmentoAudio
     }
 
     /// <summary>
-    /// Verdadeiro quando o segmento saiu para o motor e o callback não voltou dentro
-    /// do prazo (§4.2).
+    /// Instante a partir do qual se conta a espera pelo desfecho deste trecho (§4.2).
     ///
-    /// Sem isto o segmento fica em <c>Enviado</c> para sempre quando o motor aceita e
-    /// depois morre calado — e a sessão inteira trava em <c>AguardandoTranscricao</c>,
-    /// porque o desfecho só é avaliado quando <b>todos</b> os trechos responderam.
+    /// O último despacho quando houve um; a criação quando não houve. As duas
+    /// situações precisam de relógio porque as duas travam a sessão: o motor que
+    /// aceita e morre calado deixa o trecho em <c>Enviado</c>, e o job de despacho que
+    /// esgota as próprias tentativas deixa o trecho em <c>Recebido</c> — sem job vivo
+    /// e sem ninguém para reenfileirá-lo.
     /// </summary>
-    public bool AguardaCallbackHaMaisDe(TimeSpan prazo, DateTime agora) =>
-        Estado == EstadoSegmentoAudio.Enviado &&
-        DespachadoEm is { } despacho && agora - despacho > prazo;
+    public DateTime EsperandoDesde => DespachadoEm ?? CriadoEm;
+
+    /// <summary>
+    /// Verdadeiro quando o trecho passou do prazo sem chegar a desfecho (§4.2).
+    ///
+    /// Vale para <c>Enviado</c> e para <c>Recebido</c>: o que trava a sessão não é o
+    /// estado em que o trecho parou, é ele não ter parado em <b>nenhum</b> desfecho —
+    /// o desfecho da sessão só é avaliado quando todos os trechos responderam.
+    ///
+    /// Trecho recém-criado não é trecho travado: enquanto está dentro do prazo, ele
+    /// está no fluxo normal, esperando o despacho ou o retorno do motor.
+    /// </summary>
+    public bool EsperaEsgotada(TimeSpan prazo, DateTime agora) =>
+        !TemDesfecho() && agora - EsperandoDesde > prazo;
+
+    /// <summary>
+    /// Encerra a espera vencida: conta a tentativa e aplica a falha por timeout (§4.2).
+    ///
+    /// Em <c>Recebido</c> a tentativa <b>precisa</b> ser contada aqui. O despacho que
+    /// nunca vingou não passou por <see cref="RegistrarDespacho"/> e, portanto, não
+    /// consumiu tentativa nenhuma — sem contá-la, a varredura reenfileiraria o mesmo
+    /// trecho para sempre e trocaria uma sessão travada por um laço de jobs. Em
+    /// <c>Enviado</c> a tentativa já foi contada no despacho, e contar de novo comeria
+    /// duas de uma vez.
+    /// </summary>
+    public void EncerrarEsperaVencida()
+    {
+        if (Estado == EstadoSegmentoAudio.Recebido)
+            Tentativas++;
+
+        RegistrarFalha(MotivoFalhaTranscricao.Timeout);
+    }
 
     /// <summary>Registra o texto recebido do motor.</summary>
     public void RegistrarTranscricao() => Estado = EstadoSegmentoAudio.Transcrito;

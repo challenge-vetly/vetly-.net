@@ -148,6 +148,61 @@ public class CapturaFluxoTests
         Assert.Equal("Manual", manual.GetProperty("decisao").GetString());
     }
 
+    [Fact]
+    public async Task Captura_TodosOsTrechosPresosEmRecebido_AVarreduraLevaASessaoAoTerminal()
+    {
+        var (dono, prestador, consultaId) = await ConsultaPronataParaAtenderAsync();
+
+        await IniciarAsync(consultaId, prestador);
+        var segmentos = await EnviarSegmentosAsync(consultaId, dono, prestador, quantidade: 3);
+
+        // O outro jeito de travar: o job de despacho esgotou as tentativas DELE e
+        // morreu, deixando o trecho em `Recebido` sem ninguem para reenfileira-lo. O
+        // worker de proposito NAO roda aqui — e exatamente essa a situacao.
+        foreach (var segmento in segmentos)
+            await PrenderTrechoEmRecebidoAsync(segmento);
+
+        var encerrada = await LerAsync(
+            await EnviarAsync(HttpMethod.Post, $"/api/consultas/{consultaId}/encerrar", prestador.Token),
+            HttpStatusCode.OK);
+
+        // A sessao esta PRESA: nenhum trecho tem desfecho, e o desfecho da sessao so e
+        // avaliado quando todos responderam. Sem a varredura, e aqui que ela fica para
+        // sempre — e o app segue no polling infinito do rascunho.
+        Assert.Equal("AguardandoTranscricao", encerrada.GetProperty("estadoDaSessao").GetString());
+        Assert.Equal(3, encerrada.GetProperty("segmentosPendentes").GetInt32());
+
+        await RodarVarreduraDeTravadosAsync();
+
+        var captura = await LerAsync(
+            await EnviarAsync(HttpMethod.Get, $"/api/consultas/{consultaId}/captura", prestador.Token),
+            HttpStatusCode.OK);
+
+        // A garantia da §4.2 nao e "Enviado nao trava", e "a sessao SEMPRE chega a um
+        // estado terminal" — por qualquer das portas
+        Assert.Equal("SemTranscricao", captura.GetProperty("estado").GetString());
+        Assert.Equal(3, captura.GetProperty("segmentosComFalha").GetInt32());
+
+        Assert.All(captura.GetProperty("segmentos").EnumerateArray(),
+            s => Assert.Equal("Timeout", s.GetProperty("falhaMotivo").GetString()));
+
+        // Estado terminal tambem do lado do app: 404 e resposta definitiva — nao ha
+        // rascunho e nao vai haver —, e nao "ainda estou processando"
+        var rascunho = await EnviarAsync(HttpMethod.Get, $"/api/consultas/{consultaId}/rascunho", prestador.Token);
+        Assert.Equal(HttpStatusCode.NotFound, rascunho.StatusCode);
+
+        // E o caminho manual, que e o desfecho previsto, esta aberto (RN-085)
+        var manual = await LerAsync(await EnviarAsync(HttpMethod.Post,
+            $"/api/consultas/{consultaId}/prontuario-manual", prestador.Token,
+            """
+            {"conteudo":{"anamnese":"Vomito ha dois dias.","exameFisico":"Sem alteracoes.",
+             "hipotesesDiagnosticas":["Gastrite alimentar"],"conduta":"Dieta branda.",
+             "orientacoes":"Retornar se persistir."}}
+            """), HttpStatusCode.OK);
+
+        Assert.Equal("Manual", manual.GetProperty("decisao").GetString());
+    }
+
     // ── Parametros de gravacao entregues ao front (Parte 5) ──────────────────
 
     [Fact]
@@ -220,6 +275,43 @@ public class CapturaFluxoTests
 
             await fila.SalvarAsync();
         }
+    }
+
+    /// <summary>
+    /// Roda a varredura de trechos travados pelo mesmo handler que o worker executa.
+    /// </summary>
+    private async Task RodarVarreduraDeTravadosAsync()
+    {
+        using var escopo = _factory.Services.CreateScope();
+
+        var handler = escopo.ServiceProvider.GetServices<IJobHandler>()
+            .Single(h => h.Tipo == TipoJob.VerificarTranscricaoTravada);
+
+        await handler.ExecutarAsync(
+            new Vetly.Domain.Entities.Job(TipoJob.VerificarTranscricaoTravada), CancellationToken.None);
+    }
+
+    /// <summary>
+    /// Deixa o trecho em <c>Recebido</c>, fora do prazo e a uma tentativa do limite —
+    /// o estado em que um job de despacho que morreu abandona o segmento.
+    /// </summary>
+    private async Task PrenderTrechoEmRecebidoAsync(Guid segmentoId)
+    {
+        using var escopo = _factory.Services.CreateScope();
+        var contexto = escopo.ServiceProvider.GetRequiredService<VetlyDbContext>();
+
+        var segmento = await contexto.SegmentosDeAudio.FirstAsync(s => s.Id == segmentoId);
+
+        for (var i = 0; i < Vetly.Domain.Entities.SegmentoAudio.MaximoDeTentativas - 1; i++)
+            segmento.RegistrarDespacho(new string('a', 64), DateTime.UtcNow.AddMinutes(-10));
+
+        // Motor recusou o despacho: volta para `Recebido` sem consumir tentativa, e o
+        // job que deveria retentar e o que morreu
+        segmento.RegistrarFalha(MotivoFalhaTranscricao.MotorIndisponivel);
+
+        Assert.Equal(EstadoSegmentoAudio.Recebido, segmento.Estado);
+
+        await contexto.SaveChangesAsync();
     }
 
     /// <summary>

@@ -23,10 +23,15 @@ public interface ICapturaRepository
     Task<IEnumerable<SegmentoAudio>> ObterSegmentosAsync(Guid sessaoId);
 
     /// <summary>
-    /// Segmentos despachados ao motor cujo callback não voltou até <paramref name="limite"/>
-    /// — a varredura de trecho travado (§4.2).
+    /// Segmentos sem desfecho que esperam desde antes de <paramref name="limite"/> — a
+    /// varredura de trecho travado (§4.2).
     /// </summary>
-    Task<IEnumerable<SegmentoAudio>> ObterSegmentosAguardandoCallbackAsync(DateTime limite);
+    /// <remarks>
+    /// Cobre os dois jeitos de travar: <c>Enviado</c> cujo callback nunca voltou, e
+    /// <c>Recebido</c> que ficou sem job vivo para despachá-lo. Os dois prendem a
+    /// sessão em <c>AguardandoTranscricao</c> do mesmo jeito.
+    /// </remarks>
+    Task<IEnumerable<SegmentoAudio>> ObterSegmentosComEsperaEsgotadaAsync(DateTime limite);
 
     Task AdicionarSegmentoAsync(SegmentoAudio segmento);
     void AtualizarSegmento(SegmentoAudio segmento);
