@@ -301,4 +301,61 @@ public class JobHandlersTests
         fila.Verify(f => f.EnfileirarAsync(
             It.IsAny<TipoJob>(), It.IsAny<string>(), It.IsAny<TimeSpan?>()), Times.Never);
     }
+
+    [Fact]
+    public async Task VarrerTravadas_SegmentoPresoEmRecebido_TambemEnfileiraAVerificacao()
+    {
+        var banco = $"jobs_{Guid.NewGuid()}";
+
+        await using (var ctx = CriarContexto(banco))
+        {
+            // Despachado, recusado pelo motor, de volta a `Recebido` — e o job que
+            // deveria retentar morreu. A sonda tem de enxergar este caso tambem, ou a
+            // varredura so e acordada para metade do problema.
+            var segmento = SegmentoDespachadoHa(TimeSpan.FromMinutes(5));
+            segmento.RegistrarFalha(MotivoFalhaTranscricao.MotorIndisponivel);
+
+            Assert.Equal(EstadoSegmentoAudio.Recebido, segmento.Estado);
+
+            ctx.SegmentosDeAudio.Add(segmento);
+            await ctx.SaveChangesAsync();
+        }
+
+        var fila = new Mock<IFilaDeJobs>();
+
+        await using (var ctx = CriarContexto(banco))
+        {
+            var rotina = new VarrerTranscricoesTravadas(ctx, fila.Object);
+
+            Assert.Equal(1, await rotina.ExecutarAsync(CancellationToken.None));
+        }
+
+        fila.Verify(f => f.EnfileirarAsync(TipoJob.VerificarTranscricaoTravada, null, null), Times.Once);
+    }
+
+    [Fact]
+    public async Task VarrerTravadas_SegmentoRecemCriadoNuncaDespachado_NaoEnfileiraNada()
+    {
+        var banco = $"jobs_{Guid.NewGuid()}";
+
+        await using (var ctx = CriarContexto(banco))
+        {
+            // Nunca despachado: DespachadoEm e nulo e o relogio corre do CriadoEm.
+            // Recem-criado e fluxo normal, nao trecho travado.
+            ctx.SegmentosDeAudio.Add(new SegmentoAudio(Guid.NewGuid(), 0, Guid.NewGuid(), 30000, 0));
+            await ctx.SaveChangesAsync();
+        }
+
+        var fila = new Mock<IFilaDeJobs>();
+
+        await using (var ctx = CriarContexto(banco))
+        {
+            var rotina = new VarrerTranscricoesTravadas(ctx, fila.Object);
+
+            Assert.Equal(0, await rotina.ExecutarAsync(CancellationToken.None));
+        }
+
+        fila.Verify(f => f.EnfileirarAsync(
+            It.IsAny<TipoJob>(), It.IsAny<string>(), It.IsAny<TimeSpan?>()), Times.Never);
+    }
 }

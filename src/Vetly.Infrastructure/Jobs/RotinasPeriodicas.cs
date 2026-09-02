@@ -112,9 +112,12 @@ public class VarrerTranscricoesTravadas : IRotinaPeriodica
     {
         var limite = DateTime.UtcNow - CapturaService.PrazoDoCallback;
 
+        // Os dois jeitos de travar a sessao: Enviado sem callback de volta, e Recebido
+        // que ficou sem job vivo para despacha-lo. A sonda tem de enxergar os dois, ou
+        // a varredura so e acordada para metade do problema.
         var haTravado = await _context.SegmentosDeAudio.AnyAsync(
-            s => s.Estado == EstadoSegmentoAudio.Enviado &&
-                 s.DespachadoEm != null && s.DespachadoEm < limite,
+            s => (s.Estado == EstadoSegmentoAudio.Enviado || s.Estado == EstadoSegmentoAudio.Recebido) &&
+                 (s.DespachadoEm ?? s.CriadoEm) < limite,
             cancellationToken);
 
         if (!haTravado)

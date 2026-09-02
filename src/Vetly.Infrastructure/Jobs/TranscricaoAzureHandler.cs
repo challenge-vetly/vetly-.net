@@ -32,9 +32,15 @@ public class TranscreverSegmentoAzureHandler : IJobHandler
     /// Tipos MIME que a REST API de short audio aceita, mapeados para o cabeçalho
     /// exato que ela espera.
     ///
-    /// A lista é fechada de propósito: mandar um formato que o Azure não lê custa uma
-    /// chamada, volta como 400 genérico e some no meio dos outros erros. Recusar aqui
-    /// dá ao veterinário o motivo certo (<c>FormatoNaoSuportado</c>) de graça.
+    /// A lista é fechada de propósito, e o motivo é pior do que "o Azure devolve 400":
+    /// medido contra o serviço real, um WebM/Opus válido volta com <b>HTTP 200 e
+    /// <c>RecognitionStatus: "Success"</c> com texto vazio</b> — e o Content-Type
+    /// declarado não muda nada, porque o Azure inspeciona o container, não o cabeçalho.
+    /// Um formato não suportado não falha: ele <b>emudece</b>.
+    ///
+    /// Sem esta lista, o trecho viraria <c>AudioIlegivel</c> depois de gastar chamada e
+    /// retentativas, e o veterinário leria "áudio ilegível" quando o problema é o
+    /// container. Recusar aqui dá o motivo certo (<c>FormatoNaoSuportado</c>) de graça.
     /// </summary>
     private static readonly Dictionary<string, string> ContentTypeDoAzure = new(StringComparer.OrdinalIgnoreCase)
     {

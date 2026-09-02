@@ -264,7 +264,7 @@ public class CapturaService : ICapturaService
     public async Task<int> ResolverSegmentosTravadosAsync()
     {
         var agora = DateTime.UtcNow;
-        var travados = (await _repo.ObterSegmentosAguardandoCallbackAsync(agora - PrazoDoCallback)).ToList();
+        var travados = (await _repo.ObterSegmentosComEsperaEsgotadaAsync(agora - PrazoDoCallback)).ToList();
 
         if (travados.Count == 0)
             return 0;
@@ -279,12 +279,14 @@ public class CapturaService : ICapturaService
         {
             // Reconfere no proprio agregado: entre a consulta e este ponto o callback
             // pode ter chegado, e reenviar um trecho ja transcrito duplicaria o texto.
-            if (!segmento.AguardaCallbackHaMaisDe(PrazoDoCallback, agora))
+            if (!segmento.EsperaEsgotada(PrazoDoCallback, agora))
                 continue;
 
             // Timeout e nao AudioIlegivel: o audio pode estar perfeito — quem nao
             // respondeu foi o motor, e o motivo e o que o veterinario le no aviso.
-            segmento.RegistrarFalha(MotivoFalhaTranscricao.Timeout);
+            // A contagem da tentativa fica no agregado, que sabe se o despacho chegou
+            // a acontecer (§4.2).
+            segmento.EncerrarEsperaVencida();
             _repo.AtualizarSegmento(segmento);
 
             if (segmento.Estado == EstadoSegmentoAudio.Recebido)

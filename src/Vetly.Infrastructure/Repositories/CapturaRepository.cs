@@ -45,11 +45,11 @@ public class CapturaRepository : ICapturaRepository
             .ToListAsync();
 
     /// <inheritdoc/>
-    public async Task<IEnumerable<SegmentoAudio>> ObterSegmentosAguardandoCallbackAsync(DateTime limite) =>
+    public async Task<IEnumerable<SegmentoAudio>> ObterSegmentosComEsperaEsgotadaAsync(DateTime limite) =>
         await _context.SegmentosDeAudio
-            .Where(s => s.Estado == EstadoSegmentoAudio.Enviado &&
-                        s.DespachadoEm != null && s.DespachadoEm < limite)
-            .OrderBy(s => s.DespachadoEm)
+            .Where(s => (s.Estado == EstadoSegmentoAudio.Enviado || s.Estado == EstadoSegmentoAudio.Recebido) &&
+                        (s.DespachadoEm ?? s.CriadoEm) < limite)
+            .OrderBy(s => s.DespachadoEm ?? s.CriadoEm)
             .ToListAsync();
 
     /// <inheritdoc/>
