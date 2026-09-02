@@ -27,7 +27,14 @@ public class MidiaController : ControllerBase
     /// </summary>
     /// <remarks>
     /// O content type e conferido aqui, e nao so no upload: aceitar qualquer coisa
-    /// deixaria o storage virar deposito de arquivo arbitrario.
+    /// deixaria o storage virar deposito de arquivo arbitrario. Tipo incompativel com
+    /// a natureza da midia devolve 400.
+    ///
+    /// Para audio de consulta, o formato e o que veio em `gravacao` na resposta de
+    /// `POST /api/consultas/{id}/iniciar` — hoje `audio/ogg;codecs=opus`.
+    ///
+    /// A `uploadUrl` devolvida e ABSOLUTA e temporaria: o app envia os bytes direto ao
+    /// storage, e a API nunca proxia audio nem imagem clinica.
     /// </remarks>
     [HttpPost("upload-url")]
     [ProducesResponseType(typeof(UrlDeUploadDto), StatusCodes.Status201Created)]
