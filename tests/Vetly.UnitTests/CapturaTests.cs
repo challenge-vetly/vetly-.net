@@ -1,4 +1,4 @@
-using Moq;
+﻿using Moq;
 using Vetly.Application.DTOs.Captura;
 using Vetly.Application.Exceptions;
 using Vetly.Application.Interfaces;
@@ -307,7 +307,7 @@ public class CapturaTests
     private static SegmentoAudio SegmentoDespachado(Guid sessaoId, Guid midiaId, int sequencia = 0)
     {
         var segmento = new SegmentoAudio(sessaoId, sequencia, midiaId, 30000, 0);
-        segmento.RegistrarDespacho(HashDoToken(TokenDoCallback));
+        segmento.RegistrarDespacho(HashDoToken(TokenDoCallback), DateTime.UtcNow);
         return segmento;
     }
 
@@ -379,6 +379,42 @@ public class CapturaTests
             TipoJob.TranscreverSegmento, segmento.Id.ToString(), It.IsAny<TimeSpan?>()), Times.Once);
     }
 
+    [Theory]
+    [InlineData(1, 10)]
+    [InlineData(2, 30)]
+    [InlineData(3, 90)]
+    public void Backoff_CresceConformeAEspecificacao(int tentativas, int segundosEsperados)
+    {
+        // §4.2: 10s / 30s / 90s. Espera fixa insistiria no mesmo intervalo contra um
+        // motor que caiu de vez, adiando o desfecho que o veterinario esta esperando.
+        Assert.Equal(
+            TimeSpan.FromSeconds(segundosEsperados), CapturaService.BackoffDaTentativa(tentativas));
+    }
+
+    [Fact]
+    public async Task Callback_ComFalha_ReenfileiraComOBackoffDaPrimeiraTentativa()
+    {
+        var sessao = SessaoAberta();
+        var midia = AudioNoStorage();
+        var segmento = SegmentoDespachado(sessao.Id, midia.Id);
+        _repo.Setup(r => r.ObterSegmentoAsync(segmento.Id)).ReturnsAsync(segmento);
+        _repo.Setup(r => r.ObterSegmentosAsync(sessao.Id)).ReturnsAsync([segmento]);
+
+        TimeSpan? atraso = null;
+        _fila.Setup(f => f.EnfileirarAsync(
+                TipoJob.TranscreverSegmento, It.IsAny<string>(), It.IsAny<TimeSpan?>()))
+            .Callback<TipoJob, string?, TimeSpan?>((_, _, a) => atraso = a)
+            .Returns(Task.CompletedTask);
+
+        await CriarServico().RegistrarCallbackAsync(new CallbackDeTranscricaoDto
+        {
+            CallbackToken = TokenDoCallback,
+            SegmentoId = segmento.Id, Status = "Falha", Motivo = MotivoFalhaTranscricao.MotorIndisponivel
+        });
+
+        Assert.Equal(TimeSpan.FromSeconds(10), atraso);
+    }
+
     [Fact]
     public async Task Callback_FalhaDepoisDeTresTentativas_DaOTrechoComoPerdido()
     {
@@ -387,7 +423,7 @@ public class CapturaTests
         var segmento = SegmentoDespachado(sessao.Id, midia.Id);
 
         for (var i = 1; i < SegmentoAudio.MaximoDeTentativas; i++)
-            segmento.RegistrarDespacho(HashDoToken(TokenDoCallback));
+            segmento.RegistrarDespacho(HashDoToken(TokenDoCallback), DateTime.UtcNow);
 
         _repo.Setup(r => r.ObterSegmentoAsync(segmento.Id)).ReturnsAsync(segmento);
         _repo.Setup(r => r.ObterSegmentosAsync(sessao.Id)).ReturnsAsync([segmento]);
@@ -600,5 +636,130 @@ public class CapturaTests
         });
 
         Assert.Equal(EstadoSegmentoAudio.Transcrito, segmento.Estado);
+    }
+
+    // ── Varredura de segmento travado (§4.2) ─────────────────────────────────
+
+    /// <summary>
+    /// Um segmento despachado ha tempo demais, sem callback. E o cenario que a
+    /// varredura existe para resolver: motor que aceitou e morreu calado.
+    /// </summary>
+    private SegmentoAudio SegmentoTravado(Guid sessaoId, Guid midiaId, int sequencia = 0)
+    {
+        var segmento = new SegmentoAudio(sessaoId, sequencia, midiaId, 30000, 0);
+
+        segmento.RegistrarDespacho(
+            HashDoToken(TokenDoCallback), DateTime.UtcNow - CapturaService.PrazoDoCallback.Add(TimeSpan.FromMinutes(1)));
+
+        _repo.Setup(r => r.ObterSegmentoAsync(segmento.Id)).ReturnsAsync(segmento);
+        return segmento;
+    }
+
+    [Fact]
+    public async Task Travado_ComTentativaSobrando_VoltaParaAFila()
+    {
+        var sessao = SessaoAberta();
+        var midia = AudioNoStorage();
+        var segmento = SegmentoTravado(sessao.Id, midia.Id);
+
+        _repo.Setup(r => r.ObterSegmentosAguardandoCallbackAsync(It.IsAny<DateTime>()))
+            .ReturnsAsync([segmento]);
+        _repo.Setup(r => r.ObterSegmentosAsync(sessao.Id)).ReturnsAsync([segmento]);
+
+        var tratados = await CriarServico().ResolverSegmentosTravadosAsync();
+
+        Assert.Equal(1, tratados);
+        Assert.Equal(EstadoSegmentoAudio.Recebido, segmento.Estado);
+        Assert.Equal(MotivoFalhaTranscricao.Timeout, segmento.FalhaMotivo);
+
+        _fila.Verify(f => f.EnfileirarAsync(
+            TipoJob.TranscreverSegmento, segmento.Id.ToString(), It.IsAny<TimeSpan?>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Travado_SemTentativaSobrando_ViraFalhaPorTimeout()
+    {
+        var sessao = SessaoAberta();
+        var midia = AudioNoStorage();
+        var segmento = SegmentoTravado(sessao.Id, midia.Id);
+
+        // Esgota as tentativas
+        for (var i = 1; i < SegmentoAudio.MaximoDeTentativas; i++)
+            segmento.RegistrarDespacho(HashDoToken(TokenDoCallback), DateTime.UtcNow.AddMinutes(-10));
+
+        _repo.Setup(r => r.ObterSegmentosAguardandoCallbackAsync(It.IsAny<DateTime>()))
+            .ReturnsAsync([segmento]);
+        _repo.Setup(r => r.ObterSegmentosAsync(sessao.Id)).ReturnsAsync([segmento]);
+
+        await CriarServico().ResolverSegmentosTravadosAsync();
+
+        Assert.Equal(EstadoSegmentoAudio.Falha, segmento.Estado);
+        Assert.Equal(MotivoFalhaTranscricao.Timeout, segmento.FalhaMotivo);
+
+        _fila.Verify(f => f.EnfileirarAsync(
+            TipoJob.TranscreverSegmento, It.IsAny<string>(), It.IsAny<TimeSpan?>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Travado_SemTentativaSobrando_DestravaASessao()
+    {
+        var sessao = SessaoAberta();
+        var midia = AudioNoStorage();
+        var segmento = SegmentoTravado(sessao.Id, midia.Id);
+
+        for (var i = 1; i < SegmentoAudio.MaximoDeTentativas; i++)
+            segmento.RegistrarDespacho(HashDoToken(TokenDoCallback), DateTime.UtcNow.AddMinutes(-10));
+
+        sessao.Encerrar(segmentosRecebidos: 1);
+        Assert.Equal(EstadoSessaoCaptura.AguardandoTranscricao, sessao.Estado);
+
+        _repo.Setup(r => r.ObterSegmentosAguardandoCallbackAsync(It.IsAny<DateTime>()))
+            .ReturnsAsync([segmento]);
+        _repo.Setup(r => r.ObterSegmentosAsync(sessao.Id)).ReturnsAsync([segmento]);
+
+        await CriarServico().ResolverSegmentosTravadosAsync();
+
+        // Sem a varredura a sessao ficaria em AguardandoTranscricao para sempre, e o
+        // app nunca veria um estado terminal no polling do rascunho
+        Assert.Equal(EstadoSessaoCaptura.SemTranscricao, sessao.Estado);
+    }
+
+    [Fact]
+    public async Task Travado_ComOutroTrechoTranscrito_SessaoVaiParaTranscricaoParcial()
+    {
+        var sessao = SessaoAberta();
+        var midia = AudioNoStorage();
+
+        var transcrito = SegmentoDespachado(sessao.Id, midia.Id, sequencia: 0);
+        transcrito.RegistrarTranscricao();
+
+        var travado = SegmentoTravado(sessao.Id, midia.Id, sequencia: 1);
+        for (var i = 1; i < SegmentoAudio.MaximoDeTentativas; i++)
+            travado.RegistrarDespacho(HashDoToken(TokenDoCallback), DateTime.UtcNow.AddMinutes(-10));
+
+        sessao.Encerrar(segmentosRecebidos: 2);
+
+        _repo.Setup(r => r.ObterSegmentosAguardandoCallbackAsync(It.IsAny<DateTime>()))
+            .ReturnsAsync([travado]);
+        _repo.Setup(r => r.ObterSegmentosAsync(sessao.Id)).ReturnsAsync([transcrito, travado]);
+
+        await CriarServico().ResolverSegmentosTravadosAsync();
+
+        // O rascunho sai com o que ha, e com aviso: perder a consulta inteira porque um
+        // trecho travou seria pior
+        Assert.Equal(EstadoSessaoCaptura.TranscricaoParcial, sessao.Estado);
+        _fila.Verify(f => f.EnfileirarAsync(
+            TipoJob.EstruturarConsulta, sessao.Id.ToString(), It.IsAny<TimeSpan?>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Travado_SemSegmentoVencido_NaoMexeEmNada()
+    {
+        _repo.Setup(r => r.ObterSegmentosAguardandoCallbackAsync(It.IsAny<DateTime>()))
+            .ReturnsAsync([]);
+
+        Assert.Equal(0, await CriarServico().ResolverSegmentosTravadosAsync());
+
+        _repo.Verify(r => r.SalvarAsync(), Times.Never);
     }
 }

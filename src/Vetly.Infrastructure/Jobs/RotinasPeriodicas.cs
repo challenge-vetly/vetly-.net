@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Vetly.Application.Interfaces;
+using Vetly.Application.Services;
 using Vetly.Domain.Enums;
 using Vetly.Infrastructure.Data;
 
@@ -74,6 +75,54 @@ public class ExpirarLocksDeCheckout : IRotinaPeriodica
         _logger.LogInformation("{Quantidade} lock(s) de checkout expiraram e voltaram a ficar livres.", vencidos.Count);
 
         return vencidos.Count;
+    }
+}
+
+/// <summary>
+/// Agenda a varredura de segmentos de áudio travados na espera do callback (§4.2).
+///
+/// A varredura em si é um job (<see cref="TipoJob.VerificarTranscricaoTravada"/>), e
+/// não o corpo desta rotina, por dois motivos: ela mexe na máquina de estados da
+/// sessão e merece a retentativa e o registro de falha que a fila dá de graça; e o
+/// mesmo trabalho pode ser disparado à mão em operação, sem esperar o ciclo.
+///
+/// A rotina só enfileira quando <b>há</b> segmento vencido. Enfileirar um job por
+/// minuto para, quase sempre, não encontrar nada encheria a tabela de jobs de ruído e
+/// esconderia o que importa nela.
+/// </summary>
+public class VarrerTranscricoesTravadas : IRotinaPeriodica
+{
+    private readonly VetlyDbContext _context;
+    private readonly IFilaDeJobs _fila;
+
+    public VarrerTranscricoesTravadas(VetlyDbContext context, IFilaDeJobs fila)
+    {
+        _context = context;
+        _fila = fila;
+    }
+
+    /// <inheritdoc/>
+    public string Nome => "VarrerTranscricoesTravadas";
+
+    /// <inheritdoc/>
+    public TimeSpan Intervalo => TimeSpan.FromMinutes(1);
+
+    /// <inheritdoc/>
+    public async Task<int> ExecutarAsync(CancellationToken cancellationToken)
+    {
+        var limite = DateTime.UtcNow - CapturaService.PrazoDoCallback;
+
+        var haTravado = await _context.SegmentosDeAudio.AnyAsync(
+            s => s.Estado == EstadoSegmentoAudio.Enviado &&
+                 s.DespachadoEm != null && s.DespachadoEm < limite,
+            cancellationToken);
+
+        if (!haTravado)
+            return 0;
+
+        await _fila.EnfileirarAsync(TipoJob.VerificarTranscricaoTravada);
+
+        return 1;
     }
 }
 

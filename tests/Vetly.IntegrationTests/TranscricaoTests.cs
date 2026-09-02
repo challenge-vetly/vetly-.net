@@ -1,7 +1,8 @@
-using System.Net;
+﻿using System.Net;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Vetly.Application.DTOs.Captura;
@@ -9,6 +10,7 @@ using Vetly.Application.Interfaces;
 using Vetly.Domain.Entities;
 using Vetly.Domain.Enums;
 using Vetly.Infrastructure.Adapters;
+using Vetly.Infrastructure.Data;
 using Vetly.Infrastructure.Jobs;
 
 namespace Vetly.IntegrationTests;
@@ -22,10 +24,15 @@ namespace Vetly.IntegrationTests;
 public class TranscricaoTests
 {
     private readonly HttpClient _client;
+    private readonly VetlyWebApplicationFactory _factory;
 
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
-    public TranscricaoTests(VetlyWebApplicationFactory factory) => _client = factory.CreateClient();
+    public TranscricaoTests(VetlyWebApplicationFactory factory)
+    {
+        _factory = factory;
+        _client = factory.CreateClient();
+    }
 
     private static IConfiguration Config() =>
         new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
@@ -136,6 +143,51 @@ public class TranscricaoTests
     }
 
     [Fact]
+    public async Task Despacho_UrlDeAudioRelativa_NaoVaiAoMotor()
+    {
+        var (sessao, segmento, midia) = Cenario();
+        var (captura, midias, storage) = Dependencias(sessao, segmento, midia);
+
+        // Storage mal configurado (Storage:PublicBaseUrl ausente) emite URL relativa
+        storage.Setup(s => s.GerarUrlDeLeituraAsync(midia.ChaveStorage, It.IsAny<TimeSpan>()))
+            .ReturnsAsync(new UrlAssinadaDto("/api/storage/audio?sig=abc", DateTime.UtcNow.AddMinutes(15)));
+
+        var stt = new Mock<ISttAdapter>();
+
+        var handler = new TranscreverSegmentoHandler(
+            captura.Object, midias.Object, storage.Object, stt.Object, Config(),
+            NullLogger<TranscreverSegmentoHandler>.Instance);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => handler.ExecutarAsync(
+            new Job(TipoJob.TranscreverSegmento, segmento.Id.ToString()), CancellationToken.None));
+
+        // Nenhum motor externo resolve "/api/storage/...": mandar assim seria despachar
+        // um segmento que jamais voltaria
+        stt.Verify(s => s.SolicitarTranscricaoAsync(It.IsAny<SolicitarTranscricaoRequest>()), Times.Never);
+        Assert.Equal(MotivoFalhaTranscricao.MotorIndisponivel, segmento.FalhaMotivo);
+    }
+
+    [Fact]
+    public async Task Despacho_UrlDeAudioAbsoluta_SegueParaOMotor()
+    {
+        var (sessao, segmento, midia) = Cenario();
+        var (captura, midias, storage) = Dependencias(sessao, segmento, midia);
+
+        var stt = new Mock<ISttAdapter>();
+        stt.Setup(s => s.SolicitarTranscricaoAsync(It.IsAny<SolicitarTranscricaoRequest>())).ReturnsAsync(true);
+
+        var handler = new TranscreverSegmentoHandler(
+            captura.Object, midias.Object, storage.Object, stt.Object, Config(),
+            NullLogger<TranscreverSegmentoHandler>.Instance);
+
+        await handler.ExecutarAsync(
+            new Job(TipoJob.TranscreverSegmento, segmento.Id.ToString()), CancellationToken.None);
+
+        stt.Verify(s => s.SolicitarTranscricaoAsync(It.IsAny<SolicitarTranscricaoRequest>()), Times.Once);
+        Assert.Equal(EstadoSegmentoAudio.Enviado, segmento.Estado);
+    }
+
+    [Fact]
     public async Task Despacho_PayloadInvalido_Falha()
     {
         var handler = new TranscreverSegmentoHandler(
@@ -206,6 +258,25 @@ public class TranscricaoTests
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => handler.ExecutarAsync(
             new Job(TipoJob.TranscreverSegmentoSimulado, null), CancellationToken.None));
+    }
+
+    // ── Varredura de segmento travado (§4.2) ─────────────────────────────────
+
+    [Fact]
+    public async Task Travado_OHandlerDelegaAVarreduraAoServicoDeCaptura()
+    {
+        var captura = new Mock<ICapturaService>();
+        captura.Setup(c => c.ResolverSegmentosTravadosAsync()).ReturnsAsync(2);
+
+        var handler = new VerificarTranscricaoTravadaHandler(
+            captura.Object, NullLogger<VerificarTranscricaoTravadaHandler>.Instance);
+
+        await handler.ExecutarAsync(
+            new Job(TipoJob.VerificarTranscricaoTravada), CancellationToken.None);
+
+        // A maquina de estados da sessao vive no servico: duplica-la no handler daria
+        // dois lugares para o mesmo desfecho
+        captura.Verify(c => c.ResolverSegmentosTravadosAsync(), Times.Once);
     }
 
     // ── Estruturacao pela IA (RN-080) ────────────────────────────────────────
@@ -312,6 +383,90 @@ public class TranscricaoTests
 
         // A rota interna nao aceita chamada sem autenticacao de servico
         Assert.Equal(HttpStatusCode.Unauthorized, resposta.StatusCode);
+    }
+
+    [Fact]
+    public async Task Callback_ComTokenDeServicoMasSemTokenDoSegmento_Retorna401()
+    {
+        var segmentoId = await SegmentoDespachadoNoBancoAsync();
+
+        var requisicao = new HttpRequestMessage(HttpMethod.Post, "/api/internos/stt/callback")
+        {
+            Content = new StringContent(
+                $$"""{"segmentoId":"{{segmentoId}}","status":"Ok","texto":"texto forjado"}""",
+                Encoding.UTF8, "application/json")
+        };
+        requisicao.Headers.Add("X-Vetly-Service-Token", TokenDeServico);
+
+        var resposta = await _client.SendAsync(requisicao);
+
+        // Sao duas credenciais: o token de servico diz QUEM chama, o token do segmento
+        // diz que a resposta e do trecho que foi mandado (RN-009). Faltando a segunda,
+        // quem conhecesse a primeira escreveria no prontuario de qualquer consulta.
+        Assert.Equal(HttpStatusCode.Unauthorized, resposta.StatusCode);
+
+        await using var escopo = _factory.Services.CreateAsyncScope();
+        var contexto = escopo.ServiceProvider.GetRequiredService<VetlyDbContext>();
+
+        // E, sobretudo, o texto forjado nao entra no prontuario
+        Assert.Empty(contexto.Transcricoes.Where(t => t.SegmentoAudioId == segmentoId));
+    }
+
+    [Fact]
+    public async Task Callback_ComTokenDeServicoEOTokenDoSegmento_PersisteATranscricao()
+    {
+        var segmentoId = await SegmentoDespachadoNoBancoAsync();
+
+        var requisicao = new HttpRequestMessage(HttpMethod.Post, "/api/internos/stt/callback")
+        {
+            Content = new StringContent(
+                $$"""
+                {"segmentoId":"{{segmentoId}}","status":"Ok","texto":"paciente com vomito ha um dia",
+                 "callbackToken":"{{TokenDoSegmentoDeTeste}}"}
+                """,
+                Encoding.UTF8, "application/json")
+        };
+        requisicao.Headers.Add("X-Vetly-Service-Token", TokenDeServico);
+
+        var resposta = await _client.SendAsync(requisicao);
+
+        Assert.Equal(HttpStatusCode.NoContent, resposta.StatusCode);
+
+        await using var escopo = _factory.Services.CreateAsyncScope();
+        var contexto = escopo.ServiceProvider.GetRequiredService<VetlyDbContext>();
+
+        var transcricao = contexto.Transcricoes.Single(t => t.SegmentoAudioId == segmentoId);
+        Assert.Equal("paciente com vomito ha um dia", transcricao.Texto);
+    }
+
+    /// <summary>Token de serviço do <c>appsettings.json</c> versionado.</summary>
+    private const string TokenDeServico = "DEFINA_UM_TOKEN_DE_SERVICO_LOCALMENTE";
+
+    /// <summary>Token por segmento que os cenários de callback pelo HTTP usam.</summary>
+    private const string TokenDoSegmentoDeTeste = "token-por-segmento-do-teste";
+
+    /// <summary>
+    /// Semeia uma sessão com um segmento já despachado. O callback só é aceito para
+    /// segmento que saiu ao motor: sem isso não há resposta legítima possível.
+    /// </summary>
+    private async Task<Guid> SegmentoDespachadoNoBancoAsync()
+    {
+        await using var escopo = _factory.Services.CreateAsyncScope();
+        var contexto = escopo.ServiceProvider.GetRequiredService<VetlyDbContext>();
+
+        var sessao = new SessaoCaptura(Guid.NewGuid(), capturaAtiva: true);
+        var segmento = new SegmentoAudio(sessao.Id, 0, Guid.NewGuid(), 30000, 0);
+
+        var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+            Encoding.UTF8.GetBytes(TokenDoSegmentoDeTeste))).ToLowerInvariant();
+
+        segmento.RegistrarDespacho(hash, DateTime.UtcNow);
+
+        contexto.SessoesDeCaptura.Add(sessao);
+        contexto.SegmentosDeAudio.Add(segmento);
+        await contexto.SaveChangesAsync();
+
+        return segmento.Id;
     }
 
     [Fact]

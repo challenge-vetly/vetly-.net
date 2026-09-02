@@ -376,8 +376,12 @@ public class ConsultasController : ControllerBase
     /// </summary>
     /// <remarks>
     /// Fora da janela de captura devolve 409: a IA nao captura audio nem produz
-    /// conteudo clinico fora dela (RN-079). O audio ja deve estar no storage — aqui
-    /// viaja apenas o midiaId.
+    /// conteudo clinico fora dela (RN-079). Consulta que ainda nao foi iniciada devolve
+    /// 422 — nao ha janela onde encaixar o trecho. O audio ja deve estar no storage —
+    /// aqui viaja apenas o midiaId.
+    ///
+    /// O formato do audio e o que veio em `gravacao` na resposta de `/iniciar`
+    /// (audio/ogg;codecs=opus, 16 kHz mono, trechos de 30s).
     /// </remarks>
     [HttpPost("{id:guid}/captura/segmentos")]
     [ProducesResponseType(typeof(SegmentoRecebidoDto), StatusCodes.Status202Accepted)]
@@ -386,12 +390,21 @@ public class ConsultasController : ControllerBase
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
     public async Task<IActionResult> ReceberSegmento(Guid id, [FromBody] EnviarSegmentoDto dto) =>
         Accepted(await _captura.ReceberSegmentoAsync(id, dto));
 
     /// <summary>
     /// Situacao da captura, com o texto ja transcrito ate agora (RN-009).
     /// </summary>
+    /// <remarks>
+    /// E o que sustenta a barra de progresso do app: `segmentosRecebidos`,
+    /// `segmentosTranscritos`, `segmentosComFalha` e o `textoParcial` na ordem dos
+    /// trechos. Cada trecho traz tambem o motivo da falha e quantas tentativas ja
+    /// foram feitas.
+    ///
+    /// 404 enquanto a consulta nao foi iniciada — nao ha sessao de captura ainda.
+    /// </remarks>
     [HttpGet("{id:guid}/captura")]
     [ProducesResponseType(typeof(EstadoDaCapturaDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]

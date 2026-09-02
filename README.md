@@ -22,11 +22,12 @@ Esta versão da documentação acrescenta a camada que faltava para que o sistem
 | [4. Monitoramento e observabilidade](#4-monitoramento-e-observabilidade) | Health checks, Serilog, OpenTelemetry, catálogo de métricas e o playbook de plantão |
 | [5. Testes automatizados](#5-testes-automatizados) | Padrão AAA, nomenclatura, fixtures, execução e cobertura |
 | [6. Instalação e execução](#6-instalação-e-execução) | Pré-requisitos, configuração local, migrations e como subir |
-| [7. Autenticação](#7-autenticação) | JWT, refresh rotativo, perfis e policies |
-| [8. Roteiro de testes no Postman](#8-roteiro-de-testes-no-postman) | A jornada completa, chamada por chamada, na ordem em que funciona |
-| [9. Referência de endpoints](#9-referência-de-endpoints) | Todas as rotas, agrupadas por área, com o que cada uma faz |
-| [10. Correções de segurança](#10-correções-de-segurança) | O que a revisão de segurança encontrou e como foi fechado |
-| [11. Modelo entidade-relacionamento](#11-modelo-entidade-relacionamento) | As tabelas principais e seus campos |
+| [7. Fluxo de captura da consulta](#7-fluxo-de-captura-da-consulta) | Ponta a ponta, formato do áudio, troca de motor e as variáveis do Azure Speech |
+| [8. Autenticação](#8-autenticação) | JWT, refresh rotativo, perfis e policies |
+| [9. Roteiro de testes no Postman](#9-roteiro-de-testes-no-postman) | A jornada completa, chamada por chamada, na ordem em que funciona |
+| [10. Referência de endpoints](#10-referência-de-endpoints) | Todas as rotas, agrupadas por área, com o que cada uma faz |
+| [11. Correções de segurança](#11-correções-de-segurança) | O que a revisão de segurança encontrou e como foi fechado |
+| [12. Modelo entidade-relacionamento](#12-modelo-entidade-relacionamento) | As tabelas principais e seus campos |
 | [Regras de negócio](REGRAS-DE-NEGOCIO.md) | Documento separado: RN-001 a RN-107 e onde cada uma é implementada |
 
 ---
@@ -97,7 +98,7 @@ Cada linha diz **para que a tecnologia é usada neste projeto**, não o que ela 
 | **Serilog.Enrichers.Environment / Thread** | 3.0.1 / 4.0.0 | Carimbam `MachineName` e `ThreadId` em toda linha — o que responde "o erro só acontece numa das instâncias?" sem precisar instrumentar nada |
 | **OpenTelemetry.Extensions.Hosting** | 1.18.0 | Integra o SDK do OpenTelemetry ao host: um `Resource` compartilhado (nome, versão e ambiente do serviço) para traces e métricas |
 | **OpenTelemetry.Instrumentation.AspNetCore** | 1.18.0 | Um span por requisição HTTP recebida, com exceção anexada. Sondas de saúde são filtradas para não afogarem o trace |
-| **OpenTelemetry.Instrumentation.Http** | 1.18.0 | Spans das chamadas de **saída** — é assim que a latência do Ollama e do Node-RED aparece separada da nossa |
+| **OpenTelemetry.Instrumentation.Http** | 1.18.0 | Spans das chamadas de **saída** — é assim que a latência do Ollama e do motor de transcrição aparece separada da nossa |
 | **OpenTelemetry.Instrumentation.EntityFrameworkCore** | 1.18.0-beta.1 | Um span por consulta ao Oracle. Responde "a rota está lenta por causa do banco ou da regra?" sem precisar adivinhar |
 | **OpenTelemetry.Instrumentation.Runtime** | 1.18.0 | Métricas de GC, heap, thread pool e exceções do runtime — o primeiro lugar a olhar quando a latência sobe sem que o banco tenha piorado |
 | **OpenTelemetry.Exporter.Prometheus.AspNetCore** | 1.18.0-beta.1 | Publica o endpoint `/metrics` no formato de texto do Prometheus, pronto para raspagem por Prometheus, Grafana Agent ou Datadog |
@@ -123,7 +124,7 @@ Cada linha diz **para que a tecnologia é usada neste projeto**, não o que ela 
 | Tecnologia | Versão | Para que serve aqui |
 |---|---|---|
 | **Ollama** | `llama3.1` | LLM local. Estrutura a transcrição da consulta em prontuário (RN-080), sugere hipóteses diagnósticas, protocolo com posologia, triagem de sintomas e orientações pós-atendimento. **Toda saída é sugestão** e passa por decisão explícita do veterinário (RN-082) |
-| **Node-RED** | opcional | Motor de transcrição de fala em produção. O contrato do callback é da Vetly, não do motor — trocar de fornecedor é mexer no fluxo, sem refazer o caminho de volta |
+| **Azure Speech-to-Text** | opcional | Motor de transcrição de fala em produção, chamado diretamente ([§7](#7-fluxo-de-captura-da-consulta)). O contrato do callback é da Vetly, não do motor — é o que torna a troca de fornecedor uma troca de registro, e não uma refatoração de fluxo. O fluxo **Node-RED** segue disponível como implementação alternativa da mesma porta |
 
 ---
 
@@ -172,7 +173,7 @@ Três endpoints públicos, sem autenticação, com semânticas deliberadamente d
 | Endpoint | Executa | Decisão que sustenta |
 |---|---|---|
 | `GET /health/live` | Só o check `api` — não toca dependência nenhuma | **Reiniciar** o container |
-| `GET /health/ready` | Checks com a tag `ready`: Oracle e Ollama | Enviar ou não **tráfego** para a instância |
+| `GET /health/ready` | Checks com a tag `ready`: Oracle, Ollama e — quando `Adaptadores:Stt = Azure` — o Azure Speech | Enviar ou não **tráfego** para a instância |
 | `GET /health` | Todos os checks registrados | Diagnóstico manual |
 
 A separação entre *liveness* e *readiness* não é cerimônia. Liveness decide reiniciar o processo: se ela consultasse o banco, uma indisponibilidade momentânea do Oracle mataria containers perfeitamente saudáveis, e o restart em massa pioraria exatamente o incidente em curso. Readiness precisa do oposto — tocar as dependências e tirar a instância de rotação enquanto elas não respondem.
@@ -184,8 +185,11 @@ A separação entre *liveness* e *readiness* não é cerimônia. Liveness decide
 | `api` | `live` | — | Se o processo responde à lambda, o host está vivo |
 | `oracle-db` | `ready`, `db`, `oracle` | `Unhealthy` → **HTTP 503** | Sem banco a API não entrega nada. Tem de sair de rotação |
 | `ollama` | `ready`, `external` | `Degraded` → **HTTP 200** | Sem IA só os recursos de IA param; agendar, pagar e emitir documento seguem funcionando. Derrubar a instância inteira por causa do LLM seria transformar uma degradação em indisponibilidade |
+| `azure-speech` | `ready`, `external` | `Degraded` → **HTTP 200** | Registrado apenas com `Adaptadores:Stt = Azure`. Mesma razão do Ollama: sem o motor a captura de áudio para, mas a consulta continua acontecendo e o prontuário segue pelo caminho manual (RN-085) |
 
 O check do Oracle usa uma consulta de teste customizada que **abre a conexão explicitamente**, em vez do `CanConnectAsync` padrão. O motivo é prático: o padrão engole a exceção e devolve apenas `false`, e o relatório sai sem motivo nenhum. Abrindo a conexão, o erro do Oracle (`ORA-01017`, por exemplo) sobe, é capturado pelo `HealthCheckService` e aparece no JSON — o que transforma "o banco está fora" em "a senha do usuário expirou".
+
+O check do Azure Speech sonda o `issueToken` da região, e não um reconhecimento de verdade: um POST de áudio custaria quota a cada probe, e o que se quer saber — a região responde e a chave é aceita — o `issueToken` responde igual, de graça. Credencial recusada (401/403) sai com essa palavra na descrição, para o plantão não procurar rede onde o problema é chave.
 
 O check do Ollama tem **timeout próprio de 5 segundos**, e não os 120 do `HttpClient` que o serviço usa: 120 segundos são adequados para inferência e absurdos para uma sonda. Um health check que trava é pior que um health check que falha.
 
@@ -278,7 +282,7 @@ O tracing responde onde o tempo foi gasto **dentro** da requisição. A instrume
 |---|---|
 | ASP.NET Core | O span raiz da requisição, com rota, método, status e exceção anexada |
 | Entity Framework Core | Um span filho por consulta ao Oracle — é o que separa "a regra está lenta" de "o banco está lento" |
-| HttpClient | Um span filho por chamada de saída: Ollama e Node-RED aparecem com a latência deles isolada da nossa |
+| HttpClient | Um span filho por chamada de saída: Ollama e o motor de transcrição aparecem com a latência deles isolada da nossa |
 
 Isso ainda não é suficiente. Os spans automáticos param na fronteira do controller e não sabem que dentro daquele `POST` houve uma trava de horário, uma leitura de cadastro e uma escrita transacional. Por isso a camada de Aplicação abre **spans de domínio** próprios, pela `ActivitySource` `Vetly.Application`:
 
@@ -631,17 +635,122 @@ dotnet test
 | `Adaptadores:Crmv` | `Simulado` | Consulta ao conselho regional (RN-107) |
 | `Adaptadores:Pagamento` | `Simulado` | Provedor de cobrança e webhook (RN-006) |
 | `Adaptadores:Storage` | `Local` | Onde a mídia é guardada — disco em dev, bucket S3-compatível em produção |
-| `Adaptadores:Stt` | `Simulado` | Motor de transcrição: `Simulado` ou `NodeRed` (RN-009) |
+| `Adaptadores:Stt` | `Simulado` | Motor de transcrição: `Simulado`, `Azure` ou `NodeRed` (RN-009) — ver [§7](#7-fluxo-de-captura-da-consulta) |
 | `Adaptadores:Assinatura` | `NomeDigitado` | Assinatura de documentos (RN-087) |
 | `Adaptadores:Push` | `Simulado` | Envio de push (RN-092) |
 | `Adaptadores:Geocodificacao` | `Simulado` | Coordenadas a partir do endereço (RN-026) |
+| `Storage:PublicBaseUrl` | `https://localhost:7262` | Origem da URL assinada. **Obrigatória**: sem ela a API não sobe — o motor de transcrição busca o áudio de fora do processo, e URL relativa não é endereço |
+| `Azure:Speech:Region` | `canadacentral` | Região do recurso de Speech. A **chave** nunca vem daqui — só de `AZURE_SPEECH_KEY` |
 | `Serilog:MinimumLevel:Default` | `Information` | Nível de log da aplicação |
 | `OpenTelemetry:Otlp:Endpoint` | vazio | Endpoint OTLP. Vazio desliga a exportação |
 | `OpenTelemetry:ExportarParaConsole` | `false` | Despeja spans e métricas no console, para depurar a instrumentação |
 
 ---
 
-## 7. Autenticação
+## 7. Fluxo de captura da consulta
+
+O veterinário abre a janela com "iniciar consulta", o app grava o áudio em trechos
+curtos, cada trecho vira texto e, fechada a janela, a transcrição inteira é
+estruturada em prontuário pela IA (RN-008/RN-009/RN-079/RN-080).
+
+### O caminho, ponta a ponta
+
+| # | Chamada | O que acontece |
+|---|---|---|
+| 1 | `POST /api/consultas/{id}/iniciar` | Abre a janela e devolve `gravacao` — formato, duração do trecho e sample rate que o app deve usar |
+| 2 | `POST /api/midia/upload-url` | Reserva espaço no storage para um trecho e devolve `midiaId` + `uploadUrl` assinada |
+| 3 | `PUT {uploadUrl}` | O app envia os bytes **direto ao storage**; a API nunca proxia áudio |
+| 4 | `POST /api/consultas/{id}/captura/segmentos` | Registra o trecho pelo `midiaId` e enfileira a transcrição — responde `202` |
+| 5 | *(worker)* | Despacha ao motor com uma URL de leitura assinada e um token por segmento |
+| 6 | *(motor)* | Devolve o texto pelo contrato da Vetly — por `POST /api/internos/stt/callback` ou por dentro, no caso do Azure |
+| 7 | `GET /api/consultas/{id}/captura` | Progresso para a barra de status: recebidos, transcritos, com falha e o texto parcial |
+| 8 | `POST /api/consultas/{id}/encerrar` | Fecha a janela, marca a consulta como realizada e decide o desfecho da sessão |
+| 9 | `GET /api/consultas/{id}/rascunho` | O rascunho estruturado, quando houver — é aqui que o app faz polling |
+
+A sessão **sempre chega a um estado terminal**: `GerandoRascunho` (todos os trechos
+transcreveram), `TranscricaoParcial` (parte transcreveu — o rascunho sai com o que há,
+com aviso) ou `SemTranscricao` (nenhum — o caminho é
+`POST /api/consultas/{id}/prontuario-manual`, RN-085). Trecho despachado cujo callback
+não volta em **3 minutos** é retentado, e esgotadas as tentativas vira
+`Falha(Timeout)` — é o que impede a sessão de ficar presa esperando um motor que
+morreu calado.
+
+### Formato do áudio
+
+O front grava com a `MediaRecorder` do navegador, em **`audio/ogg;codecs=opus`, 16 kHz
+mono, trechos de 30 segundos**. Não é escolha estética: a REST API de reconhecimento
+de fala curta do Azure aceita **apenas WAV (PCM) e OGG (OPUS)**, ambos 16 kHz mono, e
+recusa WebM. O `MediaRecorder` grava OGG-OPUS nativamente, então o front não ganha
+dependência nenhuma por causa disso.
+
+Os parâmetros não precisam ser adivinhados: vêm no `gravacao` da resposta de
+`/iniciar`. O front deve lê-los de lá, e não fixá-los no código.
+
+```js
+const { gravacao } = await iniciarConsulta(consultaId);
+
+const gravador = new MediaRecorder(stream, { mimeType: gravacao.formato });
+gravador.start(gravacao.segundosPorSegmento * 1000);   // um blob por trecho
+```
+
+### Trocar de motor
+
+O motor é escolhido por `Adaptadores:Stt`, e trocar de fornecedor é trocar esse valor
+— nenhum serviço muda, porque **o contrato do callback é da Vetly, não do motor**.
+
+| Valor | Quando usar |
+|---|---|
+| `Simulado` | **Padrão.** Desenvolvimento e suíte de testes: devolve texto sintético, explicitamente marcado, pelo mesmo caminho assíncrono do motor real. Não consome quota |
+| `Azure` | Azure Speech-to-Text, chamado diretamente. É o caminho recomendado em produção |
+| `NodeRed` | Fluxo Node-RED. Continua sendo uma implementação válida da porta, mas não é mais o caminho recomendado |
+
+### Variáveis de ambiente do Azure Speech
+
+A chave **nunca** vai para `appsettings.json` — vem só do ambiente:
+
+```bash
+# Linux / macOS
+export AZURE_SPEECH_KEY="<a chave do recurso de Speech>"
+export AZURE_SPEECH_REGION="canadacentral"
+```
+
+```powershell
+# Windows (sessão atual)
+$env:AZURE_SPEECH_KEY = "<a chave do recurso de Speech>"
+$env:AZURE_SPEECH_REGION = "canadacentral"
+```
+
+O repositório tem um `.env` **gitignorado** com essas duas variáveis, para quem prefere
+carregá-las de arquivo:
+
+```bash
+set -a && . ./.env && set +a
+dotnet run --project src/Vetly.API --launch-profile https
+```
+
+Com `Adaptadores:Stt = Azure`, a API **não sobe** sem `AZURE_SPEECH_KEY`. É deliberado:
+subir sem a chave só adiaria a descoberta para o primeiro segmento que não transcreve.
+O endpoint é montado a partir da região — `https://{região}.stt.speech.microsoft.com/…`
+—, e não configurado inteiro, porque endereço digitado à mão é a forma mais fácil de
+apontar para a região errada.
+
+`/health/ready` passa a incluir o check `azure-speech`, que sonda o `issueToken` da
+região. Falha ali é `Degraded`, e não `Unhealthy`: sem o motor a captura para, mas a
+consulta continua acontecendo e o prontuário segue pelo caminho manual.
+
+### `Storage:PublicBaseUrl`
+
+A URL assinada que o motor recebe precisa ser **absoluta**: quem a consome está fora do
+processo da API. Sem `Storage:PublicBaseUrl` a aplicação não sobe — despachar segmentos
+com um caminho relativo produziria transcrições que nunca voltam, e a falha só
+apareceria como uma consulta que não sai do lugar.
+
+Em desenvolvimento, `https://localhost:7262` (o perfil `https`) resolve. Em produção é
+a origem pública da API, ou o endpoint do bucket.
+
+---
+
+## 8. Autenticação
 
 Todos os endpoints exigem JWT, exceto as rotas públicas de `api/auth`, os health checks e `/metrics`.
 
@@ -691,7 +800,7 @@ O login responde **exatamente a mesma coisa** para e-mail inexistente, senha err
 
 ---
 
-## 8. Roteiro de testes no Postman
+## 9. Roteiro de testes no Postman
 
 Esta é a **jornada completa da plataforma**, na ordem exata em que funciona — é o mesmo caminho que o teste `JornadaCompletaTests.JornadaFeliz_DoCadastroAAvaliacao` percorre por HTTP na suíte de integração. Cada passo traz o endpoint e o que ele faz. Base local: `https://localhost:7262`.
 
@@ -855,10 +964,10 @@ Estes são os cenários que valem testar depois do caminho feliz, porque são on
 
 ---
 
-## 9. Referência de endpoints
+## 10. Referência de endpoints
 
 Todas as rotas da API, agrupadas por área, com uma frase do que cada uma faz. Para
-exercitá-las na ordem em que a jornada acontece, use o [roteiro do Postman](#8-roteiro-de-testes-no-postman).
+exercitá-las na ordem em que a jornada acontece, use o [roteiro do Postman](#9-roteiro-de-testes-no-postman).
 
 ### Observabilidade
 Públicos, sem autenticação. Detalhados na [seção 4](#4-monitoramento-e-observabilidade).
@@ -987,7 +1096,7 @@ O Responsável é avisado, e o `motivo` é obrigatório porque entra na mensagem
 
 **A janela de captura é explícita.** `iniciar` abre, `encerrar` fecha, e fora dela a IA não captura áudio nem produz conteúdo clínico (RN-079) — trecho enviado com a janela fechada devolve 409. O áudio vai em segmentos curtos, cada um com sua sequência: assim a transcrição acontece durante o atendimento e a falha de um trecho não derruba a consulta inteira. Reenvio da mesma sequência devolve 409, porque duplicaria o texto.
 
-O despacho ao motor sai da requisição pelo worker: o veterinário não espera a transcrição para continuar atendendo. O motor devolve o texto em `POST /api/internos/stt/callback`, e **o contrato desse callback é da Vetly, não do motor** — trocar de fornecedor é mexer dentro do fluxo Node-RED, sem refazer o caminho de volta. Em desenvolvimento, `Adaptadores:Stt = "Simulado"` percorre o mesmo caminho assíncrono com texto sintético marcado como tal.
+O despacho ao motor sai da requisição pelo worker: o veterinário não espera a transcrição para continuar atendendo. O motor devolve o texto pelo contrato de `POST /api/internos/stt/callback`, e **esse contrato é da Vetly, não do motor** — é o que permite trocar de fornecedor sem refazer o caminho de volta. Em desenvolvimento, `Adaptadores:Stt = "Simulado"` percorre o mesmo caminho assíncrono com texto sintético marcado como tal. O passo a passo completo está em [§7](#7-fluxo-de-captura-da-consulta).
 
 Encerrada a janela e transcritos os trechos, a IA estrutura o texto em prontuário (RN-080) — também fora da requisição, porque é lenta e o veterinário já saiu do atendimento. O rascunho guarda **a transcrição que o originou**: sem ela não há como conferir depois se a IA produziu algo que não foi dito, e sugestão que chega ao prontuário precisa ser auditável. Transcrição parcial gera rascunho parcial, com aviso e com a instrução explícita ao modelo de não preencher lacunas — perder a consulta inteira porque um trecho falhou seria pior. IA fora do ar ou rascunho sem conteúdo clínico caem no caminho manual em vez de travar a consulta: o atendimento aconteceu e precisa virar prontuário de algum jeito (RN-085).
 
@@ -1265,7 +1374,7 @@ Sem parâmetros valem página 1 e 20 itens. O tamanho é limitado a 100 por pág
 
 ---
 
-## 10. Correções de segurança
+## 11. Correções de segurança
 
 Uma revisão completa do fluxo de comunicação da API encontrou brechas em que a regra
 existia no documento e não no código, ou existia num serviço e não no outro. O que
@@ -1379,7 +1488,7 @@ existentes.
 
 ---
 
-## 11. Modelo entidade-relacionamento
+## 12. Modelo entidade-relacionamento
 
 As tabelas principais e seus campos. Os nomes seguem a convenção Oracle em maiúsculas,
 definida nas classes `IEntityTypeConfiguration<T>` da Infrastructure — o Domain não

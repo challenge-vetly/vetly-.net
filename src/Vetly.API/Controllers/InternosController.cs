@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Vetly.API.Filters;
 using Vetly.Application.DTOs.Captura;
 using Vetly.Application.DTOs.Pagamento;
+using Vetly.Application.Exceptions;
 using Vetly.Application.Interfaces;
 
 namespace Vetly.API.Controllers;
@@ -84,6 +85,12 @@ public class InternosController : ControllerBase
     ///
     /// Reentrega de um segmento que ja teve desfecho responde 200 sem efeito — nao
     /// duplica texto nem reabre o ciclo.
+    ///
+    /// Sao DUAS credenciais, e as duas sao exigidas: o token de servico no cabecalho
+    /// diz que quem chama e o fluxo de transcricao, e o `callbackToken` do corpo diz
+    /// que a resposta e do trecho que foi mandado (RN-009). Sem o segundo, quem
+    /// conhecesse o token de servico escreveria texto no prontuario de qualquer
+    /// consulta — bastaria acertar um id de segmento.
     /// </remarks>
     [HttpPost("stt/callback")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
@@ -98,7 +105,23 @@ public class InternosController : ControllerBase
             return Unauthorized();
         }
 
-        await _captura.RegistrarCallbackAsync(dto);
+        try
+        {
+            await _captura.RegistrarCallbackAsync(dto);
+        }
+        catch (AcessoNegadoException ex)
+        {
+            // 401 e nao o 403 padrao do middleware: aqui a falha e de CREDENCIAL — o
+            // portador nao provou ser dono deste segmento —, e nao de permissao de um
+            // usuario ja identificado. E o unico ponto da API onde a autenticacao vem
+            // do corpo, entao a traducao fica aqui, sem mexer no mapeamento global.
+            _logger.LogWarning(
+                "Callback de transcricao recusado no segmento {SegmentoId}: {Motivo}",
+                dto.SegmentoId, ex.Message);
+
+            return Unauthorized();
+        }
+
         return NoContent();
     }
 

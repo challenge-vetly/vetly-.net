@@ -70,6 +70,8 @@ public class SegmentoAudioConfiguration : IEntityTypeConfiguration<SegmentoAudio
         builder.Property(s => s.CallbackTokenHash)
             .HasColumnType("VARCHAR2(64)").HasColumnName("CALLBACK_TOKEN_HASH");
 
+        builder.Property(s => s.DespachadoEm).HasColumnName("DESPACHADO_EM");
+
         builder.Property(s => s.CriadoEm).HasColumnName("CRIADO_EM").IsRequired();
 
         // O mesmo numero de sequencia nao se repete numa sessao: reenvio de segmento

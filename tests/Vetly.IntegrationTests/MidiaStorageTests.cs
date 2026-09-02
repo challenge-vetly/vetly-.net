@@ -33,6 +33,7 @@ public class MidiaStorageTests
         {
             ["Storage:Diretorio"] = diretorio,
             ["Storage:BaseUrl"] = "/api/storage",
+            ["Storage:PublicBaseUrl"] = "https://storage.vetly.test",
             ["Storage:Segredo"] = "segredo-de-teste-com-tamanho-suficiente"
         }).Build();
 
@@ -72,6 +73,39 @@ public class MidiaStorageTests
         Assert.Contains("operacao=upload", url.Url);
         Assert.Contains("assinatura=", url.Url);
         Assert.True(url.ExpiraEm > DateTime.UtcNow);
+    }
+
+    [Fact]
+    public async Task UrlAssinada_EAbsoluta_ParaQueOMotorConsigaBaixarOAudio()
+    {
+        var storage = CriarStorage(out _);
+
+        var leitura = await storage.GerarUrlDeLeituraAsync("audioconsulta/2026/09/abc", TimeSpan.FromMinutes(15));
+        var upload = await storage.GerarUrlDeUploadAsync("audioconsulta/2026/09/abc", "audio/ogg", TimeSpan.FromMinutes(15));
+
+        // Quem consome a URL esta FORA do processo da API — o motor de transcricao, o
+        // app. "/api/storage/..." nao e resolvivel por ninguem la fora.
+        Assert.True(Uri.TryCreate(leitura.Url, UriKind.Absolute, out _));
+        Assert.True(Uri.TryCreate(upload.Url, UriKind.Absolute, out _));
+        Assert.StartsWith("https://storage.vetly.test/api/storage/", leitura.Url);
+    }
+
+    [Fact]
+    public void SemPublicBaseUrl_ANaoSobe()
+    {
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Storage:Diretorio"] = Path.Combine(Path.GetTempPath(), $"vetly-teste-{Guid.NewGuid():N}"),
+            ["Storage:BaseUrl"] = "/api/storage",
+            ["Storage:Segredo"] = "segredo-de-teste-com-tamanho-suficiente"
+        }).Build();
+
+        // Falhar fechado: subir emitindo URL relativa despacharia segmentos que nunca
+        // seriam transcritos, e a falha so apareceria como transcricao que nao volta
+        var erro = Assert.Throws<InvalidOperationException>(
+            () => new StorageAdapterLocal(config, NullLogger<StorageAdapterLocal>.Instance));
+
+        Assert.Contains("Storage:PublicBaseUrl", erro.Message);
     }
 
     [Fact]
