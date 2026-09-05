@@ -281,9 +281,16 @@ public class JornadaCompletaTests
 
         Assert.NotEqual(JsonValueKind.Null, publicado.GetProperty("publicadoEm").ValueKind);
 
-        // ── Fecho documental (RN-087) ──
-        await LerAsync(await EnviarAsync(HttpMethod.Post, $"/api/consultas/{consultaId}/finalizar",
-            prestador.Token), HttpStatusCode.NoContent);
+        // ── Fecho documental (RN-087) e fecho do ciclo de captura (§7.3) ──
+        var finalizada = await LerAsync(await EnviarAsync(HttpMethod.Post,
+            $"/api/consultas/{consultaId}/finalizar", prestador.Token), HttpStatusCode.OK);
+
+        Assert.True(finalizada.GetProperty("finalizada").GetBoolean());
+
+        // Como o veterinario escolhe quais documentos emitir, nenhuma automacao declara
+        // o ciclo fechado: quem fecha e este ato. Sem ele a sessao ficava em
+        // Documentando para sempre e o app nunca saia do polling
+        Assert.Equal("Concluida", finalizada.GetProperty("estadoDaSessao").GetString());
 
         // ── O Responsável lê no board do pet (RN-090) ──
         var lido = await LerAsync(await EnviarAsync(HttpMethod.Post, $"/api/documentos/{documentoId}/lido",

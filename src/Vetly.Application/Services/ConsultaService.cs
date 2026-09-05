@@ -33,6 +33,7 @@ public class ConsultaService : IConsultaService
     private readonly IAvaliacaoService _avaliacoes;
     private readonly IColmeiaService _colmeia;
     private readonly INotificacaoService _notificacoes;
+    private readonly ICapturaRepository _capturaRepo;
 
     public ConsultaService(
         IConsultaRepository repo,
@@ -48,7 +49,8 @@ public class ConsultaService : IConsultaService
         IFidelidadeService fidelidade,
         IAvaliacaoService avaliacoes,
         IColmeiaService colmeia,
-        INotificacaoService notificacoes)
+        INotificacaoService notificacoes,
+        ICapturaRepository capturaRepo)
     {
         _repo = repo;
         _pagamentoRepo = pagamentoRepo;
@@ -64,6 +66,7 @@ public class ConsultaService : IConsultaService
         _avaliacoes = avaliacoes;
         _colmeia = colmeia;
         _notificacoes = notificacoes;
+        _capturaRepo = capturaRepo;
     }
 
     /// <summary>
@@ -706,7 +709,7 @@ public class ConsultaService : IConsultaService
     /// <summary>
     /// Finaliza a consulta exigindo receita veterinaria assinada digitalmente (RN-087).
     /// </summary>
-    public async Task FinalizarAsync(Guid consultaId)
+    public async Task<ConsultaFinalizadaDto> FinalizarAsync(Guid consultaId)
     {
         var consulta = await _repo.ObterPorIdAsync(consultaId)
             ?? throw new NotFoundException("Consulta", consultaId);
@@ -746,6 +749,50 @@ public class ConsultaService : IConsultaService
         consulta.Finalizar();
         _repo.Atualizar(consulta);
         await _repo.SalvarAsync();
+
+        var estadoDaSessao = await ConcluirCicloDeDocumentacaoAsync(consultaId);
+
+        return new ConsultaFinalizadaDto
+        {
+            ConsultaId = consulta.Id,
+            StatusConsulta = consulta.Status,
+            Finalizada = consulta.Finalizada,
+            EstadoDaSessao = estadoDaSessao,
+            FinalizadaEm = DateTime.UtcNow
+        };
+    }
+
+    /// <summary>
+    /// Fecha o ciclo de documentação da captura, se houver um aberto (§7.3).
+    ///
+    /// Ficou decidido que o veterinário <b>escolhe</b> quais documentos emitir — o
+    /// sistema não gera o conjunto sozinho (RN-010, ver REGRAS-DE-NEGOCIO.md). Logo não
+    /// existe job de geração que possa declarar o ciclo fechado por conta própria: quem
+    /// fecha é o ato explícito do profissional, e ele já é o mesmo que a RN-087 exige.
+    /// Sem isso a sessão fica em <c>Documentando</c> para sempre, e o app faz polling de
+    /// um estado terminal que nunca chega.
+    ///
+    /// Só <c>Documentando</c> avança. <c>EncerradaSemDocumentos</c> já é terminal, e
+    /// sobrescrevê-lo apagaria a informação de que o veterinário recusou o rascunho —
+    /// que é justamente o que a trilha de auditoria precisa preservar (RN-082).
+    /// Consulta sem sessão nenhuma — emergência atendida sem captura — não tem ciclo a
+    /// fechar: finalizar não pode falhar por causa disso.
+    /// </summary>
+    private async Task<EstadoSessaoCaptura?> ConcluirCicloDeDocumentacaoAsync(Guid consultaId)
+    {
+        var sessao = await _capturaRepo.ObterSessaoDaConsultaAsync(consultaId);
+
+        if (sessao is null)
+            return null;
+
+        if (sessao.Estado != EstadoSessaoCaptura.Documentando)
+            return sessao.Estado;
+
+        sessao.Concluir();
+        _capturaRepo.AtualizarSessao(sessao);
+        await _capturaRepo.SalvarAsync();
+
+        return sessao.Estado;
     }
 
     /// <summary>

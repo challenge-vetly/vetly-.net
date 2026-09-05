@@ -120,15 +120,25 @@ public class ConsultasController : ControllerBase
         return Ok(resultado);
     }
 
-    /// <summary>Finaliza a consulta — exige receita veterinaria assinada digitalmente (RN-087).</summary>
+    /// <summary>Finaliza a consulta e fecha o ciclo de documentacao (RN-087, §7.3).</summary>
+    /// <remarks>
+    /// Todo documento ja emitido que exija assinatura precisa estar assinado (C-04) —
+    /// consulta que nao prescreveu nada finaliza normalmente.
+    ///
+    /// Devolve o estado da sessao de captura porque e este ato que a leva a
+    /// <c>Concluida</c>: como o veterinario escolhe quais documentos emitir, nenhuma
+    /// automacao declara o ciclo fechado, e sem a resposta o app ficaria fazendo polling
+    /// de um estado terminal que nunca chegaria.
+    /// </remarks>
     [HttpPost("{id:guid}/finalizar")]
-    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(ConsultaFinalizadaDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
     [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
     public async Task<IActionResult> Finalizar(Guid id)
     {
-        await _service.FinalizarAsync(id);
-        return NoContent();
+        var finalizada = await _service.FinalizarAsync(id);
+        return Ok(finalizada);
     }
 
     // ── Agendamento: pre-sintomas, simulacao, remarcacao e no-show ───────────

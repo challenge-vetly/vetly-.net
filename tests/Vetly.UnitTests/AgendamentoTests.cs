@@ -58,13 +58,14 @@ public class AgendamentoTests
     }
 
     private readonly Mock<INotificacaoService> _notificacoes = new();
+    private readonly Mock<ICapturaRepository> _capturaRepo = new();
 
     private ConsultaService CriarServico() =>
         new(_repo.Object, _pagamentoRepo.Object, _documentoRepo.Object, _animalRepo.Object,
             _vetRepo.Object, _empresaRepo.Object,
             [new ReembolsoIntegralStrategy(), new ReembolsoParcialStrategy(), new SemReembolsoStrategy()],
             _usuario.Object, _agendaRepo.Object, _fila.Object, _fidelidade.Object, _avaliacoes.Object, _colmeia.Object,
-            _notificacoes.Object);
+            _notificacoes.Object, _capturaRepo.Object);
 
     private Pagamento Pagamento(decimal valor = 200m)
     {

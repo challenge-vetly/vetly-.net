@@ -970,7 +970,7 @@ Esta é a **jornada completa da plataforma**, na ordem exata em que funciona —
 | E1 | `POST /api/documentos/consulta/{consultaId}?tipo=Prontuario` | Gera o documento pela Factory correspondente ao tipo, com conteúdo e PDF. Exige diagnóstico validado (RN-082/RN-083). Guarde o `id` |
 | E2 | `POST /api/documentos/{documentoId}/assinar` | Assina pelo adaptador de assinatura. No MVP é o nome digitado, conferido contra o registrado — só o vet do atendimento assina (RN-087) |
 | E3 | `POST /api/documentos/{documentoId}/publicar` | Publica no board do pet. **Receita sem assinatura não é publicada**: no board ela pareceria válida sem ser |
-| E4 | `POST /api/consultas/{consultaId}/finalizar` | Fecho documental. Exige que todo documento **já emitido** que precise de assinatura esteja assinado (RN-087) |
+| E4 | `POST /api/consultas/{consultaId}/finalizar` | Fecho documental. Exige que todo documento **já emitido** que precise de assinatura esteja assinado (RN-087) e devolve `estadoDaSessao: "Concluida"` |
 | E5 | `GET /api/documentos/animal/{animalId}` | O board do pet, na visão do Responsável: documentos publicados do animal |
 | E6 | `POST /api/documentos/{documentoId}/lido` | Registra que o Responsável abriu o documento |
 | E7 | `POST /api/documentos/{documentoId}/correcao` | Cria uma **versão corrigida** — o original é preservado. Depois de 24 h exige justificativa (RN-088/RN-089) |
@@ -1133,7 +1133,7 @@ O board já nasce preenchido: `POST /api/animais` deriva as obrigações da cart
 | PUT | `/api/consultas/{id}/validar-diagnostico` | Decisão sobre o rascunho: `Aprovado`, `Corrigido` ou `NaoAprovado` (RN-082) |
 | POST | `/api/consultas/{id}/prontuario-manual` | Prontuário escrito à mão, sem IA no caminho (RN-085) |
 | GET | `/api/consultas/{id}/auditoria-ia` | Trilha append-only das decisões sobre conteúdo de IA (RN-082) |
-| POST | `/api/consultas/{id}/finalizar` | Fecho documental — exige o que já foi emitido assinado (RN-087) |
+| POST | `/api/consultas/{id}/finalizar` | Fecho documental — exige o que já foi emitido assinado (RN-087) e leva o ciclo de captura a `Concluida` (§7.3) |
 | POST | `/api/consultas/{id}/retorno` | Agenda o retorno, confirmado e sem cobrança nova (RN-013) |
 | GET | `/api/consultas/{id}/redistribuicao/candidatos` | Veterinários que poderiam assumir a consulta (RN-025) |
 | POST | `/api/consultas/{id}/redistribuir` | Passa a consulta a outro veterinário (RN-025) |
@@ -1522,6 +1522,14 @@ finalizada com documento nenhum emitido, e a exigência da RN-087 nunca chegava 
 cobrada de verdade — no instante em que era avaliada, não havia documento algum. São
 dois momentos: encerrar é o profissional dizendo que terminou de atender; finalizar é o
 fim do trabalho documental que vem depois.
+
+Finalizar é também o que leva a sessão de captura a `Concluida` (§7.3). Como o
+veterinário **escolhe** quais documentos emitir, não existe job de geração que possa
+declarar o ciclo fechado por conta própria — sem esse fecho, toda consulta que passasse
+pela IA ficava em `Documentando` para sempre, e o app fazia polling de um estado
+terminal que nunca chegava. Sessão inexistente (emergência sem captura) ou já terminal
+em `EncerradaSemDocumentos` não é tocada: sobrescrever a segunda apagaria o registro de
+que o veterinário recusou o rascunho.
 
 ### Higiene de dependências
 

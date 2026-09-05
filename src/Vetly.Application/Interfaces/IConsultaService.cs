@@ -24,8 +24,12 @@ public interface IConsultaService
     /// <summary>Cancela a consulta aplicando a Strategy de reembolso adequada (RN-014/RN-041/RN-042).</summary>
     Task<ResultadoCancelamentoDto> CancelarAsync(Guid id);
 
-    /// <summary>Finaliza a consulta — exige receita veterinária assinada digitalmente (RN-087).</summary>
-    Task FinalizarAsync(Guid consultaId);
+    /// <summary>
+    /// Fecha a consulta: todo documento já emitido que exija assinatura precisa estar
+    /// assinado (RN-087, C-04), e o ciclo de documentação da captura chega a
+    /// <c>Concluida</c> (§7.3).
+    /// </summary>
+    Task<ConsultaFinalizadaDto> FinalizarAsync(Guid consultaId);
 
     /// <summary>
     /// O que aconteceria se a consulta fosse cancelada agora, sem executar nada

@@ -32,12 +32,13 @@ public class ConsultaServiceTests
     private readonly Mock<IAvaliacaoService> _avaliacoesMock = new();
     private readonly Mock<IColmeiaService> _colmeiaMock = new();
     private readonly Mock<INotificacaoService> _notificacoesMock = new();
+    private readonly Mock<ICapturaRepository> _capturaRepoMock = new();
 
     private ConsultaService CriarServico(params ICancelamentoStrategy[] strategies) =>
         new(_repoMock.Object, _pagamentoRepoMock.Object, _documentoRepoMock.Object,
             _animalRepoMock.Object, _vetRepoMock.Object, _empresaRepoMock.Object,
             strategies, _usuarioMock.Object, _agendaRepoMock.Object, _filaMock.Object, _fidelidadeMock.Object, _avaliacoesMock.Object, _colmeiaMock.Object,
-            _notificacoesMock.Object);
+            _notificacoesMock.Object, _capturaRepoMock.Object);
 
     /// <summary>Por padrao os testes rodam como Admin, que enxerga todo o escopo.</summary>
     public ConsultaServiceTests() => _usuarioMock.SetupGet(u => u.EhAdmin).Returns(true);
@@ -613,6 +614,91 @@ public class ConsultaServiceTests
         await CriarServico().FinalizarAsync(consulta.Id);
 
         Assert.True(consulta.Finalizada);
+    }
+
+    // ── Fecho do ciclo de documentacao (§7.3) ────────────────────────────────
+
+    /// <summary>Sessão de captura da consulta, deixada no estado que o teste pede.</summary>
+    private SessaoCaptura SessaoDaConsulta(Guid consultaId, EstadoSessaoCaptura estado)
+    {
+        var sessao = new SessaoCaptura(consultaId, capturaAtiva: true);
+        sessao.Encerrar(segmentosRecebidos: 1);
+        sessao.RegistrarDesfechoDaTranscricao(transcritos: 1, falhados: 0);
+        sessao.RascunhoDisponivel();
+
+        if (estado == EstadoSessaoCaptura.Documentando)
+            sessao.IniciarDocumentacao();
+        else if (estado == EstadoSessaoCaptura.EncerradaSemDocumentos)
+            sessao.EncerrarSemDocumentos();
+
+        _capturaRepoMock.Setup(r => r.ObterSessaoDaConsultaAsync(consultaId)).ReturnsAsync(sessao);
+        _capturaRepoMock.Setup(r => r.SalvarAsync()).ReturnsAsync(1);
+
+        return sessao;
+    }
+
+    [Fact]
+    public async Task FinalizarAsync_ComSessaoEmDocumentando_LevaOCicloAConcluida()
+    {
+        var consulta = ConsultaComDocumentos();
+        var sessao = SessaoDaConsulta(consulta.Id, EstadoSessaoCaptura.Documentando);
+
+        var resultado = await CriarServico().FinalizarAsync(consulta.Id);
+
+        // Como o veterinario escolhe quais documentos emitir, nao ha automacao que
+        // declare o ciclo fechado: o fecho e o mesmo ato que a RN-087 ja exige dele.
+        // Sem isso a sessao ficava em Documentando para sempre e o app fazia polling de
+        // um estado terminal que nunca chegava.
+        Assert.Equal(EstadoSessaoCaptura.Concluida, sessao.Estado);
+        Assert.Equal(EstadoSessaoCaptura.Concluida, resultado.EstadoDaSessao);
+        Assert.True(resultado.Finalizada);
+    }
+
+    [Fact]
+    public async Task FinalizarAsync_SemSessaoDeCaptura_FinalizaSemExcecao()
+    {
+        // Emergencia presencial atendida sem captura: nao ha ciclo a fechar, e
+        // finalizar nao pode falhar por causa disso
+        var consulta = ConsultaComDocumentos();
+
+        _capturaRepoMock.Setup(r => r.ObterSessaoDaConsultaAsync(consulta.Id))
+            .ReturnsAsync((SessaoCaptura?)null);
+
+        var resultado = await CriarServico().FinalizarAsync(consulta.Id);
+
+        Assert.True(consulta.Finalizada);
+        Assert.Null(resultado.EstadoDaSessao);
+    }
+
+    [Fact]
+    public async Task FinalizarAsync_ComSessaoEncerradaSemDocumentos_NaoSobrescreveOEstado()
+    {
+        var consulta = ConsultaComDocumentos();
+        var sessao = SessaoDaConsulta(consulta.Id, EstadoSessaoCaptura.EncerradaSemDocumentos);
+
+        var resultado = await CriarServico().FinalizarAsync(consulta.Id);
+
+        // EncerradaSemDocumentos ja e terminal, e sobrescreve-lo apagaria a informacao
+        // de que o veterinario recusou o rascunho — que e justamente o que a trilha de
+        // auditoria precisa preservar (RN-082)
+        Assert.Equal(EstadoSessaoCaptura.EncerradaSemDocumentos, sessao.Estado);
+        Assert.Equal(EstadoSessaoCaptura.EncerradaSemDocumentos, resultado.EstadoDaSessao);
+        Assert.True(consulta.Finalizada);
+
+        _capturaRepoMock.Verify(r => r.AtualizarSessao(It.IsAny<SessaoCaptura>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task FinalizarAsync_DevolveOEstadoDaSessaoParaOFrontSairDoPolling()
+    {
+        var consulta = ConsultaComDocumentos();
+        SessaoDaConsulta(consulta.Id, EstadoSessaoCaptura.Documentando);
+
+        var resultado = await CriarServico().FinalizarAsync(consulta.Id);
+
+        Assert.Equal(consulta.Id, resultado.ConsultaId);
+        Assert.NotNull(resultado.EstadoDaSessao);
+        Assert.NotEqual(default, resultado.FinalizadaEm);
     }
 
     [Fact]
