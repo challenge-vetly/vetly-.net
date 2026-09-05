@@ -59,7 +59,14 @@ public class AnimalRepository : RepositoryBase<Animal>, IAnimalRepository
             .ToListAsync();
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// <c>ExisteAlgumAsync</c> e nao <c>AnyAsync</c>: na raiz da query o <c>Any</c>
+    /// projeta um booleano, e o Oracle anterior a 23c nao tem esse tipo — a chamada
+    /// estoura com ORA-00904 contra o banco real. Esta consulta esta na trilha de
+    /// autorizacao (RN-066), entao a falha nao seria um dado a menos: seria erro em toda
+    /// leitura de prontuario feita por vet sem colmeia.
+    /// </remarks>
     public async Task<bool> VeterinarioAtendeAnimalAsync(Guid veterinarioId, Guid animalId) =>
         await _context.Consultas
-            .AnyAsync(c => c.VeterinarioId == veterinarioId && c.AnimalId == animalId);
+            .ExisteAlgumAsync(c => c.VeterinarioId == veterinarioId && c.AnimalId == animalId);
 }

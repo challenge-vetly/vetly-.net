@@ -115,7 +115,12 @@ public class VarrerTranscricoesTravadas : IRotinaPeriodica
         // Os dois jeitos de travar a sessao: Enviado sem callback de volta, e Recebido
         // que ficou sem job vivo para despacha-lo. A sonda tem de enxergar os dois, ou
         // a varredura so e acordada para metade do problema.
-        var haTravado = await _context.SegmentosDeAudio.AnyAsync(
+        //
+        // ExisteAlgumAsync e nao AnyAsync: na raiz da query o Any projeta um booleano,
+        // que o Oracle anterior a 23c nao tem — a sonda estourava com ORA-00904 a cada
+        // ciclo, e a varredura nunca era acordada. O efeito era justamente o que esta
+        // rotina existe para evitar.
+        var haTravado = await _context.SegmentosDeAudio.ExisteAlgumAsync(
             s => (s.Estado == EstadoSegmentoAudio.Enviado || s.Estado == EstadoSegmentoAudio.Recebido) &&
                  (s.DespachadoEm ?? s.CriadoEm) < limite,
             cancellationToken);
