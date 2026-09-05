@@ -134,16 +134,29 @@ public class ColmeiaService : IColmeiaService
     }
 
     /// <inheritdoc/>
-    public async Task RegistrarAcessoAsync(Guid animalId, EscopoAcessoColmeia escopo, bool permitido, string? rota)
+    public Task RegistrarAcessoAsync(Guid animalId, EscopoAcessoColmeia escopo, bool permitido, string? rota) =>
+        GravarAcessoAsync(_usuario.VeterinarioId, animalId, escopo, permitido, rota);
+
+    /// <inheritdoc/>
+    public Task RegistrarAcessoAsync(
+        Guid veterinarioId, Guid animalId, EscopoAcessoColmeia escopo, bool permitido, string? rota) =>
+        GravarAcessoAsync(veterinarioId, animalId, escopo, permitido, rota);
+
+    /// <summary>
+    /// Grava a entrada na trilha. O ator vem de fora porque nem todo acesso nasce numa
+    /// requisição: na borda HTTP ele sai do token, e num job precisa ser dito.
+    /// </summary>
+    private async Task GravarAcessoAsync(
+        Guid? veterinarioId, Guid animalId, EscopoAcessoColmeia escopo, bool permitido, string? rota)
     {
         // Tentativa negada também fica registrada: é justamente o que se quer enxergar
         // numa auditoria (RN-090)
-        var acesso = _usuario.VeterinarioId is { } vetId
+        var acesso = veterinarioId is { } vetId
             ? await _repo.ObterVigenteAsync(animalId, vetId, DateTime.UtcNow)
             : null;
 
         await _repo.AdicionarLogAsync(new LogAcessoColmeia(
-            animalId, _usuario.VeterinarioId, escopo, permitido, acesso?.Id, rota));
+            animalId, veterinarioId, escopo, permitido, acesso?.Id, rota));
 
         await _repo.SalvarAsync();
     }

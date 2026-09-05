@@ -418,7 +418,7 @@ public class RascunhoIaTests
     }
 
     [Fact]
-    public async Task Contexto_RegistraOAcessoDaIaAoHistorico()
+    public async Task Contexto_RegistraOAcessoDaIaAoHistoricoEmNomeDoVeterinarioDaConsulta()
     {
         _consultaRepo.Setup(r => r.ObterPorAnimalAsync(_animal.Id)).ReturnsAsync([_consulta]);
         _animalRepo.Setup(r => r.ObterHistoricoLongitudinalAsync(_animal.Id)).ReturnsAsync([]);
@@ -430,9 +430,57 @@ public class RascunhoIaTests
         await CriarServico().GerarAsync(_sessao.Id);
 
         // RN-067: quem le em nome do veterinario continua sendo o veterinario, e o
-        // Responsavel tem direito de ver isso no log
+        // Responsavel tem direito de ver isso no log. O ator vai explicito porque a
+        // sobrecarga curta o resolveria pelo IUsuarioAtual — que num job e vazio
         _colmeia.Verify(c => c.RegistrarAcessoAsync(
-            _animal.Id, EscopoAcessoColmeia.HistoricoCompleto, It.IsAny<bool>(), It.IsAny<string>()),
+            _consulta.VeterinarioId, _animal.Id, EscopoAcessoColmeia.HistoricoCompleto,
+            It.IsAny<bool>(), It.IsAny<string>()),
             Times.Once);
+    }
+
+    [Fact]
+    public async Task Contexto_DisparadoPorJob_GravaOLogComVeterinarioNaoNulo()
+    {
+        // O job nao tem requisicao HTTP: sem token, o IUsuarioAtual nao sabe quem e o
+        // veterinario. Antes o log saia anonimo — e ele e justamente o registro que a
+        // RN-067 torna visivel ao Responsavel.
+        var usuarioDoJob = new Mock<IUsuarioAtual>();
+        usuarioDoJob.SetupGet(u => u.VeterinarioId).Returns((Guid?)null);
+        usuarioDoJob.SetupGet(u => u.EhAdmin).Returns(false);
+
+        var colmeiaRepo = new Mock<IColmeiaRepository>();
+        LogAcessoColmeia? gravado = null;
+
+        colmeiaRepo.Setup(r => r.AdicionarLogAsync(It.IsAny<LogAcessoColmeia>()))
+            .Callback<LogAcessoColmeia>(l => gravado = l)
+            .Returns(Task.CompletedTask);
+
+        colmeiaRepo.Setup(r => r.ObterVigenteAsync(
+                It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<DateTime>()))
+            .ReturnsAsync((AcessoColmeia?)null);
+
+        colmeiaRepo.Setup(r => r.SalvarAsync()).ReturnsAsync(1);
+
+        // A colmeia de verdade, para ver o que chega ao registro — e nao so o que o
+        // servico de rascunho pede
+        var colmeia = new ColmeiaService(
+            colmeiaRepo.Object, _animalRepo.Object, Mock.Of<IVeterinarioRepository>(), usuarioDoJob.Object);
+
+        _consultaRepo.Setup(r => r.ObterPorAnimalAsync(_animal.Id)).ReturnsAsync([_consulta]);
+        _animalRepo.Setup(r => r.ObterHistoricoLongitudinalAsync(_animal.Id)).ReturnsAsync([]);
+
+        IaResponde(RespostaCompleta());
+
+        _sessao.RegistrarDesfechoDaTranscricao(transcritos: 1, falhados: 0);
+
+        var servico = new RascunhoService(
+            _repo.Object, _consultaRepo.Object, _animalRepo.Object, _ia.Object,
+            usuarioDoJob.Object, colmeia);
+
+        await servico.GerarAsync(_sessao.Id);
+
+        Assert.NotNull(gravado);
+        Assert.Equal(_consulta.VeterinarioId, gravado.VeterinarioId);
+        Assert.Equal(_animal.Id, gravado.AnimalId);
     }
 }
