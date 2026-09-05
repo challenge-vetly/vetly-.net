@@ -1,4 +1,4 @@
-using Microsoft.Extensions.Diagnostics.HealthChecks;
+﻿using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Vetly.Infrastructure.Adapters;
 
 namespace Vetly.API.HealthChecks;
@@ -7,10 +7,14 @@ namespace Vetly.API.HealthChecks;
 /// Verifica a disponibilidade do Azure Speech, o motor de transcricao da consulta
 /// quando <c>Adaptadores:Stt = Azure</c>.
 ///
-/// A sonda e uma emissao de token no endpoint <c>issueToken</c> da regiao, e nao um
-/// reconhecimento de verdade: um POST de audio custaria quota a cada probe, e o que
-/// se quer saber aqui — a regiao responde e a chave e aceita — o issueToken responde
-/// igual, de graca.
+/// A sonda e um GET na listagem de transcricoes, e nao uma transcricao de verdade: um
+/// POST de audio custaria quota a cada probe, e o que se quer saber aqui — o endpoint
+/// responde e a chave e aceita — a listagem responde igual, de graca.
+///
+/// A sonda usa o <b>mesmo endpoint e a mesma versao de API</b> que as transcricoes.
+/// Antes ela batia no <c>issueToken</c> regional, que e outro host: passava mesmo com
+/// o endpoint de transcricao errado, e o health check dizia "saudavel" enquanto nenhum
+/// segmento transcrevia.
 /// </summary>
 /// <remarks>
 /// Falha aqui e reportada como <see cref="HealthStatus.Degraded"/>, nao Unhealthy, na
@@ -28,7 +32,7 @@ public sealed class AzureSpeechHealthCheck : IHealthCheck
 
     /// <summary>
     /// Reaproveita o mesmo <see cref="HttpClient"/> nomeado que o handler de transcricao
-    /// usa, para que a sonda herde a chave e a regiao ja configuradas no Program.cs — e
+    /// usa, para que a sonda herde a chave e o endpoint ja configurados no Program.cs — e
     /// nao teste uma configuracao diferente da que atende de verdade.
     /// </summary>
     public AzureSpeechHealthCheck(IHttpClientFactory httpClientFactory, ConfiguracaoDoAzureSpeech azure)
@@ -42,25 +46,26 @@ public sealed class AzureSpeechHealthCheck : IHealthCheck
         HealthCheckContext context,
         CancellationToken cancellationToken = default)
     {
-        // O issueToken nao mora no host de reconhecimento: e o endpoint regional de
-        // Cognitive Services que emite o token, e por isso vai absoluto aqui.
-        var sonda = new Uri($"https://{_azure.Regiao}.api.cognitive.microsoft.com/sts/v1.0/issueToken");
+        // Relativo de proposito: resolve contra a BaseAddress do cliente nomeado, que e
+        // o mesmo endpoint que as transcricoes usam. Um endereco absoluto aqui poderia
+        // sondar um host que a transcricao nem chama.
+        var sonda = _azure.CaminhoDeListagem();
 
         try
         {
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             timeout.CancelAfter(TimeoutDaSonda);
 
-            using var resposta = await _httpClient.PostAsync(sonda, content: null, timeout.Token);
+            using var resposta = await _httpClient.GetAsync(sonda, timeout.Token);
 
             if (resposta.IsSuccessStatusCode)
-                return HealthCheckResult.Healthy($"Azure Speech respondeu na regiao {_azure.Regiao}.");
+                return HealthCheckResult.Healthy($"Azure Speech respondeu em {_httpClient.BaseAddress}.");
 
             // 401/403 e credencial, nao indisponibilidade: a mensagem precisa dizer
             // isso, ou o plantao vai procurar rede onde o problema e chave.
             var detalhe = resposta.StatusCode is System.Net.HttpStatusCode.Unauthorized
                                               or System.Net.HttpStatusCode.Forbidden
-                ? "chave recusada (confira AZURE_SPEECH_KEY e a regiao)"
+                ? "chave recusada (confira AZURE_SPEECH_KEY e o endpoint)"
                 : "resposta inesperada";
 
             return HealthCheckResult.Degraded(
@@ -73,7 +78,7 @@ public sealed class AzureSpeechHealthCheck : IHealthCheck
         }
         catch (Exception ex)
         {
-            // Conexao recusada, DNS invalido, regiao inexistente: captura indisponivel.
+            // Conexao recusada, DNS invalido, endpoint inexistente: captura indisponivel.
             return HealthCheckResult.Degraded($"Azure Speech inacessivel: {ex.Message}", ex);
         }
     }

@@ -29,28 +29,46 @@ public class TranscreverSegmentoAzureHandler : IJobHandler
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
     /// <summary>
-    /// Tipos MIME que a REST API de short audio aceita, mapeados para o cabeçalho
-    /// exato que ela espera.
+    /// Tipos MIME que a Fast Transcription API aceita, mapeados para o cabeçalho que
+    /// acompanha a parte de áudio do multipart.
     ///
-    /// A lista é fechada de propósito, e o motivo é pior do que "o Azure devolve 400":
-    /// medido contra o serviço real, um WebM/Opus válido volta com <b>HTTP 200 e
-    /// <c>RecognitionStatus: "Success"</c> com texto vazio</b> — e o Content-Type
-    /// declarado não muda nada, porque o Azure inspeciona o container, não o cabeçalho.
-    /// Um formato não suportado não falha: ele <b>emudece</b>.
+    /// A lista continua <b>fechada</b>, e o motivo de ela existir é histórico e vale
+    /// guardar: na REST API de short audio, que este handler usava antes, um WebM/Opus
+    /// válido voltava com <b>HTTP 200 e <c>RecognitionStatus: "Success"</c> com texto
+    /// vazio</b> — o Content-Type declarado não mudava nada, porque o Azure inspeciona o
+    /// container. Formato não suportado não falhava: ele <b>emudecia</b>, e o
+    /// veterinário lia "áudio ilegível" quando o problema era o container.
     ///
-    /// Sem esta lista, o trecho viraria <c>AudioIlegivel</c> depois de gastar chamada e
-    /// retentativas, e o veterinário leria "áudio ilegível" quando o problema é o
-    /// container. Recusar aqui dá o motivo certo (<c>FormatoNaoSuportado</c>) de graça.
+    /// A Fast Transcription aceita a lista abaixo nativamente, então a guarda recusa
+    /// muito menos coisa do que recusava — mas segue sendo o lugar que dá o motivo certo
+    /// (<c>FormatoNaoSuportado</c>) sem gastar chamada e retentativas para chegar nele.
     /// </summary>
     private static readonly Dictionary<string, string> ContentTypeDoAzure = new(StringComparer.OrdinalIgnoreCase)
     {
-        ["audio/ogg"] = "audio/ogg; codecs=opus",
-        ["audio/ogg;codecs=opus"] = "audio/ogg; codecs=opus",
-        ["audio/ogg; codecs=opus"] = "audio/ogg; codecs=opus",
-        ["audio/wav"] = "audio/wav; codecs=audio/pcm; samplerate=16000",
-        ["audio/wave"] = "audio/wav; codecs=audio/pcm; samplerate=16000",
-        ["audio/x-wav"] = "audio/wav; codecs=audio/pcm; samplerate=16000"
+        ["audio/webm"] = "audio/webm",
+        ["audio/webm;codecs=opus"] = "audio/webm",
+        ["audio/webm; codecs=opus"] = "audio/webm",
+        ["audio/ogg"] = "audio/ogg",
+        ["audio/ogg;codecs=opus"] = "audio/ogg",
+        ["audio/ogg; codecs=opus"] = "audio/ogg",
+        ["audio/wav"] = "audio/wav",
+        ["audio/wave"] = "audio/wav",
+        ["audio/x-wav"] = "audio/wav",
+        ["audio/mpeg"] = "audio/mpeg",
+        ["audio/flac"] = "audio/flac",
+        ["audio/amr"] = "audio/amr"
     };
+
+    /// <summary>
+    /// Configuração de reconhecimento que viaja na parte <c>definition</c>.
+    ///
+    /// <c>profanityFilterMode: None</c> e não <c>Masked</c>: isto é prontuário clínico,
+    /// não conteúdo público. Mascarar palavra faria o texto do atendimento chegar ao
+    /// veterinário com asteriscos no lugar do que foi dito — e o que ele precisa é do
+    /// registro fiel.
+    /// </summary>
+    private const string DefinicaoDeReconhecimento =
+        """{"locales":["pt-BR"],"profanityFilterMode":"None"}""";
 
     private readonly IHttpClientFactory _clientes;
     private readonly ConfiguracaoDoAzureSpeech _azure;
@@ -101,8 +119,8 @@ public class TranscreverSegmentoAzureHandler : IJobHandler
         if (!ContentTypeDoAzure.TryGetValue(NormalizarFormato(req.Formato), out var contentType))
         {
             _logger.LogWarning(
-                "Segmento {SegmentoId} veio em '{Formato}', que a REST API de short audio nao aceita. " +
-                "Formatos aceitos: WAV/PCM e OGG/OPUS, 16 kHz mono.", req.SegmentoId, req.Formato);
+                "Segmento {SegmentoId} veio em '{Formato}', que a Fast Transcription API nao aceita. " +
+                "Formatos aceitos: WebM, OGG, WAV, MP3, FLAC e AMR.", req.SegmentoId, req.Formato);
 
             return Falha(req, MotivoFalhaTranscricao.FormatoNaoSuportado);
         }
@@ -127,18 +145,24 @@ public class TranscreverSegmentoAzureHandler : IJobHandler
 
         try
         {
-            using var conteudo = new ByteArrayContent(audio);
+            // A Fast Transcription recebe o audio inline, em multipart: uma parte com os
+            // bytes e outra com a configuracao de reconhecimento. E o que dispensa a URL
+            // publica que a API de short audio exigia — o Azure nao precisa mais alcancar
+            // o nosso storage.
+            using var conteudo = new MultipartFormDataContent();
 
-            // Sem validacao de proposito: o cabecalho que o Azure documenta para WAV e
-            // "audio/wav; codecs=audio/pcm; samplerate=16000", e o parser do .NET recusa
-            // a barra em "audio/pcm" sem aspas. Quem manda no formato aqui e o servico
-            // que vai ler, nao a nossa leitura do RFC.
-            conteudo.Headers.TryAddWithoutValidation("Content-Type", contentType);
+            var parteDoAudio = new ByteArrayContent(audio);
+            parteDoAudio.Headers.TryAddWithoutValidation("Content-Type", contentType);
+            conteudo.Add(parteDoAudio, "audio", $"segmento-{req.Sequencia}");
+
+            var parteDaDefinicao = new StringContent(DefinicaoDeReconhecimento);
+            parteDaDefinicao.Headers.TryAddWithoutValidation("Content-Type", "application/json");
+            conteudo.Add(parteDaDefinicao, "definition");
 
             var cliente = _clientes.CreateClient(ConfiguracaoDoAzureSpeech.NomeDoHttpClient);
 
             using var resposta = await cliente.PostAsync(
-                _azure.CaminhoDeReconhecimento(req.Idioma), conteudo, cancellationToken);
+                _azure.CaminhoDeTranscricao(), conteudo, cancellationToken);
 
             if (!resposta.IsSuccessStatusCode)
                 return FalhaDeHttp(req, resposta.StatusCode);
@@ -159,30 +183,24 @@ public class TranscreverSegmentoAzureHandler : IJobHandler
     /// <summary>
     /// Traduz o resultado do Azure para o contrato do callback.
     ///
-    /// <c>NoMatch</c>, <c>InitialSilenceTimeout</c> e <c>BabbleTimeout</c> são áudio
-    /// ilegível, e não motor fora do ar: reenviar o mesmo trecho de silêncio três vezes
-    /// só gastaria quota para chegar ao mesmo lugar. O rascunho sai sem ele, com aviso.
+    /// Resposta sem <c>combinedPhrases</c> — ou com texto vazio nela — é áudio ilegível,
+    /// e não motor fora do ar: é o mesmo desfecho que o <c>NoMatch</c> da API anterior
+    /// tinha, pelo mesmo motivo. Reenviar o mesmo trecho de silêncio três vezes só
+    /// gastaria quota para chegar ao mesmo lugar; o rascunho sai sem ele, com aviso.
     /// </summary>
     private CallbackDeTranscricaoDto Traduzir(SolicitarTranscricaoRequest req, RespostaDoAzureSpeech? corpo)
     {
-        var melhor = corpo?.NBest?.FirstOrDefault();
+        var texto = Preenchido(corpo?.CombinedPhrases?.FirstOrDefault()?.Text);
 
-        // No formato detailed o texto vem em NBest[0].Display; DisplayText so aparece no
-        // formato simple — ler os dois deixa o adaptador indiferente a essa escolha.
-        var texto = Preenchido(corpo?.DisplayText) ?? Preenchido(melhor?.Display) ?? Preenchido(melhor?.Lexical);
-
-        var reconhecido =
-            string.Equals(corpo?.RecognitionStatus, "Success", StringComparison.OrdinalIgnoreCase) &&
-            texto is not null;
-
-        if (!reconhecido)
+        if (texto is null)
         {
             _logger.LogInformation(
-                "Azure Speech nao reconheceu fala no segmento {SegmentoId} (status {Status}).",
-                req.SegmentoId, corpo?.RecognitionStatus ?? "desconhecido");
+                "Azure Speech nao reconheceu fala no segmento {SegmentoId}.", req.SegmentoId);
 
             return Falha(req, MotivoFalhaTranscricao.AudioIlegivel);
         }
+
+        var frases = corpo?.Phrases ?? [];
 
         return new CallbackDeTranscricaoDto
         {
@@ -190,11 +208,33 @@ public class TranscreverSegmentoAzureHandler : IJobHandler
             ConsultaId = req.ConsultaId,
             Status = "Ok",
             Texto = texto,
-            Confianca = melhor?.Confidence,
+            Confianca = ConfiancaDe(frases),
+
+            // Os trechos com marcacao de tempo sao o que permite conferir cada frase do
+            // rascunho contra o audio (§5.3). A API de short audio nao os devolvia e o
+            // campo ficava sempre nulo; a Fast Transcription os traz, e serializar as
+            // frases como vieram preserva offset e duracao sem inventar formato proprio.
+            Trechos = frases.Count > 0 ? JsonSerializer.Serialize(frases, Json) : null,
+
             Idioma = req.Idioma,
             Motor = MotorDaVez(),
             CallbackToken = req.CallbackToken
         };
+    }
+
+    /// <summary>
+    /// Confiança do segmento: média das frases, ou a da primeira quando só ela tem valor.
+    ///
+    /// A média é o que representa o trecho inteiro — uma frase muito curta e muito
+    /// confiante não deveria responder por trinta segundos de áudio. Frases sem
+    /// confiança ficam fora do cálculo em vez de entrarem como zero, que puxaria a média
+    /// para baixo por ausência de dado, não por incerteza do motor.
+    /// </summary>
+    private static decimal? ConfiancaDe(List<FraseDoAzure> frases)
+    {
+        var medidas = frases.Where(f => f.Confidence is not null).Select(f => f.Confidence!.Value).ToList();
+
+        return medidas.Count > 0 ? Math.Round(medidas.Average(), 4) : null;
     }
 
     /// <summary>
@@ -203,14 +243,26 @@ public class TranscreverSegmentoAzureHandler : IJobHandler
     /// 401 e 403 saem em nível de erro: é credencial errada, não áudio ruim — e a
     /// diferença é entre "esta consulta perdeu um trecho" e "nenhuma consulta vai
     /// transcrever até alguém arrumar a chave".
+    ///
+    /// A divisão que importa é entre <b>retentável</b> e <b>não retentável</b>, e a
+    /// documentação da Microsoft é explícita sobre ela: 429 e 5xx são transitórios e
+    /// vale reenviar com espera; 400, 401, 403 e 422 são erro de cliente, e reenviar o
+    /// mesmo pedido produz o mesmo erro. Nenhum dos dois retenta para sempre — o teto de
+    /// <see cref="SegmentoAudio.MaximoDeTentativas"/> vale para todos —, mas gastar as
+    /// três tentativas num pedido que já se sabe malformado só atrasa o aviso ao
+    /// veterinário.
     /// </summary>
     private CallbackDeTranscricaoDto FalhaDeHttp(SolicitarTranscricaoRequest req, HttpStatusCode status)
     {
         switch (status)
         {
+            // 422 acompanha o 400: nos dois o Azure diz que o pedido esta malformado, e
+            // o que o veterinario precisa saber e que o audio nao serviu.
             case HttpStatusCode.BadRequest:
+            case HttpStatusCode.UnprocessableEntity:
                 _logger.LogWarning(
-                    "Azure Speech recusou o formato do segmento {SegmentoId} (400).", req.SegmentoId);
+                    "Azure Speech recusou o pedido do segmento {SegmentoId} ({Status}) — erro de cliente, " +
+                    "reenviar o mesmo audio daria o mesmo resultado.", req.SegmentoId, (int)status);
 
                 return Falha(req, MotivoFalhaTranscricao.FormatoNaoSuportado);
 
@@ -218,7 +270,7 @@ public class TranscreverSegmentoAzureHandler : IJobHandler
             case HttpStatusCode.Forbidden:
                 _logger.LogError(
                     "Azure Speech recusou a credencial ({Status}) no segmento {SegmentoId}. " +
-                    "Confira AZURE_SPEECH_KEY e a regiao configurada — nenhuma consulta transcreve assim.",
+                    "Confira AZURE_SPEECH_KEY e o endpoint configurado — nenhuma consulta transcreve assim.",
                     (int)status, req.SegmentoId);
 
                 return Falha(req, MotivoFalhaTranscricao.MotorIndisponivel);
@@ -238,7 +290,7 @@ public class TranscreverSegmentoAzureHandler : IJobHandler
         }
     }
 
-    private static CallbackDeTranscricaoDto Falha(SolicitarTranscricaoRequest req, MotivoFalhaTranscricao motivo) =>
+    private CallbackDeTranscricaoDto Falha(SolicitarTranscricaoRequest req, MotivoFalhaTranscricao motivo) =>
         new()
         {
             SegmentoId = req.SegmentoId,
@@ -250,10 +302,17 @@ public class TranscreverSegmentoAzureHandler : IJobHandler
             CallbackToken = req.CallbackToken
         };
 
-    private static MotorDeTranscricaoDto MotorDaVez() => new()
+    /// <summary>
+    /// Motor e versão gravados na trilha da transcrição.
+    ///
+    /// A versão sai da configuração, e não de uma constante: subir a API por variável de
+    /// ambiente sem que a auditoria acompanhe deixaria o registro dizendo uma coisa e o
+    /// serviço fazendo outra.
+    /// </summary>
+    private MotorDeTranscricaoDto MotorDaVez() => new()
     {
         Nome = ConfiguracaoDoAzureSpeech.NomeDoMotor,
-        Versao = ConfiguracaoDoAzureSpeech.VersaoDaApi
+        Versao = _azure.VersaoDaApi
     };
 
     /// <summary>Formato do segmento pronto para a busca na tabela, sem espaços nas pontas.</summary>

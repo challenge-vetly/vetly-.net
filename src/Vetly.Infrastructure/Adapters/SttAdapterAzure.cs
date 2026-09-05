@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -11,20 +11,29 @@ namespace Vetly.Infrastructure.Adapters;
 /// Endereço e credencial do Azure Speech (§5.3).
 ///
 /// A chave vem <b>só</b> da variável de ambiente <c>AZURE_SPEECH_KEY</c>: em
-/// <c>appsettings.json</c> ela iria para o repositório na primeira distração. A região
-/// aceita as duas origens porque não é segredo — é topologia.
+/// <c>appsettings.json</c> ela iria para o repositório na primeira distração. Endpoint,
+/// região e versão da API aceitam as duas origens porque não são segredo — são
+/// topologia.
 ///
-/// O endpoint é montado a partir da região, e não configurado inteiro: um endereço
-/// digitado à mão é a forma mais fácil de apontar para a região errada e descobrir
-/// pelo 401.
+/// O endpoint tem origem própria (<c>AZURE_SPEECH_ENDPOINT</c>) porque o recurso de
+/// Speech pode estar num domínio customizado, e derivar tudo da região deixaria esse
+/// caso sem saída. Quando ele não vem, a região ainda monta um endereço válido — é o
+/// caminho de sempre, e continua sendo o que a maioria das instalações usa.
 /// </summary>
 public sealed class ConfiguracaoDoAzureSpeech
 {
     /// <summary>Nome do <c>HttpClient</c> registrado para falar com o Azure.</summary>
     public const string NomeDoHttpClient = "azure-speech";
 
-    /// <summary>Versão da REST API de reconhecimento de fala curta.</summary>
-    public const string VersaoDaApi = "v1";
+    /// <summary>
+    /// Versão padrão da Fast Transcription API.
+    ///
+    /// <c>2025-10-15</c> também existe e habilita <c>phraseList</c> — vocabulário
+    /// dirigido, que valeria muito para termos veterinários. Fica como configuração e
+    /// não como troca de constante para que subir de versão não precise de deploy de
+    /// código.
+    /// </summary>
+    public const string VersaoDaApiPadrao = "2024-11-15";
 
     /// <summary>Nome do motor gravado na trilha de auditoria da transcrição.</summary>
     public const string NomeDoMotor = "azure-speech";
@@ -35,6 +44,9 @@ public sealed class ConfiguracaoDoAzureSpeech
     /// <summary>Chave de assinatura, enviada no header <c>Ocp-Apim-Subscription-Key</c>.</summary>
     public string Chave { get; }
 
+    /// <summary>Versão da REST API efetivamente usada nas chamadas.</summary>
+    public string VersaoDaApi { get; }
+
     public ConfiguracaoDoAzureSpeech(IConfiguration config)
     {
         Regiao = Preenchido(config["AZURE_SPEECH_REGION"]) ?? Preenchido(config["Azure:Speech:Region"])
@@ -44,19 +56,56 @@ public sealed class ConfiguracaoDoAzureSpeech
         Chave = Preenchido(config["AZURE_SPEECH_KEY"])
             ?? throw new InvalidOperationException(
                 "AZURE_SPEECH_KEY nao definida. A chave vem de variavel de ambiente, nunca do appsettings.");
+
+        VersaoDaApi = Preenchido(config["AZURE_SPEECH_API_VERSION"])
+            ?? Preenchido(config["Azure:Speech:ApiVersion"])
+            ?? VersaoDaApiPadrao;
+
+        BaseUrl = MontarBaseUrl(
+            Preenchido(config["AZURE_SPEECH_ENDPOINT"]) ?? Preenchido(config["Azure:Speech:Endpoint"]));
     }
 
     /// <summary>
-    /// Host de reconhecimento da região. É o endpoint <c>*.stt.speech.microsoft.com</c>,
-    /// e não o <c>*.api.cognitive.microsoft.com</c> genérico de Cognitive Services —
-    /// o genérico existe para emissão de token e responde 404 ao reconhecimento.
+    /// Host da Fast Transcription API.
+    ///
+    /// Configurado (<c>https://{recurso}.cognitiveservices.azure.com</c>) quando há
+    /// endpoint próprio; derivado da região
+    /// (<c>https://{regiao}.api.cognitive.microsoft.com</c>) quando não há. O host de
+    /// short audio (<c>*.stt.speech.microsoft.com</c>) <b>não</b> serve aqui: a Fast
+    /// Transcription mora sob Cognitive Services.
     /// </summary>
-    public Uri BaseUrl => new($"https://{Regiao}.stt.speech.microsoft.com/");
+    public Uri BaseUrl { get; }
 
-    /// <summary>Caminho do reconhecimento de fala curta, com o idioma esperado.</summary>
-    public string CaminhoDeReconhecimento(string idioma) =>
-        $"speech/recognition/conversation/cognitiveservices/{VersaoDaApi}" +
-        $"?language={Uri.EscapeDataString(idioma)}&format=detailed";
+    /// <summary>
+    /// Caminho da transcrição rápida.
+    ///
+    /// O idioma não vai mais na query: ele viaja no <c>definition</c> do multipart, com
+    /// o resto da configuração de reconhecimento.
+    /// </summary>
+    public string CaminhoDeTranscricao() =>
+        $"speechtotext/transcriptions:transcribe?api-version={Uri.EscapeDataString(VersaoDaApi)}";
+
+    /// <summary>Caminho de listagem, usado só como sonda barata pelo health check.</summary>
+    public string CaminhoDeListagem() =>
+        $"speechtotext/transcriptions?api-version={Uri.EscapeDataString(VersaoDaApi)}";
+
+    /// <summary>
+    /// Endpoint configurado tem precedência; sem ele, a região monta o endereço.
+    ///
+    /// A barra final é forçada porque o <c>HttpClient</c> resolve caminho relativo
+    /// contra a <c>BaseAddress</c>: sem ela, o último segmento do host seria descartado
+    /// e a chamada iria para o lugar errado — silenciosamente.
+    /// </summary>
+    private Uri MontarBaseUrl(string? endpointConfigurado)
+    {
+        var bruto = endpointConfigurado ?? $"https://{Regiao}.api.cognitive.microsoft.com";
+
+        if (!Uri.TryCreate(bruto, UriKind.Absolute, out var uri))
+            throw new InvalidOperationException(
+                $"AZURE_SPEECH_ENDPOINT '{bruto}' nao e uma URL absoluta valida.");
+
+        return uri.AbsoluteUri.EndsWith('/') ? uri : new Uri(uri.AbsoluteUri + "/");
+    }
 
     private static string? Preenchido(string? valor) => string.IsNullOrWhiteSpace(valor) ? null : valor;
 }
@@ -113,28 +162,49 @@ public class SttAdapterAzure : ISttAdapter
     }
 }
 
-/// <summary>Resposta do reconhecimento de fala curta do Azure, formato <c>detailed</c>.</summary>
+/// <summary>
+/// Resposta da Fast Transcription API.
+///
+/// Os nomes vêm em <c>camelCase</c>, ao contrário do <c>PascalCase</c> da API de short
+/// audio — daí os atributos explícitos, que deixam a diferença registrada no tipo em
+/// vez de depender da convenção do serializador.
+/// </summary>
 internal sealed class RespostaDoAzureSpeech
 {
-    [JsonPropertyName("RecognitionStatus")]
-    public string? RecognitionStatus { get; set; }
+    [JsonPropertyName("durationMilliseconds")]
+    public int? DurationMilliseconds { get; set; }
 
-    [JsonPropertyName("DisplayText")]
-    public string? DisplayText { get; set; }
+    /// <summary>Texto contínuo por idioma reconhecido. É de onde sai a transcrição.</summary>
+    [JsonPropertyName("combinedPhrases")]
+    public List<FraseCombinadaDoAzure>? CombinedPhrases { get; set; }
 
-    [JsonPropertyName("NBest")]
-    public List<HipoteseDoAzureSpeech>? NBest { get; set; }
+    /// <summary>Frases com marcação de tempo — o que alimenta os trechos do callback.</summary>
+    [JsonPropertyName("phrases")]
+    public List<FraseDoAzure>? Phrases { get; set; }
 }
 
-/// <summary>Uma hipótese de reconhecimento na lista <c>NBest</c>.</summary>
-internal sealed class HipoteseDoAzureSpeech
+/// <summary>O texto inteiro de um idioma, já concatenado pelo Azure.</summary>
+internal sealed class FraseCombinadaDoAzure
 {
-    [JsonPropertyName("Confidence")]
+    [JsonPropertyName("text")]
+    public string? Text { get; set; }
+}
+
+/// <summary>Uma frase reconhecida, com onde começa, quanto dura e o quanto o motor confia.</summary>
+internal sealed class FraseDoAzure
+{
+    [JsonPropertyName("offsetMilliseconds")]
+    public int? OffsetMilliseconds { get; set; }
+
+    [JsonPropertyName("durationMilliseconds")]
+    public int? DurationMilliseconds { get; set; }
+
+    [JsonPropertyName("text")]
+    public string? Text { get; set; }
+
+    [JsonPropertyName("confidence")]
     public decimal? Confidence { get; set; }
 
-    [JsonPropertyName("Display")]
-    public string? Display { get; set; }
-
-    [JsonPropertyName("Lexical")]
-    public string? Lexical { get; set; }
+    [JsonPropertyName("locale")]
+    public string? Locale { get; set; }
 }

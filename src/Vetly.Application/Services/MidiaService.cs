@@ -1,4 +1,4 @@
-using Vetly.Application.DTOs.Midia;
+﻿using Vetly.Application.DTOs.Midia;
 using Vetly.Application.Exceptions;
 using Vetly.Application.Interfaces;
 using Vetly.Domain.Entities;
@@ -19,14 +19,16 @@ public class MidiaService : IMidiaService
     {
         [TipoMidia.FotoPet] = ["image/jpeg", "image/png", "image/webp"],
         [TipoMidia.PreSintoma] = ["image/jpeg", "image/png", "image/webp", "video/mp4"],
-        // OGG-OPUS e WAV/PCM sao o que o motor de transcricao le (§5.3). WebM continua
-        // aceito no upload — segmento em formato que o motor recusa falha com
-        // FormatoNaoSuportado, e o app antigo nao fica sem conseguir nem enviar.
+        // A mesma lista que o adaptador de transcricao aceita (§5.3). WebM vem primeiro
+        // porque virou o caminho principal: e o que o MediaRecorder do Chromium grava, e
+        // a Fast Transcription o le nativamente. Manter as duas listas alinhadas e o que
+        // impede o upload de aceitar um formato que so vai falhar depois, no motor.
         [TipoMidia.AudioConsulta] =
         [
+            "audio/webm", "audio/webm;codecs=opus", "audio/webm; codecs=opus",
             "audio/ogg", "audio/ogg;codecs=opus", "audio/ogg; codecs=opus",
             "audio/wav", "audio/wave", "audio/x-wav",
-            "audio/webm", "audio/webm;codecs=opus", "audio/mpeg"
+            "audio/mpeg", "audio/flac", "audio/amr"
         ],
         [TipoMidia.ResultadoExame] = ["application/pdf", "image/jpeg", "image/png"],
         [TipoMidia.DocumentoPdf] = ["application/pdf"]
