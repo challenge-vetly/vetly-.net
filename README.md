@@ -20,7 +20,7 @@ Esta versão da documentação acrescenta a camada que faltava para que o sistem
 | [2. Stack e tecnologias](#2-stack-e-tecnologias) | Cada biblioteca do projeto e para que exatamente ela serve aqui |
 | [3. Padrões de projeto](#3-padrões-de-projeto-aplicados) | Factory, Strategy, Repository, Adapter e onde cada um vive |
 | [4. Monitoramento e observabilidade](#4-monitoramento-e-observabilidade) | Health checks, Serilog, OpenTelemetry, catálogo de métricas e o playbook de plantão |
-| [5. Testes automatizados](#5-testes-automatizados) | Padrão AAA, nomenclatura, fixtures, execução e cobertura |
+| [5. Testes automatizados](#5-testes-automatizados) | Padrão AAA, nomenclatura, fixtures, execução, **o que a suíte não cobre** e cobertura |
 | [6. Instalação e execução](#6-instalação-e-execução) | Pré-requisitos, configuração local, migrations e como subir |
 | [7. Fluxo de captura da consulta](#7-fluxo-de-captura-da-consulta) | Ponta a ponta, formato do áudio, troca de motor e as variáveis do Azure Speech |
 | [8. Autenticação](#8-autenticação) | JWT, refresh rotativo, perfis e policies |
@@ -423,12 +423,12 @@ grep '"CorrelationId":"3c041ea3875bc38c14a0c83a0dbd1362"' logs/vetly-*.log
 
 ## 5. Testes automatizados
 
-A suíte tem **915 testes**, todos verdes, divididos em dois projetos por natureza do que verificam — e não por conveniência de organização:
+A suíte tem **1.005 testes**, todos verdes, divididos em dois projetos por natureza do que verificam — e não por conveniência de organização:
 
 | Projeto | Testes | O que verifica | Como |
 |---|---|---|---|
-| `tests/Vetly.UnitTests` | **713** | Domínio e Aplicação: invariantes de entidade e regras de serviço | xUnit + Moq. Sem banco, sem HTTP, sem I/O — a suíte inteira roda em menos de um segundo |
-| `tests/Vetly.IntegrationTests` | **202** | A API de ponta a ponta, por HTTP | `WebApplicationFactory` com a aplicação real; só o Oracle é trocado por InMemory |
+| `tests/Vetly.UnitTests` | **742** | Domínio e Aplicação: invariantes de entidade e regras de serviço | xUnit + Moq. Sem banco, sem HTTP, sem I/O — a suíte inteira roda em cerca de um segundo |
+| `tests/Vetly.IntegrationTests` | **263** | A API de ponta a ponta, por HTTP | `WebApplicationFactory` com a aplicação real; só o Oracle é trocado por InMemory |
 
 A divisão importa porque as duas suítes pegam classes diferentes de defeito. Os testes de unidade provam que **cada regra está certa isoladamente**: que cancelar com 25 horas de antecedência devolve reembolso integral, que 100 pontos valem R$ 3,00, que um CRMV fora do formato não vira entidade. Os testes de integração provam que **elas se encaixam** — e pegam o que nenhum teste de unidade pegaria: o campo que o serviço preenche e o controller não devolve, a rota que existe mas não aceita o payload que a anterior produziu, o filtro que barra o caminho legítimo, a policy que exige uma role que ninguém emite. Uma API pode ter todas as regras certas e ainda assim não ser atravessável.
 
@@ -527,7 +527,46 @@ dotnet build && dotnet test --no-build
 
 Os testes de integração **não precisam de Oracle nem de Ollama**: o banco é substituído por InMemory e os adaptadores externos são os `*Simulado` padrão. `dotnet test` funciona em uma máquina recém-clonada, sem configuração nenhuma.
 
-### 5.4 Cobertura
+### 5.4 O que a suíte não cobre
+
+Essa mesma facilidade tem um custo, e ele já cobrou uma vez: **o `UseInMemoryDatabase` não traduz SQL**. Ele guarda objetos em memória e responde às consultas LINQ em C#, então nenhum dos testes exercita o provider Oracle. Uma consulta que o EF Core não consegue traduzir para o dialeto do Oracle passa verde nos dois projetos e só falha contra o banco real.
+
+Foi exatamente assim que dois `AnyAsync` chegaram ao `main`. Na raiz de uma query, `Any()` projeta um booleano, e o provider Oracle o traduz como `CASE WHEN EXISTS (...) THEN True ELSE False END` — literais que o Oracle anterior à 23c não conhece, respondendo `ORA-00904`. Um deles ficava na trilha de autorização da colmeia (RN-066): a falha não era um dado a menos, era erro em toda leitura de prontuário feita por veterinário sem acesso vigente. Nenhum teste viu.
+
+As três classes de defeito que a suíte **não** pega:
+
+| Não coberto | Por quê | O que já dói na prática |
+|---|---|---|
+| **Tradução de LINQ para SQL** | InMemory executa em C#, não gera SQL | `ORA-00904` em operador que projeta booleano; funções sem equivalente no Oracle |
+| **Tipos e limites do Oracle** | InMemory aceita qualquer `string` e qualquer `decimal` | `VARCHAR2` estourado, precisão de `NUMBER`, `CLOB` vazio virando `NULL` |
+| **Concorrência real de banco** | Sem transação, sem lock, sem isolamento | O `UPDATE` condicional do lock de slot (§6.4) é testado pela lógica, não pelo banco |
+
+**Por que não há um projeto de teste contra Oracle de verdade.** A opção considerada foi Testcontainers com `gvenzl/oracle-free`, num projeto separado e fora do `dotnet test` padrão. Duas coisas a inviabilizaram hoje: **não há Docker em execução** nas máquinas de desenvolvimento do projeto, e **não existe pipeline de CI** neste repositório — não há onde a suíte rodar de forma confiável. Uma suíte que só uma parte do time consegue executar, e que nada obriga a rodar, apodrece sem avisar; e a imagem do Oracle Free leva alguns minutos até ficar saudável na primeira subida, o que a torna cara justamente para quem a rodaria à mão. **Quando houver CI, esta é a primeira lacuna a fechar** — começando pelas duas consultas de `ConsultasCompativeisComOracle`.
+
+O que existe hoje no lugar são duas defesas mais baratas:
+
+1. **Uma guarda estática.** `CompatibilidadeComOracleTests` varre o código-fonte da `Vetly.Infrastructure` e falha se encontrar `AnyAsync`/`AllAsync`. Ela roda no `dotnet test` de sempre e custa milissegundos. Não substitui um banco real — pega uma classe conhecida de defeito, não classes novas.
+2. **Um smoke manual antes de merge em `main`.** Curto de propósito, para que seja de fato executado.
+
+#### Checklist de smoke contra Oracle
+
+```bash
+set -a && . ./.env && set +a          # AZURE_SPEECH_*, se for exercitar captura
+dotnet run --project src/Vetly.API --launch-profile https
+```
+
+| # | Verificar | Esperado |
+|---|---|---|
+| 1 | `GET /health/ready` | `200` com o check `oracle-db` **Healthy** |
+| 2 | Deixar a API de pé por **2 minutos** e ler o log | Nenhum `ORA-`. As rotinas periódicas rodam a cada 1 min e é aí que consulta não traduzível aparece |
+| 3 | `GET /api/animais/{id}` autenticado como **vet que atendeu** o animal | `200` — passa por `VeterinarioAtendeAnimalAsync` |
+| 4 | O mesmo, como **vet que não atendeu** | `403` com `codigo: "RN-105"`. Um `500` aqui é falha de tradução, não de autorização |
+| 5 | Qualquer rota paginada, ex. `GET /api/consultas?pagina=1&tamanho=20` | `200` — `Skip`/`Take` no Oracle usa `OFFSET/FETCH` |
+| 6 | Uma escrita com texto longo, ex. `PUT /api/consultas/{id}/pre-sintomas` | `204` — exercita `CLOB` |
+
+Um `ORA-` no log, em qualquer passo, é bloqueante: significa consulta que a suíte inteira aprovou e o banco recusa.
+
+### 5.5 Cobertura
 
 ```bash
 # Coleta com os filtros do projeto (exclui migrations geradas)
