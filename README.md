@@ -666,6 +666,16 @@ estruturada em prontuário pela IA (RN-008/RN-009/RN-079/RN-080).
 | 7 | `GET /api/consultas/{id}/captura` | Progresso para a barra de status: recebidos, transcritos, com falha e o texto parcial |
 | 8 | `POST /api/consultas/{id}/encerrar` | Fecha a janela, marca a consulta como realizada e decide o desfecho da sessão |
 | 9 | `GET /api/consultas/{id}/rascunho` | O rascunho estruturado, quando houver — é aqui que o app faz polling |
+| 10 | `PUT /api/consultas/{id}/validar-diagnostico` | Decisão de três vias: `Aprovado`, `Corrigido` ou `NaoAprovado`. Aprovar ou corrigir **habilita** a emissão (RN-082) |
+| 11 | `POST /api/documentos/consulta/{id}?tipo=...` | Um por documento escolhido. O veterinário decide quais emitir — o sistema não gera o conjunto sozinho (RN-010) |
+| 12 | `POST /api/documentos/{id}/assinar` | Obrigatório na receita e no atestado; publicar no board vem em seguida (RN-087/RN-011) |
+| 13 | `POST /api/consultas/{id}/finalizar` | Fecha o ciclo: a sessão vai a `Concluida` e a resposta devolve esse estado (RN-087, §7.3) |
+
+**Por que os passos 11 e 12 não são automáticos.** Atestado de saúde, óbito e transporte
+são atos privativos do médico veterinário: emitir por default os transformaria em efeito
+colateral de encerrar a consulta. A decisão está registrada em
+[REGRAS-DE-NEGOCIO.md](REGRAS-DE-NEGOCIO.md) — a **publicação** no board (RN-011), essa
+sim, é automática assim que o documento é gerado e assinado.
 
 A sessão **sempre chega a um estado terminal**: `GerandoRascunho` (todos os trechos
 transcreveram), `TranscricaoParcial` (parte transcreveu — o rascunho sai com o que há,

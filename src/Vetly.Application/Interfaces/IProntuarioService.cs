@@ -11,6 +11,10 @@ public interface IProntuarioService
     /// <summary>
     /// Registra a decisão sobre o rascunho: aprovar, corrigir ou não aprovar (RN-082).
     /// Toda decisão vira registro append-only na trilha de auditoria.
+    ///
+    /// <c>Aprovado</c> e <c>Corrigido</c> <b>habilitam</b> a emissão de documentos — não
+    /// a executam. Cada documento é emitido por ato explícito do veterinário, por tipo
+    /// (RN-010, ver <c>REGRAS-DE-NEGOCIO.md</c>).
     /// </summary>
     Task<DecisaoRegistradaDto> DecidirAsync(Guid consultaId, DecisaoDoProntuarioDto dto);
 

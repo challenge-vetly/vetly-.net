@@ -38,6 +38,12 @@ public class ProntuarioService : IProntuarioService
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// Aprovar ou corrigir <b>habilita</b> a emissão de documentos; não a executa. Quem
+    /// emite é o veterinário, um documento por tipo, porque atestado de saúde, óbito e
+    /// transporte são atos privativos dele — emitir por default os transformaria em
+    /// efeito colateral de encerrar a consulta (RN-010).
+    /// </remarks>
     public async Task<DecisaoRegistradaDto> DecidirAsync(Guid consultaId, DecisaoDoProntuarioDto dto)
     {
         var consulta = await ObterConsultaDoVeterinarioAsync(consultaId);
