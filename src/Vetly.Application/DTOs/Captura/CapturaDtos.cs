@@ -1,4 +1,4 @@
-using System.ComponentModel.DataAnnotations;
+﻿using System.ComponentModel.DataAnnotations;
 using Vetly.Domain.Enums;
 
 namespace Vetly.Application.DTOs.Captura;
@@ -31,15 +31,33 @@ public class SessaoIniciadaDto
 /// <summary>
 /// Como o app deve gravar o áudio da consulta.
 ///
-/// <b>OGG-OPUS e não WebM</b>: a REST API de short audio do Azure aceita apenas WAV
-/// (PCM) e OGG (OPUS), ambos 16 kHz mono — WebM ela recusa com 400. O
-/// <c>MediaRecorder</c> do navegador grava OGG-OPUS nativamente, então o front
-/// continua sem biblioteca externa, e a alternativa (transcodificar no servidor)
-/// custaria uma dependência nativa para resolver o mesmo problema.
+/// <b>WebM-OPUS, que é o que o navegador grava</b>. A instrução anterior era OGG-OPUS,
+/// porque a REST API de short audio do Azure só aceitava WAV (PCM) e OGG (OPUS) — mas
+/// o <c>MediaRecorder</c> do Chromium <b>não grava OGG</b>, só WebM. Na prática a
+/// captura só funcionava no Firefox, e no navegador da clínica o segmento subia,
+/// respondia 202 e só falhava depois, com <c>FormatoNaoSuportado</c>.
+///
+/// A Fast Transcription API aceita WebM nativamente, então o front grava no formato do
+/// próprio navegador: sem transcodificar, sem biblioteca externa e sem dependência
+/// nativa no servidor.
 /// </summary>
 public class ParametrosDeGravacaoDto
 {
-    public string Formato { get; set; } = "audio/ogg;codecs=opus";
+    /// <summary>Formato recomendado. É o primeiro de <see cref="FormatosAceitos"/>.</summary>
+    public string Formato { get; set; } = "audio/webm;codecs=opus";
+
+    /// <summary>
+    /// Formatos aceitos, em ordem de preferência, para o front escolher com
+    /// <c>MediaRecorder.isTypeSupported()</c>.
+    ///
+    /// A lista existe porque nenhum formato único cobre todos os navegadores: Chromium
+    /// grava WebM, Firefox grava OGG, e Safari historicamente nem um nem outro. Mandar
+    /// a ordem de preferência daqui evita que o app fixe no código uma escolha que só
+    /// vale para o navegador em que foi testado.
+    /// </summary>
+    public List<string> FormatosAceitos { get; set; } =
+        ["audio/webm;codecs=opus", "audio/ogg;codecs=opus", "audio/wav"];
+
     public int SegundosPorSegmento { get; set; } = 30;
     public int SampleRate { get; set; } = 16000;
 }

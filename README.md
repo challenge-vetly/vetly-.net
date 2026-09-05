@@ -189,7 +189,7 @@ A separação entre *liveness* e *readiness* não é cerimônia. Liveness decide
 
 O check do Oracle usa uma consulta de teste customizada que **abre a conexão explicitamente**, em vez do `CanConnectAsync` padrão. O motivo é prático: o padrão engole a exceção e devolve apenas `false`, e o relatório sai sem motivo nenhum. Abrindo a conexão, o erro do Oracle (`ORA-01017`, por exemplo) sobe, é capturado pelo `HealthCheckService` e aparece no JSON — o que transforma "o banco está fora" em "a senha do usuário expirou".
 
-O check do Azure Speech sonda o `issueToken` da região, e não um reconhecimento de verdade: um POST de áudio custaria quota a cada probe, e o que se quer saber — a região responde e a chave é aceita — o `issueToken` responde igual, de graça. Credencial recusada (401/403) sai com essa palavra na descrição, para o plantão não procurar rede onde o problema é chave.
+O check do Azure Speech sonda a listagem de transcrições (`GET /speechtotext/transcriptions`), e não uma transcrição de verdade: um POST de áudio custaria quota a cada probe, e o que se quer saber — o endpoint responde e a chave é aceita — a listagem responde igual, de graça. A sonda usa o **mesmo endpoint e a mesma versão de API** das transcrições, para não passar com o endpoint de transcrição errado. Credencial recusada (401/403) sai com essa palavra na descrição, para o plantão não procurar rede onde o problema é chave.
 
 O check do Ollama tem **timeout próprio de 5 segundos**, e não os 120 do `HttpClient` que o serviço usa: 120 segundos são adequados para inferência e absurdos para uma sonda. Um health check que trava é pior que um health check que falha.
 
@@ -666,6 +666,16 @@ estruturada em prontuário pela IA (RN-008/RN-009/RN-079/RN-080).
 | 7 | `GET /api/consultas/{id}/captura` | Progresso para a barra de status: recebidos, transcritos, com falha e o texto parcial |
 | 8 | `POST /api/consultas/{id}/encerrar` | Fecha a janela, marca a consulta como realizada e decide o desfecho da sessão |
 | 9 | `GET /api/consultas/{id}/rascunho` | O rascunho estruturado, quando houver — é aqui que o app faz polling |
+| 10 | `PUT /api/consultas/{id}/validar-diagnostico` | Decisão de três vias: `Aprovado`, `Corrigido` ou `NaoAprovado`. Aprovar ou corrigir **habilita** a emissão (RN-082) |
+| 11 | `POST /api/documentos/consulta/{id}?tipo=...` | Um por documento escolhido. O veterinário decide quais emitir — o sistema não gera o conjunto sozinho (RN-010) |
+| 12 | `POST /api/documentos/{id}/assinar` | Obrigatório na receita e no atestado; publicar no board vem em seguida (RN-087/RN-011) |
+| 13 | `POST /api/consultas/{id}/finalizar` | Fecha o ciclo: a sessão vai a `Concluida` e a resposta devolve esse estado (RN-087, §7.3) |
+
+**Por que os passos 11 e 12 não são automáticos.** Atestado de saúde, óbito e transporte
+são atos privativos do médico veterinário: emitir por default os transformaria em efeito
+colateral de encerrar a consulta. A decisão está registrada em
+[REGRAS-DE-NEGOCIO.md](REGRAS-DE-NEGOCIO.md) — a **publicação** no board (RN-011), essa
+sim, é automática assim que o documento é gerado e assinado.
 
 A sessão **sempre chega a um estado terminal**: `GerandoRascunho` (todos os trechos
 transcreveram), `TranscricaoParcial` (parte transcreveu — o rascunho sai com o que há,
@@ -677,29 +687,53 @@ morreu calado.
 
 ### Formato do áudio
 
-O front grava com a `MediaRecorder` do navegador, em **`audio/ogg;codecs=opus`, 16 kHz
-mono, trechos de 30 segundos**. Não é escolha estética: a REST API de reconhecimento
-de fala curta do Azure aceita **apenas WAV (PCM) e OGG (OPUS)**. O `MediaRecorder`
-grava OGG-OPUS nativamente, então o front não ganha dependência nenhuma por causa
-disso.
+O front grava com a `MediaRecorder` do navegador, em **`audio/webm;codecs=opus`, 16 kHz
+mono, trechos de 30 segundos**. A API usa a **Fast Transcription** do Azure Speech, que
+aceita WebM nativamente — então o front grava no formato do próprio navegador, sem
+transcodificar e sem dependência externa.
 
-**O WebM não dá erro — ele emudece.** Medido contra o serviço real: um WebM/Opus
-válido volta com `HTTP 200` e `RecognitionStatus: "Success"`, mas com `DisplayText`
-vazio e confiança `0.0`. O `Content-Type` declarado não muda nada, porque o Azure
-inspeciona o container e não confia no cabeçalho. É por isso que o adaptador mantém uma
-lista fechada de formatos e **recusa antes de chamar**: sem ela o trecho viraria
-`AudioIlegivel` depois de gastar chamada e retentativas, e o veterinário leria "áudio
-ilegível" quando o problema é o container.
+| Formato | Recomendado | Onde grava nativamente |
+|---|---|---|
+| `audio/webm;codecs=opus` | **Sim** | Chrome, Edge, Chromium em geral |
+| `audio/ogg;codecs=opus` | Alternativa | Firefox |
+| `audio/wav` | Último recurso | Qualquer um, com transcodificação |
+
+A API também aceita `audio/mpeg`, `audio/flac` e `audio/amr` no upload e no motor —
+úteis para áudio vindo de fora do app, não para a captura.
+
+**Por que WebM e não OGG.** A instrução anterior era OGG-OPUS, porque a API de *short
+audio* do Azure — que este projeto usava antes — só aceitava WAV (PCM) e OGG (OPUS). A
+documentação daqui afirmava que "o `MediaRecorder` grava OGG-OPUS nativamente", e isso
+**vale só para o Firefox**: o `MediaRecorder` do Chromium não grava OGG, apenas WebM.
+Na prática a captura só funcionava no Firefox, e no navegador da clínica o trecho subia,
+respondia `202` e só falhava depois, com `FormatoNaoSuportado` — a consulta inteira
+terminava em `SemTranscricao`. Foi exatamente o que motivou a migração para a Fast
+Transcription.
+
+O registro histórico vale guardar, porque explica a lista fechada de formatos que o
+adaptador ainda mantém: **na API de short audio o WebM não dava erro — ele emudecia**.
+Medido contra o serviço real, um WebM/Opus válido voltava com `HTTP 200` e
+`RecognitionStatus: "Success"`, mas com `DisplayText` vazio e confiança `0.0`, porque o
+Azure inspeciona o container e não confia no `Content-Type` declarado. A lista continua
+existindo e **recusa antes de chamar** — só que agora recusa muito menos coisa.
 
 Os parâmetros não precisam ser adivinhados: vêm no `gravacao` da resposta de
-`/iniciar`. O front deve lê-los de lá, e não fixá-los no código.
+`/iniciar`, junto de `formatosAceitos` em ordem de preferência. O front deve negociar a
+partir dela, e não fixar o formato no código.
 
 ```js
 const { gravacao } = await iniciarConsulta(consultaId);
 
-const gravador = new MediaRecorder(stream, { mimeType: gravacao.formato });
+// Nenhum formato unico cobre todos os navegadores: escolhe o primeiro suportado
+const formato = gravacao.formatosAceitos.find(f => MediaRecorder.isTypeSupported(f))
+             ?? gravacao.formato;
+
+const gravador = new MediaRecorder(stream, { mimeType: formato });
 gravador.start(gravacao.segundosPorSegmento * 1000);   // um blob por trecho
 ```
+
+O `contentType` do `POST /api/midia/upload-url` tem de ser **o mesmo** que o
+`MediaRecorder` usou: é ele que viaja até o motor.
 
 ### Trocar de motor
 
@@ -714,12 +748,23 @@ O motor é escolhido por `Adaptadores:Stt`, e trocar de fornecedor é trocar ess
 
 ### Variáveis de ambiente do Azure Speech
 
+| Variável | Obrigatória | Para que serve |
+|---|---|---|
+| `AZURE_SPEECH_KEY` | **Sim** | Chave do recurso. Vai no header `Ocp-Apim-Subscription-Key` |
+| `AZURE_SPEECH_REGION` | **Sim** | Região do recurso. Deriva o endpoint quando não há um configurado |
+| `AZURE_SPEECH_ENDPOINT` | Não | Endpoint próprio, `https://{recurso}.cognitiveservices.azure.com`. Tem precedência sobre a região |
+| `AZURE_SPEECH_API_VERSION` | Não | Versão da REST API. Padrão `2024-11-15` |
+
 A chave **nunca** vai para `appsettings.json` — vem só do ambiente:
 
 ```bash
 # Linux / macOS
 export AZURE_SPEECH_KEY="<a chave do recurso de Speech>"
 export AZURE_SPEECH_REGION="canadacentral"
+
+# Opcionais
+export AZURE_SPEECH_ENDPOINT="https://vetly-speech.cognitiveservices.azure.com"
+export AZURE_SPEECH_API_VERSION="2024-11-15"
 ```
 
 ```powershell
@@ -728,7 +773,7 @@ $env:AZURE_SPEECH_KEY = "<a chave do recurso de Speech>"
 $env:AZURE_SPEECH_REGION = "canadacentral"
 ```
 
-O repositório tem um `.env` **gitignorado** com essas duas variáveis, para quem prefere
+O repositório tem um `.env` **gitignorado** com essas variáveis, para quem prefere
 carregá-las de arquivo:
 
 ```bash
@@ -738,20 +783,34 @@ dotnet run --project src/Vetly.API --launch-profile https
 
 Com `Adaptadores:Stt = Azure`, a API **não sobe** sem `AZURE_SPEECH_KEY`. É deliberado:
 subir sem a chave só adiaria a descoberta para o primeiro segmento que não transcreve.
-O endpoint é montado a partir da região — `https://{região}.stt.speech.microsoft.com/…`
-—, e não configurado inteiro, porque endereço digitado à mão é a forma mais fácil de
-apontar para a região errada.
 
-`/health/ready` passa a incluir o check `azure-speech`, que sonda o `issueToken` da
-região. Falha ali é `Degraded`, e não `Unhealthy`: sem o motor a captura para, mas a
-consulta continua acontecendo e o prontuário segue pelo caminho manual.
+O endpoint tem origem própria porque o recurso de Speech pode estar num domínio
+customizado, e derivar tudo da região deixaria esse caso sem saída. Sem
+`AZURE_SPEECH_ENDPOINT`, a região monta `https://{região}.api.cognitive.microsoft.com/`
+— o host de Cognitive Services, e **não** o `*.stt.speech.microsoft.com` da API de short
+audio, que a Fast Transcription não atende.
+
+`AZURE_SPEECH_API_VERSION` existe para que subir de versão não precise de deploy de
+código: `2025-10-15` também está disponível e habilita `phraseList` — vocabulário
+dirigido, que vale para termos veterinários.
+
+`/health/ready` passa a incluir o check `azure-speech`, que faz um `GET` em
+`/speechtotext/transcriptions` no **mesmo endpoint e na mesma versão de API** das
+transcrições. Antes a sonda batia no `issueToken` regional, que é outro host: passava
+mesmo com o endpoint de transcrição errado. Falha ali é `Degraded`, e não `Unhealthy`:
+sem o motor a captura para, mas a consulta continua acontecendo e o prontuário segue
+pelo caminho manual.
 
 ### `Storage:PublicBaseUrl`
 
-A URL assinada que o motor recebe precisa ser **absoluta**: quem a consome está fora do
-processo da API. Sem `Storage:PublicBaseUrl` a aplicação não sobe — despachar segmentos
-com um caminho relativo produziria transcrições que nunca voltam, e a falha só
-apareceria como uma consulta que não sai do lugar.
+A URL assinada do áudio precisa ser **absoluta**. Sem `Storage:PublicBaseUrl` a
+aplicação não sobe — despachar segmentos com um caminho relativo produziria transcrições
+que nunca voltam, e a falha só apareceria como uma consulta que não sai do lugar.
+
+Com a Fast Transcription a exigência encolheu: o áudio vai **inline** na chamada ao
+Azure, então quem baixa do storage é a própria API. A URL precisa ser resolvível **por
+ela**, e não mais publicamente por terceiros. Os outros adaptadores (`NodeRed`, motores
+que buscam o áudio) continuam dependendo de ela ser alcançável de fora.
 
 Em desenvolvimento, `https://localhost:7262` (o perfil `https`) resolve. Em produção é
 a origem pública da API, ou o endpoint do bucket.
@@ -921,7 +980,7 @@ Esta é a **jornada completa da plataforma**, na ordem exata em que funciona —
 | E1 | `POST /api/documentos/consulta/{consultaId}?tipo=Prontuario` | Gera o documento pela Factory correspondente ao tipo, com conteúdo e PDF. Exige diagnóstico validado (RN-082/RN-083). Guarde o `id` |
 | E2 | `POST /api/documentos/{documentoId}/assinar` | Assina pelo adaptador de assinatura. No MVP é o nome digitado, conferido contra o registrado — só o vet do atendimento assina (RN-087) |
 | E3 | `POST /api/documentos/{documentoId}/publicar` | Publica no board do pet. **Receita sem assinatura não é publicada**: no board ela pareceria válida sem ser |
-| E4 | `POST /api/consultas/{consultaId}/finalizar` | Fecho documental. Exige que todo documento **já emitido** que precise de assinatura esteja assinado (RN-087) |
+| E4 | `POST /api/consultas/{consultaId}/finalizar` | Fecho documental. Exige que todo documento **já emitido** que precise de assinatura esteja assinado (RN-087) e devolve `estadoDaSessao: "Concluida"` |
 | E5 | `GET /api/documentos/animal/{animalId}` | O board do pet, na visão do Responsável: documentos publicados do animal |
 | E6 | `POST /api/documentos/{documentoId}/lido` | Registra que o Responsável abriu o documento |
 | E7 | `POST /api/documentos/{documentoId}/correcao` | Cria uma **versão corrigida** — o original é preservado. Depois de 24 h exige justificativa (RN-088/RN-089) |
@@ -1084,7 +1143,7 @@ O board já nasce preenchido: `POST /api/animais` deriva as obrigações da cart
 | PUT | `/api/consultas/{id}/validar-diagnostico` | Decisão sobre o rascunho: `Aprovado`, `Corrigido` ou `NaoAprovado` (RN-082) |
 | POST | `/api/consultas/{id}/prontuario-manual` | Prontuário escrito à mão, sem IA no caminho (RN-085) |
 | GET | `/api/consultas/{id}/auditoria-ia` | Trilha append-only das decisões sobre conteúdo de IA (RN-082) |
-| POST | `/api/consultas/{id}/finalizar` | Fecho documental — exige o que já foi emitido assinado (RN-087) |
+| POST | `/api/consultas/{id}/finalizar` | Fecho documental — exige o que já foi emitido assinado (RN-087) e leva o ciclo de captura a `Concluida` (§7.3) |
 | POST | `/api/consultas/{id}/retorno` | Agenda o retorno, confirmado e sem cobrança nova (RN-013) |
 | GET | `/api/consultas/{id}/redistribuicao/candidatos` | Veterinários que poderiam assumir a consulta (RN-025) |
 | POST | `/api/consultas/{id}/redistribuir` | Passa a consulta a outro veterinário (RN-025) |
@@ -1473,6 +1532,14 @@ finalizada com documento nenhum emitido, e a exigência da RN-087 nunca chegava 
 cobrada de verdade — no instante em que era avaliada, não havia documento algum. São
 dois momentos: encerrar é o profissional dizendo que terminou de atender; finalizar é o
 fim do trabalho documental que vem depois.
+
+Finalizar é também o que leva a sessão de captura a `Concluida` (§7.3). Como o
+veterinário **escolhe** quais documentos emitir, não existe job de geração que possa
+declarar o ciclo fechado por conta própria — sem esse fecho, toda consulta que passasse
+pela IA ficava em `Documentando` para sempre, e o app fazia polling de um estado
+terminal que nunca chegava. Sessão inexistente (emergência sem captura) ou já terminal
+em `EncerradaSemDocumentos` não é tocada: sobrescrever a segunda apagaria o registro de
+que o veterinário recusou o rascunho.
 
 ### Higiene de dependências
 

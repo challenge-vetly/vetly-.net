@@ -25,8 +25,23 @@ public interface IColmeiaService
     /// <summary>Se há autorização vigente que alcance o escopo pedido.</summary>
     Task<bool> PodeAcessarAsync(Guid veterinarioId, Guid animalId, EscopoAcessoColmeia escopo);
 
-    /// <summary>Registra o acesso na trilha, permitido ou negado.</summary>
+    /// <summary>
+    /// Registra o acesso na trilha, permitido ou negado, em nome do veterinário da
+    /// requisição atual.
+    /// </summary>
     Task RegistrarAcessoAsync(Guid animalId, EscopoAcessoColmeia escopo, bool permitido, string? rota);
+
+    /// <summary>
+    /// Registra o acesso em nome de um veterinário informado explicitamente (RN-067).
+    ///
+    /// Existe para quem lê fora de uma requisição HTTP. A sobrecarga acima resolve o
+    /// "quem" pelo token, e num job não há token: o registro sairia sem ator, e ele é
+    /// justamente o que o Responsável consulta na trilha. Quem lê em nome do
+    /// veterinário continua sendo o veterinário — mesmo quando quem executa a leitura
+    /// é a IA, no job de estruturação.
+    /// </summary>
+    Task RegistrarAcessoAsync(
+        Guid veterinarioId, Guid animalId, EscopoAcessoColmeia escopo, bool permitido, string? rota);
 
     /// <summary>
     /// Estende a autorização vigente do par animal/veterinário até depois do retorno

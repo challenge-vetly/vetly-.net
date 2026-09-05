@@ -1,4 +1,4 @@
-using System.Security.Cryptography;
+﻿using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Configuration;
@@ -27,7 +27,7 @@ public class TranscreverSegmentoHandler : IJobHandler
     private readonly IConfiguration _config;
     private readonly ILogger<TranscreverSegmentoHandler> _logger;
 
-    /// <summary>Validade da URL de leitura entregue ao motor (§5.3).</summary>
+    /// <summary>Validade da URL de leitura usada para buscar o áudio do segmento (§5.3).</summary>
     private static readonly TimeSpan ValidadeDaUrlDeAudio = TimeSpan.FromMinutes(15);
 
     public TranscreverSegmentoHandler(
@@ -68,13 +68,18 @@ public class TranscreverSegmentoHandler : IJobHandler
         var sessao = await _captura.ObterSessaoAsync(segmento.SessaoCapturaId)
             ?? throw new InvalidOperationException("Sessao de captura nao encontrada.");
 
-        // URL temporaria: o motor busca o audio direto no storage, sem a API proxiar bytes
+        // URL temporaria de leitura: e por ela que o adaptador alcanca o audio no storage
         var audio = await _storage.GerarUrlDeLeituraAsync(midia.ChaveStorage, ValidadeDaUrlDeAudio);
 
-        // O motor esta fora do processo: URL relativa e endereco que ele nao resolve.
-        // Conferir aqui, e nao so na configuracao do storage, porque este handler e o
-        // ultimo ponto antes de o endereco sair da Vetly — despachar lixo faria o
-        // segmento morrer no motor sem motivo aproveitavel no diagnostico.
+        // A URL precisa ser absoluta porque alguem vai busca-la: com a Fast Transcription
+        // do Azure quem baixa e a propria API — o audio vai inline na chamada, e o motor
+        // nao precisa mais alcancar o nosso storage. A exigencia, portanto, encolheu: o
+        // endereco tem de ser resolvivel POR NOS, e nao mais publicamente por terceiros.
+        // Ainda assim se confere aqui, que e o ultimo ponto antes de o endereco sair
+        // deste handler: caminho relativo nao resolve nem para a propria API, e o
+        // segmento morreria sem motivo aproveitavel no diagnostico. Outros adaptadores
+        // (Node-RED, motores que buscam o audio) continuam dependendo de a URL ser
+        // alcancavel de fora — e e Storage:PublicBaseUrl que decide isso.
         if (!Uri.TryCreate(audio.Url, UriKind.Absolute, out _))
         {
             segmento.RegistrarFalha(MotivoFalhaTranscricao.MotorIndisponivel);
@@ -86,7 +91,7 @@ public class TranscreverSegmentoHandler : IJobHandler
                 "Configure Storage:PublicBaseUrl.", segmento.Id, audio.Url);
 
             throw new InvalidOperationException(
-                $"A URL de audio do segmento {segmento.Id} nao e absoluta e o motor nao conseguiria baixa-la.");
+                $"A URL de audio do segmento {segmento.Id} nao e absoluta e nao seria possivel baixa-la.");
         }
 
         // O token amarra o callback ao segmento; a base guarda so o hash dele

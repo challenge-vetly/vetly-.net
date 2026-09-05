@@ -17,6 +17,25 @@ namespace Vetly.Application.Services;
 /// </summary>
 public class OllamaService : IOllamaService
 {
+    /// <summary>
+    /// Teto de tokens da resposta nas operacoes de sugestao pontual.
+    ///
+    /// Todas devolvem um objeto pequeno — uma lista de hipoteses, um protocolo, uma
+    /// triagem —, e 500 sobra para elas.
+    /// </summary>
+    private const int TokensDaResposta = 500;
+
+    /// <summary>
+    /// Teto proprio da estruturacao do prontuario (§5.4).
+    ///
+    /// O prontuario estruturado tem cinco campos e um deles e texto corrido: com 500
+    /// tokens o JSON trunca no meio, o parse falha e o fallback despeja o texto bruto na
+    /// anamnese. O custo aparece para o veterinario como "a IA nao estruturou" — que e o
+    /// sintoma errado para o diagnostico certo, e manda procurar o problema no modelo em
+    /// vez de no limite da resposta.
+    /// </summary>
+    private const int TokensDaEstruturacao = 1500;
+
     private readonly HttpClient _http;
     private readonly string _model;
 
@@ -117,9 +136,23 @@ public class OllamaService : IOllamaService
             throw new BusinessRuleException("RN-080",
                 "Nao ha transcricao para estruturar. A consulta segue pelo prontuario manual.");
 
-        var peso = contexto.PesoKg is { } kg && kg > 0
-            ? $"{kg} kg"
+        var temPeso = contexto.PesoKg is { } kg && kg > 0;
+
+        var peso = temPeso
+            ? $"{contexto.PesoKg} kg"
             : "nao informado";
+
+        // RN-081: dose sem peso e o erro clinico que a regra existe para impedir, e o
+        // campo `conduta` e exatamente onde a posologia aparece. O aviso PesoAusente
+        // continua indo ao rascunho, mas ele so alerta a interface — nao impede o texto
+        // de sair pronto e ser levado tal e qual para a receita. Escrever "Peso: nao
+        // informado" no prompt tambem nao impede: o modelo trata como dado faltante e
+        // preenche com a dose usual da especie. A guarda tem de ser instrucao explicita.
+        var semDose = temPeso
+            ? string.Empty
+            : "O peso do animal NAO esta cadastrado. NAO sugira dose, posologia nem " +
+              "quantidade de medicamento em nenhum campo. No campo conduta, cite o " +
+              "medicamento sem dose e registre que a dose depende do peso. ";
 
         var conhecido = new List<string>();
         if (contexto.Alergias.Count > 0)
@@ -159,6 +192,7 @@ public class OllamaService : IOllamaService
             $"Voce e um assistente veterinario. Estruture a transcricao de uma consulta em prontuario, " +
             $"usando SOMENTE o que foi dito. Nao invente sintomas, medicamentos, doses nem achados. " +
             $"{ressalva}" +
+            $"{semDose}" +
             $"Responda APENAS com um objeto JSON com os campos: anamnese, exameFisico, " +
             $"hipotesesDiagnosticas (array de strings, da mais provavel a menos), conduta e orientacoes. " +
             $"Campo sem informacao na transcricao deve vir como string vazia ou array vazio.\n\n" +
@@ -169,7 +203,7 @@ public class OllamaService : IOllamaService
             $"{historico}" +
             $"Transcricao da consulta:\n{contexto.Transcricao}";
 
-        var resposta = await EnviarAsync(prompt);
+        var resposta = await EnviarAsync(prompt, TokensDaEstruturacao);
 
         return ParsearOuPadrao<ConsultaEstruturadaDto>(resposta) ?? new ConsultaEstruturadaDto
         {
@@ -186,6 +220,10 @@ public class OllamaService : IOllamaService
     /// da IA.
     /// </summary>
     /// <param name="prompt">Prompt ja montado pelo metodo chamador.</param>
+    /// <param name="numPredict">
+    /// Teto de tokens da resposta. O padrao serve as sugestoes pontuais; so a
+    /// estruturacao do prontuario precisa de mais, e pede explicitamente.
+    /// </param>
     /// <param name="operacao">
     /// Preenchido automaticamente pelo compilador com o nome do metodo que chamou
     /// (<see cref="CallerMemberNameAttribute"/>). E o que permite separar, na metrica,
@@ -199,14 +237,15 @@ public class OllamaService : IOllamaService
     /// uma consulta que demorou 40 segundos e indistinguivel de uma API lenta; com ela,
     /// o histograma mostra imediatamente que 38 desses segundos foram do modelo.
     /// </remarks>
-    private async Task<string> EnviarAsync(string prompt, [CallerMemberName] string operacao = "")
+    private async Task<string> EnviarAsync(
+        string prompt, int numPredict = TokensDaResposta, [CallerMemberName] string operacao = "")
     {
         var payload = new OllamaRequest
         {
             Model = _model,
             Prompt = prompt,
             Stream = false,
-            Options = new OllamaOptions { Temperature = 0.3f, NumPredict = 500 }
+            Options = new OllamaOptions { Temperature = 0.3f, NumPredict = numPredict }
         };
 
         var json = JsonSerializer.Serialize(payload, _jsonOptions);

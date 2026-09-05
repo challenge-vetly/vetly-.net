@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
@@ -213,24 +213,54 @@ public class CapturaFluxoTests
         var sessao = await IniciarAsync(consultaId, prestador);
         var gravacao = sessao.GetProperty("gravacao");
 
-        // A REST API de short audio do Azure aceita WAV/PCM e OGG/OPUS, 16 kHz mono, e
-        // recusa WebM: instruir o front a gravar WebM seria garantir 400 em todo trecho
-        Assert.Equal("audio/ogg;codecs=opus", gravacao.GetProperty("formato").GetString());
+        // WebM porque e o que o MediaRecorder do Chromium grava, e a Fast Transcription
+        // do Azure le nativamente. A instrucao anterior era OGG, que so o Firefox grava:
+        // na pratica a captura nao funcionava no navegador da clinica
+        Assert.Equal("audio/webm;codecs=opus", gravacao.GetProperty("formato").GetString());
         Assert.Equal(16000, gravacao.GetProperty("sampleRate").GetInt32());
         Assert.Equal(30, gravacao.GetProperty("segundosPorSegmento").GetInt32());
     }
 
     [Fact]
-    public async Task Midia_AceitaOFormatoQueOsParametrosDeGravacaoPedem()
+    public async Task Iniciar_ListaOsFormatosAceitosEmOrdemDePreferencia()
     {
+        var (_, prestador, consultaId) = await ConsultaPronataParaAtenderAsync();
+
+        var sessao = await IniciarAsync(consultaId, prestador);
+        var gravacao = sessao.GetProperty("gravacao");
+
+        var aceitos = gravacao.GetProperty("formatosAceitos")
+            .EnumerateArray().Select(f => f.GetString()).ToList();
+
+        // Nenhum formato unico cobre todos os navegadores: a lista existe para o front
+        // negociar com MediaRecorder.isTypeSupported() em vez de fixar no codigo a
+        // escolha que so vale no navegador em que foi testado
+        Assert.Equal(gravacao.GetProperty("formato").GetString(), aceitos.First());
+        Assert.Contains("audio/ogg;codecs=opus", aceitos);
+        Assert.Contains("audio/wav", aceitos);
+    }
+
+    [Fact]
+    public async Task Midia_AceitaTodosOsFormatosQueOsParametrosDeGravacaoOferecem()
+    {
+        var (_, prestador, consultaId) = await ConsultaPronataParaAtenderAsync();
         var dono = await CriarResponsavelAsync();
 
-        var url = await LerAsync(await EnviarAsync(HttpMethod.Post, "/api/midia/upload-url", dono.Token,
-            """{"tipo":"AudioConsulta","contentType":"audio/ogg;codecs=opus"}"""), HttpStatusCode.Created);
+        var gravacao = (await IniciarAsync(consultaId, prestador)).GetProperty("gravacao");
 
-        // O formato que a API manda gravar tem de ser o mesmo que ela aceita no upload
-        Assert.NotEqual(Guid.Empty, url.GetProperty("midiaId").GetGuid());
-        Assert.Equal("audio/ogg;codecs=opus", url.GetProperty("contentType").GetString());
+        var aceitos = gravacao.GetProperty("formatosAceitos")
+            .EnumerateArray().Select(f => f.GetString()!).ToList();
+
+        // Todo formato que a API manda gravar tem de ser aceito no upload: oferecer um
+        // que o upload recusa deixaria o front sem conseguir nem enviar o trecho
+        foreach (var formato in aceitos)
+        {
+            var url = await LerAsync(await EnviarAsync(HttpMethod.Post, "/api/midia/upload-url", dono.Token,
+                $$"""{"tipo":"AudioConsulta","contentType":"{{formato}}"}"""), HttpStatusCode.Created);
+
+            Assert.NotEqual(Guid.Empty, url.GetProperty("midiaId").GetGuid());
+            Assert.Equal(formato, url.GetProperty("contentType").GetString());
+        }
     }
 
     // ── Andaimes ─────────────────────────────────────────────────────────────

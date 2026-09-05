@@ -242,8 +242,13 @@ public class RascunhoService : IRascunhoService
         var temColmeia = await _colmeia.PodeAcessarAsync(
             vetId, animal.Id, EscopoAcessoColmeia.HistoricoCompleto);
 
+        // O ator vai explicito porque este metodo roda dentro de um job: nao ha
+        // requisicao HTTP, e o IUsuarioAtual que a sobrecarga curta consulta traria
+        // VeterinarioId nulo. O log sairia sem quem leu — e ele e exatamente o registro
+        // que a RN-067 torna visivel ao Responsavel. Quem le em nome do veterinario
+        // continua sendo o veterinario, mesmo quando quem executa a leitura e a IA.
         await _colmeia.RegistrarAcessoAsync(
-            animal.Id, EscopoAcessoColmeia.HistoricoCompleto, temColmeia,
+            vetId, animal.Id, EscopoAcessoColmeia.HistoricoCompleto, temColmeia,
             "IA: estruturacao do prontuario");
 
         // O historico clinico vive no prontuario; a consulta diz apenas quem o

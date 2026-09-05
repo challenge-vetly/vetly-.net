@@ -1,4 +1,4 @@
-using System.Text;
+﻿using System.Text;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
@@ -241,8 +241,9 @@ switch (adaptadorStt)
             client.DefaultRequestHeaders.Add("Ocp-Apim-Subscription-Key", azure.Chave);
             client.DefaultRequestHeaders.Accept.ParseAdd("application/json");
 
-            // Um trecho tem ~30s de audio e a API de short audio aceita ate 60s: 60s de
-            // timeout e folga suficiente e curta o bastante para o backoff agir.
+            // Um trecho tem ~30s de audio e a Fast Transcription e sincrona: responde em
+            // poucos segundos para um segmento desse tamanho. 60s de timeout e folga
+            // suficiente e curta o bastante para o backoff agir.
             client.Timeout = TimeSpan.FromSeconds(60);
         });
 

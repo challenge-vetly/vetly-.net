@@ -118,6 +118,8 @@ aponta para o lugar errado é pior do que nenhuma.
 | RN-083 | O conteúdo do documento é formatação do estado final aprovado, lido da trilha de auditoria; sem conteúdo aprovado, não se gera documento | `DocumentoService.ObterConteudoAprovadoAsync` + factories |
 | RN-086 | O subtipo do atestado muda o texto do documento (óbito, saúde, vacinação), e não apenas o rótulo | `AtestadoFactory.Declaracao` |
 | RN-090 | Documento gerado vira PDF no storage, com URL sempre temporária; publicar no board é passo separado, e receita só vai ao board assinada | `IGeradorDePdf` + `DocumentoService.PublicarAsync` |
+| RN-010 | A decisão do veterinário em `validar-diagnostico` (`Aprovado`/`Corrigido`) **habilita** a emissão; ela não a executa. Cada documento é emitido por ato explícito do profissional, um por tipo — o sistema não gera o conjunto sozinho (ver a nota abaixo) | `ProntuarioService.DecidirAsync` habilita · `DocumentoService.GerarAsync` emite |
+| RN-011 | A publicação no board é automática assim que o documento é gerado e assinado: publicar grava `PublicadoEm`, entra no histórico do animal e dispara a notificação `DocumentoPublicado` ao Responsável | `DocumentoService.PublicarAsync` + `TipoNotificacao.DocumentoPublicado` |
 | RN-087 (C-04) | Finalizar exige que todo documento **já emitido** que precise de assinatura esteja assinado — receita e atestado; consulta que não prescreveu nada finaliza normalmente | `Documento.PendenteDeAssinatura` + `ConsultaService.FinalizarAsync` |
 | RN-087 | Assinatura por adaptador: nome digitado conferido contra o registrado, carimbo no corpo do documento dizendo como foi assinado e o que não habilita | `IAssinaturaAdapter` + `AssinaturaAdapterNomeDigitado` |
 | RN-088 | Correção cria nova versão do documento (original preservado com `VersaoOriginalId`) | `DocumentoService.CorrigirAsync` |
@@ -135,6 +137,40 @@ aponta para o lugar errado é pior do que nenhuma.
 | PAGAMENTO-001 | Split exige `ConsultaId` preenchido no pagamento | `PagamentoService.ProcessarSplitAsync` |
 | TUTOR-001 | Tutor não encontrado | `TutorService` |
 | LEMBRETE-001 | Lembrete não encontrado | `LembreteService` |
+
+---
+
+## Emissão de documentos: por que o veterinário escolhe (RN-010/RN-011)
+
+RN-010 ("o sistema gera prontuário, atestado, receita e NF") e RN-011 ("uma automação
+publica os documentos") leem como emissão automática ao encerrar a consulta. A
+implementação exige que o veterinário chame
+`POST /api/documentos/consulta/{id}?tipo={TipoDocumento}` para cada documento que decidir
+emitir. A divergência é **deliberada**, e está registrada aqui para que quem auditar a
+rastreabilidade não a trate como defeito.
+
+**O gatilho é a decisão, não o encerramento.** `validar-diagnostico` com `Aprovado` ou
+`Corrigido` fixa o estado final aprovado e destrava a emissão (RN-082). `NaoAprovado`
+encerra o ciclo sem documento nenhum. Nada é emitido antes dessa decisão, e o que a
+emissão faz depois é **formatar o estado final** — não inferir clínica nova (RN-083).
+
+**A emissão de cada documento é ato do profissional, por tipo.** Atestado de saúde, de
+óbito e de transporte são **atos privativos do médico veterinário**: emitir por default
+transformaria um ato privativo em efeito colateral de encerrar a consulta — a plataforma
+afirmaria, em nome de um profissional habilitado, algo que ele não escolheu afirmar. O
+mesmo vale para a receita: nem toda consulta prescreve, e gerar receita sempre levaria o
+veterinário a assinar documento vazio só para conseguir fechar o atendimento (é a mesma
+razão do C-04 na RN-087).
+
+**A publicação, essa sim, é automática.** Uma vez gerado e assinado, o documento vai ao
+board do pet por `POST /api/documentos/{id}/publicar`, entra no histórico do animal e
+dispara a notificação `DocumentoPublicado` ao Responsável. O que a RN-011 descreve
+funciona; o que não existe é a automação que decide **quais** documentos existem.
+
+**Fecho do ciclo.** Como não há job de geração declarando o ciclo terminado, quem o fecha
+é `POST /api/consultas/{id}/finalizar`, o mesmo ato que a RN-087 já exige do profissional:
+ele leva a sessão de captura a `Concluida` e devolve esse estado, que é o que tira o app
+do polling.
 
 ---
 

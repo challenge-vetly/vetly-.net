@@ -107,3 +107,32 @@ public class NoShowRegistradoDto
 
     public DateTime RegistradoEm { get; set; }
 }
+
+/// <summary>
+/// Resultado do fecho documental da consulta (RN-087, §7.3).
+///
+/// Devolve o estado da sessão de captura porque é o que tira o app do polling: o
+/// veterinário escolhe quais documentos emitir, então nenhuma automação declara o
+/// ciclo fechado — quem fecha é este ato, e o app precisa vê-lo na resposta.
+/// </summary>
+public class ConsultaFinalizadaDto
+{
+    public Guid ConsultaId { get; set; }
+
+    /// <summary>
+    /// Estado da consulta, que permanece <c>Realizada</c>: o atendimento é o que a
+    /// máquina de estados registra (RN-038), e o fecho documental é outra coisa.
+    /// </summary>
+    public StatusConsulta StatusConsulta { get; set; }
+
+    /// <summary>Fecho documental concluído — é o que esta chamada acabou de fazer.</summary>
+    public bool Finalizada { get; set; }
+
+    /// <summary>
+    /// Estado do ciclo de documentação (§7.3), ou nulo quando não houve captura —
+    /// consulta de emergência atendida sem sessão aberta.
+    /// </summary>
+    public EstadoSessaoCaptura? EstadoDaSessao { get; set; }
+
+    public DateTime FinalizadaEm { get; set; }
+}
