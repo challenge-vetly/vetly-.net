@@ -366,6 +366,21 @@ public class PagamentoWebhookTests
     }
 
     [Fact]
+    public async Task Webhook_ReentregueDepoisDeConfirmado_NaoAvisaDuasVezes()
+    {
+        // Reentrega e o comportamento normal de um webhook, e notificacao duplicada e
+        // o jeito mais rapido de o Responsavel desligar o push da plataforma inteira.
+        CenarioEmCheckout();
+        EventoDoProvedor(StatusPagamento.Confirmado);
+
+        await CriarServico().ProcessarWebhookAsync("{}", "token");
+        await CriarServico().ProcessarWebhookAsync("{}", "token");
+
+        _notificacoes.Verify(n => n.CriarAsync(It.Is<CriarNotificacaoDto>(
+            d => d.Tipo == TipoNotificacao.ConsultaConfirmada)), Times.Once);
+    }
+
+    [Fact]
     public async Task Webhook_NaoAssinado_ERecusado()
     {
         CenarioEmCheckout();
