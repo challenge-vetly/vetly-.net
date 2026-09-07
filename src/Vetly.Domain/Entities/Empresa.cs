@@ -46,6 +46,15 @@ public class Empresa
     /// </summary>
     public decimal PercentualRetencaoParcial { get; private set; }
 
+    /// <summary>
+    /// Conta em que a unidade recebe o repasse (§4.1, RN-072).
+    ///
+    /// É a conta do estabelecimento, e não a de nenhum profissional: quando o vet é
+    /// vinculado, o repasse do split vai para a empresa, e o que a clínica paga a
+    /// cada um é relação interna que a plataforma não toca (§4.1, §7.3).
+    /// </summary>
+    public DadosDeRepasse? DadosDeRepasse { get; private set; }
+
     /// <summary>Plano de assinatura da unidade, que define o take rate (RN-070/RN-072).</summary>
     public PlanoAssinatura Plano { get; private set; }
 
@@ -92,6 +101,13 @@ public class Empresa
     {
         ArgumentNullException.ThrowIfNull(endereco);
         Endereco = endereco;
+    }
+
+    /// <summary>Define ou substitui a conta de repasse da unidade (§4.1).</summary>
+    public void DefinirDadosDeRepasse(DadosDeRepasse dados)
+    {
+        ArgumentNullException.ThrowIfNull(dados);
+        DadosDeRepasse = dados;
     }
 
     /// <summary>

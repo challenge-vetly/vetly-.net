@@ -1,6 +1,7 @@
 ﻿using System.Text;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Scalar.AspNetCore;
@@ -48,6 +49,13 @@ builder.Configuration
 // qualquer valor versionado por engano.
 builder.Configuration.AddEnvironmentVariables();
 
+// ── Guarda de segredos (§ Deploy) ─────────────────────────────────────────────
+// Roda com a configuracao ja completa e antes de qualquer servico ser registrado:
+// em Producao, subir com a chave de exemplo do appsettings versionado seria assinar
+// JWT com uma chave publicada no repositorio. Falha aqui e falha de deploy, que e o
+// unico momento em que alguem esta olhando.
+GuardaDeSegredos.Conferir(builder.Configuration, builder.Environment);
+
 // ── Observabilidade (§ Monitoramento) ─────────────────────────────────────────
 // Registrada antes de tudo de proposito: falha na composicao do container e um erro
 // de startup, e sem log configurado ele sai como texto cru no console e some.
@@ -84,6 +92,24 @@ builder.Services
 
 // ── OpenAPI / Scalar ─────────────────────────────────────────────────────────
 builder.Services.AddOpenApi();
+
+// ── Cabecalhos de proxy reverso (§ Deploy) ───────────────────────────────────
+// Em container a API fala HTTP com o ingress, e e o ingress que termina o TLS. Sem
+// isto o Kestrel enxerga toda requisicao como http://<ip-interno>, e tres coisas
+// saem erradas ao mesmo tempo: o UseHttpsRedirection abaixo redireciona quem JA veio
+// por HTTPS, as URLs absolutas (CreatedAtAction, a URL assinada do storage) apontam
+// para o endereco interno, e o log registra o IP do proxy como se fosse o do cliente.
+//
+// KnownNetworks/KnownProxies sao limpos porque em Kubernetes e nos PaaS o proxy fica
+// numa faixa que muda: a lista branca padrao (loopback) rejeitaria o cabecalho
+// legitimo. A protecao aqui e a topologia — a porta da aplicacao nao e exposta
+// diretamente —, e nao a origem do salto.
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    options.KnownNetworks.Clear();
+    options.KnownProxies.Clear();
+});
 
 // ── Database — Oracle EF Core ────────────────────────────────────────────────
 builder.Services.AddDbContext<VetlyDbContext>(options =>
@@ -429,6 +455,11 @@ var app = builder.Build();
 //   3. Metricas HTTP  — mesma razao: mede o tempo que o cliente esperou de verdade,
 //                       incluindo o custo de montar a resposta de erro.
 //   4. Excecoes       — o mais interno dos quatro: converte excecao em ProblemDetails.
+// Antes de tudo: o esquema e o IP corrigidos aqui sao os que o log de requisicoes, as
+// metricas e o UseHttpsRedirection vao enxergar. Depois do primeiro middleware ja e
+// tarde — o CorrelationId registraria o IP do proxy.
+app.UseForwardedHeaders();
+
 app.UseMiddleware<CorrelationIdMiddleware>();
 app.UseLogDeRequisicoes();
 app.UseMiddleware<MetricasHttpMiddleware>();

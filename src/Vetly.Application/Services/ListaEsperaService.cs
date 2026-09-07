@@ -1,5 +1,6 @@
 using Vetly.Application.DTOs.Consulta;
 using Vetly.Application.DTOs.ListaEspera;
+using Vetly.Application.DTOs.Notificacao;
 using Vetly.Application.Exceptions;
 using Vetly.Application.Interfaces;
 using Vetly.Domain.Entities;
@@ -20,7 +21,17 @@ public class ListaEsperaService : IListaEsperaService
     private readonly IVeterinarioRepository _vetRepo;
     private readonly IAgendaRepository _agendaRepo;
     private readonly IConsultaService _consultaService;
+    private readonly INotificacaoService _notificacoes;
     private readonly IUsuarioAtual _usuario;
+
+    /// <summary>
+    /// Janela de prioridade sobre a vaga oferecida, repetida no aviso (RN-037).
+    ///
+    /// Vem de <see cref="ItemListaEspera.JanelaDePrioridade"/> e não de um número
+    /// solto: o texto que o Responsável lê tem de dizer o mesmo prazo que o domínio
+    /// vai cobrar — prometer trinta minutos e expirar em quinze é pior que não avisar.
+    /// </summary>
+    private static int MinutosDePrioridade => (int)ItemListaEspera.JanelaDePrioridade.TotalMinutes;
 
     public ListaEsperaService(
         IListaEsperaRepository repo,
@@ -28,6 +39,7 @@ public class ListaEsperaService : IListaEsperaService
         IVeterinarioRepository vetRepo,
         IAgendaRepository agendaRepo,
         IConsultaService consultaService,
+        INotificacaoService notificacoes,
         IUsuarioAtual usuario)
     {
         _repo = repo;
@@ -35,6 +47,7 @@ public class ListaEsperaService : IListaEsperaService
         _vetRepo = vetRepo;
         _agendaRepo = agendaRepo;
         _consultaService = consultaService;
+        _notificacoes = notificacoes;
         _usuario = usuario;
     }
 
@@ -158,7 +171,41 @@ public class ListaEsperaService : IListaEsperaService
         _repo.Atualizar(proximo);
         await _repo.SalvarAsync();
 
+        // §3.4/§6.2: a vaga aberta e um dos eventos que a matriz de canais exige
+        // avisar. Sem isto o estado do pedido dizia "Notificado" e ninguem tinha sido
+        // notificado — a prioridade de 15 minutos corria contra alguem que nao sabia
+        // que ela tinha comecado, e a fila expirava sozinha ate o fim.
+        await AvisarVagaAbertaAsync(proximo, slot);
+
         return await MapearAsync(proximo);
+    }
+
+    /// <summary>
+    /// Avisa o primeiro da fila de que a vaga abriu (RN-037/RN-092).
+    ///
+    /// O aviso carrega o horário e o prazo porque a resposta é em um toque: quem lê
+    /// "abriu vaga" sem saber quando é nem até quando pode responder tem de abrir o
+    /// app para descobrir as duas coisas, e a janela é de quinze minutos.
+    ///
+    /// Falha de notificação não desfaz a oferta. O pedido já está gravado como
+    /// <c>Notificado</c>, e derrubar aqui deixaria a vaga sem dono enquanto o próximo
+    /// da fila continuaria esperando — o pior dos dois desfechos.
+    /// </summary>
+    private async Task AvisarVagaAbertaAsync(ItemListaEspera item, Slot slot)
+    {
+        var vet = await _vetRepo.ObterPorIdAsync(item.VeterinarioId);
+        var comQuem = vet is null ? "seu veterinario" : vet.Nome;
+
+        await _notificacoes.CriarAsync(new CriarNotificacaoDto
+        {
+            TutorId = item.TutorId,
+            Tipo = TipoNotificacao.HorarioDisponivel,
+            Titulo = "Abriu vaga na sua lista de espera",
+            Corpo = $"Abriu um horario com {comQuem} em {slot.Inicio:dd/MM 'as' HH:mm} (UTC). " +
+                    $"Confirme em ate {MinutosDePrioridade} minutos para garantir a vaga.",
+            AnimalId = item.AnimalId,
+            Destino = $"/lista-espera/{item.Id}"
+        });
     }
 
     private async Task<ItemListaEspera> ObterComPosseAsync(Guid id)

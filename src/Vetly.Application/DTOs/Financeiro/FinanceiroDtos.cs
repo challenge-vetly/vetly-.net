@@ -59,6 +59,16 @@ public class RepassePorDestinatarioDto
 
     /// <summary>O que falta pagar a este destinatário.</summary>
     public decimal RepassePendente { get; set; }
+
+    /// <summary>
+    /// Verdadeiro quando o destinatário já informou a conta de repasse (§4.1).
+    ///
+    /// É um <b>booleano</b>, e nunca a conta: a §7.3 veda ao administrador os dados
+    /// bancários pessoais dos vets vinculados, e o que a operação precisa saber aqui é
+    /// se dá para pagar — não para onde. Falso com repasse pendente é a linha que
+    /// trava o fechamento, e é por isso que ela aparece.
+    /// </summary>
+    public bool RepasseConfigurado { get; set; }
 }
 
 /// <summary>Pedido de liquidação em lote (RN-071/RN-072).</summary>

@@ -184,6 +184,110 @@ public class ConsultaServiceTests
         Assert.Equal(200m, resultado.ValorReembolso);
     }
 
+// ── Aviso do desfecho do cancelamento (§6.2, Fluxo 3) ────────────────────
+
+    /// <summary>Monta um cancelamento pronto para rodar e devolve a consulta.</summary>
+    private Consulta PrepararCancelamento(double horasDeAntecedencia, decimal valor = 200m)
+    {
+        var consulta = new Consulta(
+            DateTime.UtcNow.AddHours(horasDeAntecedencia), ModalidadeAtendimento.Presencial,
+            Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
+
+        var pagamento = new Pagamento(Guid.NewGuid(), valor, MeioPagamento.Pix, consulta.Id);
+        pagamento.Confirmar();
+
+        _repoMock.Setup(r => r.ObterPorIdAsync(consulta.Id)).ReturnsAsync(consulta);
+        _pagamentoRepoMock.Setup(r => r.ObterPorConsultaAsync(consulta.Id)).ReturnsAsync(pagamento);
+        _repoMock.Setup(r => r.Atualizar(It.IsAny<Consulta>()));
+        _pagamentoRepoMock.Setup(r => r.Atualizar(It.IsAny<Pagamento>()));
+        _repoMock.Setup(r => r.SalvarAsync()).ReturnsAsync(1);
+
+        return consulta;
+    }
+
+    private ConsultaService ServicoComStrategies() => CriarServico(
+        new ReembolsoIntegralStrategy(), new ReembolsoParcialStrategy(), new SemReembolsoStrategy());
+
+    [Fact]
+    public async Task CancelarAsync_PeloProprioResponsavel_AvisaComoReembolsoConfirmado()
+    {
+        var consulta = PrepararCancelamento(25);
+
+        _usuarioMock.SetupGet(u => u.EhAdmin).Returns(false);
+        _usuarioMock.SetupGet(u => u.TutorId).Returns(consulta.TutorId);
+
+        CriarNotificacaoDto? aviso = null;
+        _notificacoesMock.Setup(n => n.CriarAsync(It.IsAny<CriarNotificacaoDto>()))
+            .Callback<CriarNotificacaoDto>(d => aviso = d)
+            .ReturnsAsync(new NotificacaoDto());
+
+        await ServicoComStrategies().CancelarAsync(consulta.Id);
+
+        Assert.NotNull(aviso);
+        Assert.Equal(TipoNotificacao.ReembolsoConfirmado, aviso!.Tipo);
+        Assert.Equal(consulta.TutorId, aviso.TutorId);
+    }
+
+    [Fact]
+    public async Task CancelarAsync_PelaOperacao_AvisaComoCancelamentoPeloPrestador()
+    {
+        // Fluxo 6: quem cancela e o Admin, e nao o Responsavel. Mandar "cancelamento
+        // confirmado" para quem nao cancelou nada leria como confirmacao de um ato dele.
+        var consulta = PrepararCancelamento(25);
+
+        CriarNotificacaoDto? aviso = null;
+        _notificacoesMock.Setup(n => n.CriarAsync(It.IsAny<CriarNotificacaoDto>()))
+            .Callback<CriarNotificacaoDto>(d => aviso = d)
+            .ReturnsAsync(new NotificacaoDto());
+
+        await ServicoComStrategies().CancelarAsync(consulta.Id);
+
+        Assert.NotNull(aviso);
+        Assert.Equal(TipoNotificacao.CancelamentoPeloPrestador, aviso!.Tipo);
+    }
+
+    [Fact]
+    public async Task CancelarAsync_SemReembolso_AindaAssimAvisa()
+    {
+        // E justamente no zero que o Responsavel reclama de nao ter sido avisado.
+        var consulta = PrepararCancelamento(1);
+
+        CriarNotificacaoDto? aviso = null;
+        _notificacoesMock.Setup(n => n.CriarAsync(It.IsAny<CriarNotificacaoDto>()))
+            .Callback<CriarNotificacaoDto>(d => aviso = d)
+            .ReturnsAsync(new NotificacaoDto());
+
+        var resultado = await ServicoComStrategies().CancelarAsync(consulta.Id);
+
+        Assert.Equal(0m, resultado.ValorReembolso);
+        Assert.NotNull(aviso);
+        Assert.Contains("Sem reembolso", aviso!.Corpo);
+    }
+
+    [Fact]
+    public async Task CancelarAsync_CheckoutNaoPago_NaoAvisaReembolso()
+    {
+        // O dinheiro nunca entrou, e o Responsavel nao comprou nada: avisar sobre
+        // reembolso de um checkout abandonado e ruido.
+        var consulta = new Consulta(
+            DateTime.UtcNow.AddHours(25), ModalidadeAtendimento.Presencial,
+            Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
+
+        var pagamento = new Pagamento(Guid.NewGuid(), 200m, MeioPagamento.Pix, consulta.Id);
+
+        _repoMock.Setup(r => r.ObterPorIdAsync(consulta.Id)).ReturnsAsync(consulta);
+        _pagamentoRepoMock.Setup(r => r.ObterPorConsultaAsync(consulta.Id)).ReturnsAsync(pagamento);
+        _repoMock.Setup(r => r.Atualizar(It.IsAny<Consulta>()));
+        _pagamentoRepoMock.Setup(r => r.Atualizar(It.IsAny<Pagamento>()));
+        _repoMock.Setup(r => r.SalvarAsync()).ReturnsAsync(1);
+        _pagamentoRepoMock.Setup(r => r.SalvarAsync()).ReturnsAsync(1);
+
+        await ServicoComStrategies().CancelarAsync(consulta.Id);
+
+        _notificacoesMock.Verify(n => n.CriarAsync(
+            It.Is<CriarNotificacaoDto>(d => d.Tipo == TipoNotificacao.ReembolsoConfirmado)), Times.Never);
+    }
+
     // ── Checkout com lock (RN-035, C-02) ─────────────────────────────────────
 
     /// <summary>Monta o cenario feliz do checkout e devolve os ids envolvidos.</summary>

@@ -22,6 +22,9 @@ public class DashboardVeterinarioTests
     private readonly Mock<IDocumentoRepository> _documentoRepo = new();
     private readonly Mock<ICapturaRepository> _capturaRepo = new();
     private readonly Mock<IAvaliacaoRepository> _avaliacaoRepo = new();
+    private readonly Mock<ILembreteRepository> _lembreteRepo = new();
+    private readonly Mock<IEmpresaRepository> _empresaRepo = new();
+    private readonly Mock<IAgendaRepository> _agendaRepo = new();
     private readonly Mock<IUsuarioAtual> _usuario = new();
 
     private readonly Veterinario _vet;
@@ -42,11 +45,16 @@ public class DashboardVeterinarioTests
         _capturaRepo.Setup(r => r.ObterSessaoDaConsultaAsync(It.IsAny<Guid>())).ReturnsAsync((SessaoCaptura?)null);
         _capturaRepo.Setup(r => r.ObterRascunhoDaConsultaAsync(It.IsAny<Guid>())).ReturnsAsync((RascunhoIa?)null);
         _pagamentoRepo.Setup(r => r.ObterPorConsultaAsync(It.IsAny<Guid>())).ReturnsAsync((Pagamento?)null);
+
+        _lembreteRepo.Setup(r => r.ObterEscaladosParaClinicaAsync(It.IsAny<DateTime>())).ReturnsAsync([]);
+        _agendaRepo.Setup(r => r.ObterSlotsAsync(It.IsAny<Guid>(), It.IsAny<DateTime>(), It.IsAny<DateTime>()))
+            .ReturnsAsync([]);
     }
 
     private DashboardService CriarServico() =>
         new(_consultaRepo.Object, _vetRepo.Object, _animalRepo.Object, _pagamentoRepo.Object,
-            _documentoRepo.Object, _capturaRepo.Object, _avaliacaoRepo.Object, _usuario.Object);
+            _documentoRepo.Object, _capturaRepo.Object, _avaliacaoRepo.Object, _lembreteRepo.Object,
+            _empresaRepo.Object, _agendaRepo.Object, _usuario.Object);
 
     private Animal Animal(string nome = "Thor", decimal? peso = 28m)
     {

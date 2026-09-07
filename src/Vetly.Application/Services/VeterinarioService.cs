@@ -1,6 +1,7 @@
 using System.Text.RegularExpressions;
 using Vetly.Application.DTOs.Comum;
 using Vetly.Application.DTOs.Consulta;
+using Vetly.Application.DTOs.Repasse;
 using Vetly.Application.DTOs.Veterinario;
 using Vetly.Application.Exceptions;
 using Vetly.Application.Interfaces;
@@ -47,6 +48,78 @@ public class VeterinarioService : IVeterinarioService
         _pagamentoRepo = pagamentoRepo;
         _usuario = usuario;
     }
+
+
+    /// <inheritdoc/>
+    public async Task<DadosDeRepasseDto> ObterDadosDeRepasseAsync()
+    {
+        var vet = await VeterinarioDoTokenAsync();
+
+        return MapearRepasse(vet.Id, vet.DadosDeRepasse);
+    }
+
+    /// <inheritdoc/>
+    public async Task<DadosDeRepasseDto> DefinirDadosDeRepasseAsync(DefinirDadosDeRepasseDto dto)
+    {
+        var vet = await VeterinarioDoTokenAsync();
+
+        // As invariantes do documento e dos campos obrigatorios moram no value object,
+        // e nao aqui: quem constroi um DadosDeRepasse por qualquer caminho — servico,
+        // seed, teste — passa pelas mesmas regras.
+        try
+        {
+            vet.DefinirDadosDeRepasse(new DadosDeRepasse(
+                dto.Banco, dto.Agencia, dto.Conta, dto.DocumentoTitular, dto.ChavePix));
+        }
+        catch (ArgumentException ex)
+        {
+            throw new ValidationException(ex.ParamName ?? "dadosDeRepasse", ex.Message);
+        }
+
+        _repo.Atualizar(vet);
+        await _repo.SalvarAsync();
+
+        return MapearRepasse(vet.Id, vet.DadosDeRepasse);
+    }
+
+    /// <summary>
+    /// O veterinario da requisicao, lido do token (RN-105/RN-106).
+    ///
+    /// Conta bancaria e o caso em que a §7.3 e mais explicita: nem o Admin da unidade
+    /// alcanca a do vinculado. Por isso a identidade vem da claim e nao ha id de
+    /// veterinario em nenhuma das duas assinaturas.
+    /// </summary>
+    private async Task<Veterinario> VeterinarioDoTokenAsync()
+    {
+        var vetId = _usuario.VeterinarioId
+            ?? throw new AcessoNegadoException("RN-106",
+                "A conta de repasse e do proprio veterinario. Entre com um cadastro de veterinario.");
+
+        return await _repo.ObterPorIdAsync(vetId)
+            ?? throw new NotFoundException("Veterinario", vetId);
+    }
+
+    /// <summary>
+    /// Monta a resposta da conta de repasse (§7.3).
+    ///
+    /// Conta e chave Pix saem mascaradas pelo proprio value object — a decisao de o
+    /// que esconder e do dominio, e nao de cada mapeamento que por acaso lembrar de
+    /// aplica-la.
+    /// </summary>
+    internal static DadosDeRepasseDto MapearRepasse(Guid titularId, DadosDeRepasse? dados) =>
+        dados is null
+            ? new DadosDeRepasseDto { TitularId = titularId, Configurado = false }
+            : new DadosDeRepasseDto
+            {
+                TitularId = titularId,
+                Configurado = true,
+                Banco = dados.Banco,
+                Agencia = dados.Agencia,
+                Conta = dados.ContaMascarada(),
+                DocumentoTitular = dados.DocumentoTitular,
+                ChavePix = dados.ChavePixMascarada(),
+                AtualizadoEm = dados.AtualizadoEm
+            };
 
     /// <inheritdoc/>
     public async Task<ExtratoDoVeterinarioDto> ObterExtratoAsync(DateTime? inicio, DateTime? fim)

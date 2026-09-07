@@ -1,5 +1,6 @@
 using Moq;
 using Vetly.Application.DTOs.Fidelidade;
+using Vetly.Application.DTOs.Notificacao;
 using Vetly.Application.Exceptions;
 using Vetly.Application.Interfaces;
 using Vetly.Application.Services;
@@ -21,6 +22,7 @@ public class FidelidadeTests
     private readonly Mock<IFidelidadeRepository> _repo = new();
     private readonly Mock<IConsultaRepository> _consultaRepo = new();
     private readonly Mock<IPagamentoRepository> _pagamentoRepo = new();
+    private readonly Mock<INotificacaoService> _notificacoes = new();
     private readonly Mock<IUsuarioAtual> _usuario = new();
 
     private readonly Guid _tutorId = Guid.NewGuid();
@@ -50,7 +52,8 @@ public class FidelidadeTests
     }
 
     private FidelidadeService CriarServico() =>
-        new(_repo.Object, _consultaRepo.Object, _pagamentoRepo.Object, _usuario.Object);
+        new(_repo.Object, _consultaRepo.Object, _pagamentoRepo.Object,
+            _notificacoes.Object, _usuario.Object);
 
     /// <summary>Coloca um crédito direto no extrato, sem passar pelo serviço.</summary>
     private MovimentoDePontos Credito(decimal valorPago, TierFidelidade tier = TierFidelidade.Bronze)
@@ -90,6 +93,67 @@ public class FidelidadeTests
         Categoria = CategoriaItem.Alimentacao,
         Pontos = pontos
     };
+
+// ── Aviso de pontos creditados e mudanca de tier (RN-016, §6.2) ──────────
+
+    [Fact]
+    public async Task CreditarPorConsulta_AvisaOResponsavelComTipoPontosCreditados()
+    {
+        var consulta = AtendimentoPago(150m);
+
+        await CriarServico().CreditarPorConsultaAsync(consulta.Id);
+
+        _notificacoes.Verify(n => n.CriarAsync(It.Is<CriarNotificacaoDto>(d =>
+            d.TutorId == _tutorId &&
+            d.Tipo == TipoNotificacao.PontosCreditados &&
+            d.ConsultaId == consulta.Id)), Times.Once);
+    }
+
+    [Fact]
+    public async Task CreditarPorConsulta_SemPontuar_NaoAvisa()
+    {
+        // Consulta que nao chegou a ser realizada nao credita — e o que nao credita
+        // nao pode gerar um "voce ganhou pontos".
+        var consulta = AtendimentoPago(realizada: false);
+
+        Assert.Null(await CriarServico().CreditarPorConsultaAsync(consulta.Id));
+        _notificacoes.Verify(n => n.CriarAsync(It.IsAny<CriarNotificacaoDto>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task CreditarPorObrigacao_CruzandoOTier_AnunciaANovaFaixa()
+    {
+        // 999 pontos ja no extrato: os 50 fixos da obrigacao cumprida no prazo cruzam
+        // a faixa do Prata (1.000), e a subida e o que o aviso precisa dizer.
+        Credito(999m);
+
+        CriarNotificacaoDto? aviso = null;
+        _notificacoes.Setup(n => n.CriarAsync(It.IsAny<CriarNotificacaoDto>()))
+            .Callback<CriarNotificacaoDto>(d => aviso = d)
+            .ReturnsAsync(new NotificacaoDto());
+
+        await CriarServico().CreditarPorObrigacaoAsync(_tutorId, Guid.NewGuid(), "Vacina antirrabica");
+
+        Assert.NotNull(aviso);
+        Assert.Contains("Prata", aviso!.Titulo);
+        Assert.Contains("Vacina antirrabica", aviso.Corpo);
+    }
+
+    [Fact]
+    public async Task CreditarPorObrigacao_SemMudarDeTier_NaoAnunciaFaixa()
+    {
+        // Anunciar "voce e Bronze" em todo credito transformaria a conquista em rodape.
+        CriarNotificacaoDto? aviso = null;
+        _notificacoes.Setup(n => n.CriarAsync(It.IsAny<CriarNotificacaoDto>()))
+            .Callback<CriarNotificacaoDto>(d => aviso = d)
+            .ReturnsAsync(new NotificacaoDto());
+
+        await CriarServico().CreditarPorObrigacaoAsync(_tutorId, Guid.NewGuid(), "Vermifugo");
+
+        Assert.NotNull(aviso);
+        Assert.Equal("Pontos creditados", aviso!.Titulo);
+        Assert.DoesNotContain("tier", aviso.Corpo, StringComparison.OrdinalIgnoreCase);
+    }
 
     // ── Conversão e ganho (RN-047/RN-049) ────────────────────────────────────
 

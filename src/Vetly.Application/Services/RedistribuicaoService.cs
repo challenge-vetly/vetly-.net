@@ -188,6 +188,13 @@ public class RedistribuicaoService : IRedistribuicaoService
     /// Avisa o Responsável (RN-092). Redistribuir sem avisar seria trocar o
     /// profissional de alguém sem contar — a notificação é parte da operação, não um
     /// extra.
+    ///
+    /// O tipo é <see cref="TipoNotificacao.CancelamentoPeloPrestador"/> — que a RN-025
+    /// define como "mudança no atendimento decidida pelo prestador", e não só
+    /// cancelamento. Antes viajava como <c>ConsultaConfirmada</c>, e o app agrupa a
+    /// caixa de entrada por tipo: a troca de profissional caía junto das confirmações
+    /// de agendamento, ao lado do aviso de que tudo está como combinado, que é
+    /// exatamente o que ela não é.
     /// </summary>
     private async Task<bool> AvisarResponsavelAsync(
         Consulta consulta, Veterinario novoVet, DateTime horarioAnterior, string motivo)
@@ -201,7 +208,7 @@ public class RedistribuicaoService : IRedistribuicaoService
         await _notificacoes.CriarAsync(new CriarNotificacaoDto
         {
             TutorId = consulta.TutorId,
-            Tipo = TipoNotificacao.ConsultaConfirmada,
+            Tipo = TipoNotificacao.CancelamentoPeloPrestador,
             Titulo = "Mudanca no seu atendimento",
             Corpo = corpo,
             AnimalId = consulta.AnimalId,

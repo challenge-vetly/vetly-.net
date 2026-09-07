@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Vetly.Application.DTOs.Agenda;
+using Vetly.Application.DTOs.Repasse;
 using Vetly.Application.DTOs.Veterinario;
 using Vetly.API.Filters;
 using Vetly.Application.Interfaces;
@@ -49,6 +50,57 @@ public class VeterinariosController : ControllerBase
     public async Task<IActionResult> ObterExtrato(
         [FromQuery] DateTime? inicio = null, [FromQuery] DateTime? fim = null) =>
         Ok(await _service.ObterExtratoAsync(inicio, fim));
+
+/// <summary>
+    /// Conta em que o proprio veterinario recebe o repasse (§4.1).
+    /// </summary>
+    /// <remarks>
+    /// Nao ha id de veterinario na rota, e nao e esquecimento: a §7.3 veda ao
+    /// administrador da unidade os <b>dados bancarios pessoais</b> dos vinculados. Um
+    /// id na rota seria exatamente a porta por onde essa vedacao vazaria — bastaria o
+    /// Admin trocar o Guid. O escopo vem do token (RN-105/RN-106).
+    ///
+    /// A conta e a chave Pix voltam <b>mascaradas</b>. Quem le e o titular conferindo
+    /// o que cadastrou, e os ultimos digitos bastam para isso; devolver o numero
+    /// inteiro transformaria um token vazado ou um print de tela em dado bancario
+    /// completo.
+    ///
+    /// <c>configurado: false</c> e a resposta de quem ainda nao informou a conta —
+    /// nao e 404, porque o veterinario existe e o que falta e um passo do onboarding.
+    /// </remarks>
+    [HttpGet("me/dados-repasse")]
+    [ProducesResponseType(typeof(DadosDeRepasseDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ObterDadosDeRepasse() =>
+        Ok(await _service.ObterDadosDeRepasseAsync());
+
+    /// <summary>
+    /// Informa ou substitui a conta de repasse do proprio veterinario (§4.1).
+    /// </summary>
+    /// <remarks>
+    /// Substitui a conta inteira, e nao campo a campo. Agencia nova com conta antiga e
+    /// o erro que manda dinheiro para outra pessoa e que parece ter dado certo ate
+    /// alguem reclamar — trocar o conjunto obriga a conferir o conjunto.
+    ///
+    /// O documento do titular aceita CPF ou CNPJ, com ou sem pontuacao, e e gravado so
+    /// com os digitos. Comprimento diferente de 11 ou 14 devolve 400: sem gateway nao
+    /// ha a quem consultar a titularidade, entao a conferencia possivel e a de formato,
+    /// e ela ja separa documento de campo preenchido no chute.
+    ///
+    /// No MVP nada e liquidado por aqui (§1.1): o split segue <b>registrado, nao
+    /// liquidado</b>. O que esta rota resolve e o destinatario ter endereco de
+    /// pagamento — sem ela, o consolidado apura quanto e nunca para onde.
+    /// </remarks>
+    [HttpPut("me/dados-repasse")]
+    [ProducesResponseType(typeof(DadosDeRepasseDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> DefinirDadosDeRepasse([FromBody] DefinirDadosDeRepasseDto dto) =>
+        Ok(await _service.DefinirDadosDeRepasseAsync(dto));
 
     /// <summary>Retorna todos os veterinarios ativos.</summary>
     [HttpGet]
