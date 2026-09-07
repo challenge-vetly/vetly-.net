@@ -93,6 +93,15 @@ public class Veterinario
     public DateTime? CrmvValidadoEm { get; private set; }
 
     /// <summary>
+    /// Conta em que o profissional recebe o repasse (§4.1, RN-072).
+    ///
+    /// Nula até o onboarding financeiro ser concluído — e é assim que se sabe que ele
+    /// não foi. Vet vinculado a uma empresa pode não ter conta própria: quem recebe é
+    /// a unidade, e a remuneração interna está fora do escopo da plataforma (§4.1).
+    /// </summary>
+    public DadosDeRepasse? DadosDeRepasse { get; private set; }
+
+    /// <summary>
     /// Nota média das avaliações recebidas. Só é exibida e só entra no score de
     /// matching a partir de 3 avaliações (RN-057).
     /// </summary>
@@ -211,6 +220,19 @@ public class Veterinario
     {
         ArgumentNullException.ThrowIfNull(endereco);
         Endereco = endereco;
+    }
+
+    /// <summary>
+    /// Define ou substitui a conta de repasse do profissional (§4.1).
+    ///
+    /// Substitui inteira, sem edição campo a campo: agência nova com conta velha é o
+    /// erro que faz o repasse cair na conta de outra pessoa, e conferir o conjunto é
+    /// mais fácil do que conferir a diferença.
+    /// </summary>
+    public void DefinirDadosDeRepasse(DadosDeRepasse dados)
+    {
+        ArgumentNullException.ThrowIfNull(dados);
+        DadosDeRepasse = dados;
     }
 
     /// <summary>

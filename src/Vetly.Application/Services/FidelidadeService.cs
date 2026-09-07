@@ -1,4 +1,5 @@
 using Vetly.Application.DTOs.Fidelidade;
+using Vetly.Application.DTOs.Notificacao;
 using Vetly.Application.Exceptions;
 using Vetly.Application.Interfaces;
 using Vetly.Domain.Entities;
@@ -20,17 +21,20 @@ public class FidelidadeService : IFidelidadeService
     private readonly IFidelidadeRepository _repo;
     private readonly IConsultaRepository _consultaRepo;
     private readonly IPagamentoRepository _pagamentoRepo;
+    private readonly INotificacaoService _notificacoes;
     private readonly IUsuarioAtual _usuario;
 
     public FidelidadeService(
         IFidelidadeRepository repo,
         IConsultaRepository consultaRepo,
         IPagamentoRepository pagamentoRepo,
+        INotificacaoService notificacoes,
         IUsuarioAtual usuario)
     {
         _repo = repo;
         _consultaRepo = consultaRepo;
         _pagamentoRepo = pagamentoRepo;
+        _notificacoes = notificacoes;
         _usuario = usuario;
     }
 
@@ -107,6 +111,8 @@ public class FidelidadeService : IFidelidadeService
         await _repo.AdicionarAsync(movimento);
         await _repo.SalvarAsync();
 
+        await AvisarCreditoAsync(consulta.TutorId, movimento, tier, "o atendimento", consulta.AnimalId);
+
         return Mapear(movimento);
     }
 
@@ -127,7 +133,47 @@ public class FidelidadeService : IFidelidadeService
         await _repo.AdicionarAsync(movimento);
         await _repo.SalvarAsync();
 
+        await AvisarCreditoAsync(tutorId, movimento, tier, descricao, animalId: null);
+
         return Mapear(movimento);
+    }
+
+    /// <summary>
+    /// Avisa o crédito e, quando houver, a subida de tier (RN-016/RN-048, §6.2).
+    ///
+    /// O tier é recalculado <b>depois</b> do crédito e comparado com o que valia
+    /// antes: é esse crédito que pode ter cruzado a faixa, e anunciar "você é Prata"
+    /// em toda notificação transformaria a conquista em ruído de rodapé.
+    ///
+    /// Os dois eventos vão numa notificação só, e não em duas. A matriz de canais
+    /// (§6.2) trata "pontos creditados / mudança de tier" como uma linha, e são o
+    /// mesmo fato para quem recebe: cumpri algo, ganhei, e por isso subi.
+    /// </summary>
+    private async Task AvisarCreditoAsync(
+        Guid tutorId, MovimentoDePontos movimento, TierFidelidade tierAntes,
+        string origem, Guid? animalId)
+    {
+        var tierDepois = await TierDoTutorAsync(tutorId);
+        var subiu = tierDepois > tierAntes;
+
+        var corpo = $"Voce ganhou {movimento.Pontos} ponto(s) por {origem}.";
+
+        if (movimento.Multiplicador > 1m)
+            corpo += $" Multiplicador {tierAntes} de {movimento.Multiplicador:0.##}x aplicado.";
+
+        if (subiu)
+            corpo += $" E subiu para o tier {tierDepois}.";
+
+        await _notificacoes.CriarAsync(new CriarNotificacaoDto
+        {
+            TutorId = tutorId,
+            Tipo = TipoNotificacao.PontosCreditados,
+            Titulo = subiu ? $"Voce chegou ao tier {tierDepois}" : "Pontos creditados",
+            Corpo = corpo,
+            AnimalId = animalId,
+            ConsultaId = movimento.ConsultaId,
+            Destino = "/fidelidade"
+        });
     }
 
     /// <inheritdoc/>

@@ -1,5 +1,6 @@
 using Vetly.Application.DTOs.Comum;
 using Vetly.Application.DTOs.Empresa;
+using Vetly.Application.DTOs.Repasse;
 using Vetly.Application.DTOs.Veterinario;
 using Vetly.Application.Exceptions;
 using Vetly.Application.Interfaces;
@@ -21,6 +22,38 @@ public class EmpresaService : IEmpresaService
         _repo = repo;
         _vetRepo = vetRepo;
         _geocodificacao = geocodificacao;
+    }
+
+/// <inheritdoc/>
+    public async Task<DadosDeRepasseDto> ObterDadosDeRepasseAsync(Guid empresaId)
+    {
+        var empresa = await _repo.ObterPorIdAsync(empresaId)
+            ?? throw new NotFoundException("Empresa", empresaId);
+
+        return VeterinarioService.MapearRepasse(empresa.Id, empresa.DadosDeRepasse);
+    }
+
+    /// <inheritdoc/>
+    public async Task<DadosDeRepasseDto> DefinirDadosDeRepasseAsync(
+        Guid empresaId, DefinirDadosDeRepasseDto dto)
+    {
+        var empresa = await _repo.ObterPorIdAsync(empresaId)
+            ?? throw new NotFoundException("Empresa", empresaId);
+
+        try
+        {
+            empresa.DefinirDadosDeRepasse(new DadosDeRepasse(
+                dto.Banco, dto.Agencia, dto.Conta, dto.DocumentoTitular, dto.ChavePix));
+        }
+        catch (ArgumentException ex)
+        {
+            throw new ValidationException(ex.ParamName ?? "dadosDeRepasse", ex.Message);
+        }
+
+        _repo.Atualizar(empresa);
+        await _repo.SalvarAsync();
+
+        return VeterinarioService.MapearRepasse(empresa.Id, empresa.DadosDeRepasse);
     }
 
     public async Task<IEnumerable<EmpresaDto>> ObterTodosAsync()

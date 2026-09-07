@@ -18,6 +18,13 @@ public class LembreteRepository : RepositoryBase<LembreteAgendado>, ILembreteRep
             .ToListAsync();
 
     /// <inheritdoc/>
+    public async Task<IEnumerable<LembreteAgendado>> ObterEscaladosParaClinicaAsync(DateTime desde) =>
+        await _context.Lembretes
+            .Where(l => l.AlertaEnviadoClinica && !l.TutorRespondeu && l.DataEvento >= desde)
+            .OrderBy(l => l.DataEvento)
+            .ToListAsync();
+
+    /// <inheritdoc/>
     public async Task<IEnumerable<LembreteAgendado>> ObterPendentesPorTutorAsync(Guid tutorId) =>
         await _dbSet
             .Where(l => l.TutorId == tutorId && !l.TutorRespondeu)

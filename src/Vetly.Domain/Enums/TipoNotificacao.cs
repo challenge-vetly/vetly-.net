@@ -43,7 +43,27 @@ public enum TipoNotificacao
     Promocao = 10,
 
     /// <summary>Mudança no atendimento decidida pelo prestador (RN-025/RN-045).</summary>
-    CancelamentoPeloPrestador = 11
+    CancelamentoPeloPrestador = 11,
+
+    /// <summary>
+    /// Reembolso apurado no cancelamento (RN-014/RN-041/RN-042, §6.2).
+    ///
+    /// Separado de <see cref="CancelamentoPeloPrestador"/> porque responde a outra
+    /// pergunta: aquele diz que o atendimento mudou, este diz o que aconteceu com o
+    /// dinheiro. Cancelamento sem reembolso também avisa — "não vai voltar nada" é
+    /// justamente o que o Responsável precisa saber sem ter de perguntar.
+    /// </summary>
+    ReembolsoConfirmado = 12,
+
+    /// <summary>
+    /// Pontos creditados e, quando for o caso, o tier que mudou (RN-016/RN-047/RN-048,
+    /// §6.2).
+    ///
+    /// Distinto de <see cref="PontosExpirando"/>: aquele é perda iminente e pede ação
+    /// imediata; este é reforço do comportamento que o programa quer premiar, e
+    /// misturar os dois na mesma caixa faria o aviso de expiração perder urgência.
+    /// </summary>
+    PontosCreditados = 13
 }
 
 /// <summary>

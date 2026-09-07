@@ -117,14 +117,17 @@ public class FinanceiroService : IFinanceiroService
                      .Where(p => p.DestinatarioRepasseId is not null)
                      .GroupBy(p => p.DestinatarioRepasseId!.Value))
         {
+            var (nome, temConta) = await ResolverDestinatarioAsync(grupo.Key);
+
             porDestinatario.Add(new RepassePorDestinatarioDto
             {
                 DestinatarioId = grupo.Key,
-                Nome = await ResolverNomeAsync(grupo.Key),
+                Nome = nome,
                 TotalDeAtendimentos = grupo.Count(),
                 RepasseTotal = grupo.Sum(p => p.Repasse ?? 0m),
                 RepasseLiquidado = grupo.Where(p => p.Liquidado).Sum(p => p.Repasse ?? 0m),
-                RepassePendente = grupo.Where(p => !p.Liquidado).Sum(p => p.Repasse ?? 0m)
+                RepassePendente = grupo.Where(p => !p.Liquidado).Sum(p => p.Repasse ?? 0m),
+                RepasseConfigurado = temConta
             });
         }
 
@@ -135,17 +138,22 @@ public class FinanceiroService : IFinanceiroService
     /// <summary>
     /// O destinatário é um veterinário autônomo ou uma clínica (RN-072) — não há campo
     /// que diga qual, então se procura nos dois.
+    ///
+    /// Devolve o nome e se há conta de repasse cadastrada (§4.1). Sai da mesma leitura
+    /// de propósito: são as duas coisas que a operação precisa por destinatário, e
+    /// buscá-las em duas passagens dobraria as consultas para responder a uma linha.
+    /// A conta em si não sobe — só o fato de ela existir (§7.3).
     /// </summary>
-    private async Task<string?> ResolverNomeAsync(Guid destinatarioId)
+    private async Task<(string? Nome, bool TemContaDeRepasse)> ResolverDestinatarioAsync(Guid destinatarioId)
     {
         var vet = await _vetRepo.ObterPorIdAsync(destinatarioId);
 
         if (vet is not null)
-            return vet.Nome;
+            return (vet.Nome, vet.DadosDeRepasse is not null);
 
         var empresa = await _empresaRepo.ObterPorIdAsync(destinatarioId);
 
-        return empresa?.Nome;
+        return empresa is null ? (null, false) : (empresa.Nome, empresa.DadosDeRepasse is not null);
     }
 
     /// <summary>

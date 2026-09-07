@@ -175,6 +175,37 @@ public class VeterinarioConfiguration : IEntityTypeConfiguration<Veterinario>
                 .HasDatabaseName("IX_VETERINARIO_COORDENADA");
         });
 
+
+        // Conta de repasse embutida no proprio registro (§4.1), mesmo modelo 1:1 do
+        // endereco. Opcional: o cadastro nasce sem ela e a ausencia e o sinal de que o
+        // onboarding financeiro nao terminou.
+        //
+        // Nao ha indice nenhum aqui de proposito. Dado bancario nao e criterio de busca,
+        // e indexa-lo criaria um caminho de leitura por conteudo que a §7.3 nao quer que
+        // exista.
+        builder.OwnsOne(v => v.DadosDeRepasse, repasse =>
+        {
+            // BANCO_REPASSE marca a existencia do dependente opcional, como o CEP faz no
+            // endereco: sem uma coluna obrigatoria o EF nao distingue "sem conta" de
+            // "conta com tudo nulo".
+            repasse.Property(r => r.Banco)
+                .HasColumnType("VARCHAR2(60)").HasColumnName("BANCO_REPASSE").IsRequired();
+            repasse.Property(r => r.Agencia)
+                .HasColumnType("VARCHAR2(20)").HasColumnName("AGENCIA_REPASSE");
+            repasse.Property(r => r.Conta)
+                .HasColumnType("VARCHAR2(30)").HasColumnName("CONTA_REPASSE");
+
+            // So digitos: 14 cobre o CNPJ, que e o maior dos dois documentos aceitos.
+            repasse.Property(r => r.DocumentoTitular)
+                .HasColumnType("VARCHAR2(14)").HasColumnName("DOC_TITULAR_REPASSE");
+
+            // 77 e o teto de uma chave Pix aleatoria com sobra para e-mail longo.
+            repasse.Property(r => r.ChavePix)
+                .HasColumnType("VARCHAR2(140)").HasColumnName("CHAVE_PIX");
+
+            repasse.Property(r => r.AtualizadoEm).HasColumnName("REPASSE_ATUALIZADO_EM");
+        });
+
         // Índice na UF para buscas por região (GET /api/veterinarios/regiao/{uf})
         builder.HasIndex(v => v.UfAtuacao).HasDatabaseName("IX_VETERINARIO_UF");
 

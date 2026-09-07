@@ -428,7 +428,60 @@ public class ConsultaService : IConsultaService
         VetlyTelemetry.ConsultasCanceladas.Add(1,
             new KeyValuePair<string, object?>("faixa", strategy.GetType().Name));
 
+        // §6.2/Fluxo 3: o desfecho financeiro do cancelamento e um evento da matriz de
+        // canais. Antes disto o valor so existia na resposta HTTP de quem cancelou —
+        // quem cancelou pelo app fechava a tela e nao tinha onde reler quanto voltou.
+        await AvisarReembolsoAsync(consulta, resultado);
+
         return resultado;
+    }
+
+    /// <summary>
+    /// Avisa o Responsável do que aconteceu com o dinheiro (RN-014/RN-041/RN-042,
+    /// §6.2).
+    ///
+    /// Cancelamento <b>sem</b> reembolso também avisa. A tentação é só notificar
+    /// quando volta dinheiro, mas é justamente no zero que o Responsável reclama de
+    /// não ter sido avisado — e a política que produziu o zero foi mostrada a ele
+    /// antes, na simulação, então o aviso fecha o ciclo em vez de dar má notícia nova.
+    ///
+    /// Quem cancelou muda o tipo e o texto. Cancelamento do prestador (Fluxo 6, RN-025)
+    /// é notícia que o Responsável não provocou e não esperava, e chega como
+    /// <see cref="TipoNotificacao.CancelamentoPeloPrestador"/> — outro ícone, outra
+    /// prioridade no app. Mandar "cancelamento confirmado" para quem não cancelou nada
+    /// leria como confirmação de um ato dele.
+    /// </summary>
+    private async Task AvisarReembolsoAsync(Consulta consulta, ResultadoCancelamentoDto resultado)
+    {
+        // O escopo vem do token, nunca de parâmetro: é o Responsável dono da consulta
+        // quem cancela "por si", e qualquer outro perfil cancela "sobre" ele.
+        var peloProprioResponsavel = _usuario.TutorId == consulta.TutorId;
+
+        var reembolso = resultado.ValorReembolso > 0
+            ? $"Reembolso de {resultado.ValorReembolso:C} ({resultado.EstrategiaAplicada}). " +
+              "No MVP o estorno e registrado, nao liquidado."
+            : $"Sem reembolso ({resultado.EstrategiaAplicada}).";
+
+        await _notificacoes.CriarAsync(new CriarNotificacaoDto
+        {
+            TutorId = consulta.TutorId,
+            Tipo = peloProprioResponsavel
+                ? TipoNotificacao.ReembolsoConfirmado
+                : TipoNotificacao.CancelamentoPeloPrestador,
+
+            Titulo = peloProprioResponsavel
+                ? "Cancelamento confirmado"
+                : "Seu atendimento foi cancelado",
+
+            Corpo = peloProprioResponsavel
+                ? $"Cancelamento confirmado. {reembolso}"
+                : $"O atendimento de {consulta.DataHora:dd/MM 'as' HH:mm} (UTC) foi cancelado pelo " +
+                  $"prestador. {reembolso}",
+
+            AnimalId = consulta.AnimalId,
+            ConsultaId = consulta.Id,
+            Destino = $"/carteira/consultas/{consulta.Id}"
+        });
     }
 
     /// <inheritdoc/>

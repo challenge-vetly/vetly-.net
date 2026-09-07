@@ -2,7 +2,7 @@
 
 **Plataforma que conecta responsáveis de pets a clínicas e veterinários autônomos — agendamento, pagamento com split, prontuário assistido por IA e fidelidade em uma única API.**
 
-`.NET 10` · `ASP.NET Core` · `EF Core 10` · `Oracle` · `~1.000 testes automatizados`
+`.NET 10` · `ASP.NET Core` · `EF Core 10` · `Oracle` · `Docker` · `1.070 testes automatizados`
 
 O ciclo completo do produto vive aqui: busca por proximidade, agenda com controle de concorrência, cobrança antecipada, captura de áudio da consulta, estruturação do prontuário por LLM, emissão de documentos assinados e programa de pontos.
 
@@ -40,7 +40,9 @@ Crie `src/Vetly.API/appsettings.Development.local.json` — o padrão `appsettin
 }
 ```
 
-`Jwt:Key` é o único item verificado explicitamente no arranque — sem ela, [Program.cs](src/Vetly.API/Program.cs) lança `InvalidOperationException` antes de a API subir. `Servicos:TokenInterno` autentica as rotas `POST /api/internos/*` (webhook de pagamento e callback de transcrição).
+`Servicos:TokenInterno` autentica as rotas `POST /api/internos/*` (webhook de pagamento e callback de transcrição). Sem ele configurado, essas rotas recusam tudo — falhar fechado é melhor que aceitar evento de qualquer origem.
+
+O `appsettings.json` versionado traz **placeholders** nesses três valores, para que o formato esperado fique visível a quem clona o repositório. Em `Development` eles seguem valendo; em `Production`, [GuardaDeSegredos](src/Vetly.API/Security/GuardaDeSegredos.cs) **recusa o arranque** se algum deles ainda for o valor de exemplo, ou se a `Jwt:Key` tiver menos de 32 caracteres — HMAC-SHA256 exige 256 bits, e sem a guarda uma chave curta só falharia no primeiro login. Ver [§7 Deploy](#7-deploy).
 
 ### Execução
 
@@ -50,7 +52,14 @@ dotnet ef database update --project src/Vetly.Infrastructure --startup-project s
 dotnet run --project src/Vetly.API --launch-profile https
 ```
 
-As migrations **não** são aplicadas na inicialização: não há `Database.Migrate()` no código. O passo é manual e deliberado — nenhuma instância altera o schema por conta própria ao subir.
+As migrations **não** são aplicadas na inicialização: não há `Database.Migrate()` no código. O passo é manual e deliberado — nenhuma instância altera o schema por conta própria ao subir, e com várias réplicas seria cada uma tentando ao mesmo tempo.
+
+Para usar o Azure Speech (`Adaptadores:Stt=Azure`), a chave vem **só** de variável de ambiente — nunca de arquivo do repositório. O .NET não lê arquivos `.env`: exporte no shell ou passe ao container.
+
+```bash
+export AZURE_SPEECH_KEY="sua-chave"
+export AZURE_SPEECH_REGION="canadacentral"      # ou Azure:Speech:Region no appsettings
+```
 
 ### Endereços
 
@@ -118,10 +127,10 @@ Nenhuma seta sai do `Domain`. Ele não referencia projeto nem pacote algum — n
 
 | Camada | Conteúdo | Referencia |
 |---|---|---|
-| **Vetly.API** | 24 controllers (~147 endpoints), 3 filtros globais, 3 middlewares, 4 health checks, worker hospedado | Application, Infrastructure |
-| **Vetly.Infrastructure** | EF Core + Oracle, 33 DbSets, 31 migrations, 27 configurations, 24 repositórios, 9 adaptadores | Application, Domain |
-| **Vetly.Application** | 29 serviços, 62 interfaces, 71 arquivos de DTO | Domain + 2 pacotes `*.Abstractions` |
-| **Vetly.Domain** | 31 entidades, 36 enums, 6 value objects | **nada** |
+| **Vetly.API** | 24 controllers (152 endpoints), 3 filtros globais, 3 middlewares, 4 health checks, worker hospedado | Application, Infrastructure |
+| **Vetly.Infrastructure** | EF Core + Oracle, 33 DbSets, 32 migrations, 27 configurations, 24 repositórios, 9 adaptadores | Application, Domain |
+| **Vetly.Application** | 29 serviços, 62 interfaces, 72 arquivos de DTO | Domain + 2 pacotes `*.Abstractions` |
+| **Vetly.Domain** | 31 entidades, 42 enums, 7 value objects | **nada** |
 
 ### Portas e adaptadores
 
@@ -160,8 +169,8 @@ src/
 └── Vetly.API/              Controllers · Filters · Middlewares
                             HealthChecks · Observability · Jobs · Security
 tests/
-├── Vetly.UnitTests/        43 arquivos — regras de negócio isoladas
-└── Vetly.IntegrationTests/ 26 arquivos — API completa em memória
+├── Vetly.UnitTests/        44 arquivos — regras de negócio isoladas
+└── Vetly.IntegrationTests/ 28 arquivos — API completa em memória
 ```
 
 ---
@@ -183,6 +192,7 @@ sequenceDiagram
     API-->>T: aguardando confirmação
     Note over API: gateway chama POST /api/internos/pagamentos/webhook
     API->>API: consulta confirmada
+    API->>T: notifica data, horário e profissional
 
     V->>API: abre a janela de captura
     V->>API: envia segmentos de áudio
@@ -195,9 +205,11 @@ sequenceDiagram
     API->>T: publica no board do pet e notifica
 ```
 
-- **A confirmação do pagamento vem só do webhook**, nunca da resposta síncrona da cobrança.
+- **A confirmação do pagamento vem só do webhook**, nunca da resposta síncrona da cobrança — e o aviso ao Responsável nasce no mesmo lugar, pela mesma razão: avisar antes prometeria uma consulta que o gateway ainda pode recusar.
 - **A IA sugere; o veterinário decide.** Toda decisão vira registro append-only com o conteúdo final, o autor e o modelo usado.
 - **Fora da janela de captura nada é gravado nem gerado.** Quem abre e fecha a janela é o veterinário.
+
+Os onze eventos que o Responsável recebe in-app e por push, e o serviço que dispara cada um, estão mapeados em [REGRAS-DE-NEGOCIO.md](REGRAS-DE-NEGOCIO.md#a-matriz-de-canais-62-e-onde-cada-evento-nasce).
 
 ---
 
@@ -209,10 +221,12 @@ JWT Bearer com refresh token rotativo — cada uso invalida o anterior. Senhas e
 |---|---|
 | `Tutor` | Responsável pelo animal: busca, agenda, paga, autoriza acesso ao histórico, avalia |
 | `Veterinario` | Agenda, atende, valida diagnóstico, emite e assina documentos |
-| `Admin` | Administra a clínica: cadastra veterinários, define plano e consolidado financeiro |
+| `Admin` | Administra a clínica: cadastra veterinários, define plano, painel e consolidado financeiro da unidade |
 | `VetDesativado` | Bloqueado em toda rota de negócio; mantém apenas o próprio extrato |
 
 As policies registradas são `ApenasAdmin`, `VeterinarioOuAdmin`, `ApenasTutor` e `TutorOuAdmin`.
+
+**Escopo por linha, e não por policy.** A policy diz quem entra na rota; quem decide de quem são os dados é o serviço, lendo a identidade da claim (RN-105/RN-106). Onde a §7.3 veda um acesso ao próprio Admin — a conta bancária do veterinário vinculado, o painel de outra unidade —, a rota **não tem id**: sem parâmetro não há o que trocar, e a vedação deixa de depender de uma checagem que alguém pode remover.
 
 Três filtros globais rodam antes de qualquer controller e **falham fechado** — na dúvida, negam: consentimento LGPD ([ConsentimentoAtendimentoFilter](src/Vetly.API/Filters/ConsentimentoAtendimentoFilter.cs)), bloqueio de veterinário desativado ([VetDesativadoFilter](src/Vetly.API/Filters/VetDesativadoFilter.cs)) e idempotência ([IdempotencyFilter](src/Vetly.API/Filters/IdempotencyFilter.cs)).
 
@@ -247,8 +261,8 @@ xUnit com Moq. Asserções nativas, sem biblioteca de fluência.
 
 | Suíte | Arquivos | O que cobre |
 |---|---|---|
-| `Vetly.UnitTests` | 43 | Regras de negócio isoladas, um arquivo por serviço |
-| `Vetly.IntegrationTests` | 26 | API real via `WebApplicationFactory` — pipeline, filtros, auth e worker |
+| `Vetly.UnitTests` | 44 | Regras de negócio isoladas, um arquivo por serviço |
+| `Vetly.IntegrationTests` | 28 | API real via `WebApplicationFactory` — pipeline, filtros, auth e worker |
 
 ```bash
 dotnet test                                              # tudo
@@ -261,6 +275,63 @@ dotnet test --collect:"XPlat Code Coverage" --settings coverlet.runsettings
 O [coverlet.runsettings](coverlet.runsettings) exclui as migrations geradas — sem esse filtro, ~7 mil linhas de código gerado afundam a cobertura da Infrastructure.
 
 **O limite conhecido:** os testes de integração usam EF InMemory, que não traduz SQL. Consultas válidas em LINQ podem falhar no Oracle real — foi o que aconteceu com um `AnyAsync` que virou `ORA-00904`. A defesa é uma guarda estática (`CompatibilidadeComOracleTests`) que varre o fonte da Infrastructure atrás dos padrões que já quebraram, mais um smoke manual contra o banco real antes de entregar.
+
+---
+
+## 7. Deploy
+
+### Imagem
+
+O [Dockerfile](Dockerfile) é multi-stage: o SDK compila, a imagem final carrega só o runtime do ASP.NET e roda como usuário sem privilégio.
+
+```bash
+docker build -t vetly-api .
+
+docker run -p 8080:8080   -e ConnectionStrings__OracleConnection="User Id=vetly;Password=...;Data Source=host:1521/orcl"   -e Jwt__Key="uma-chave-com-no-minimo-32-caracteres"   -e Servicos__TokenInterno="um-token-de-servico"   -e Storage__PublicBaseUrl="https://api.seudominio.com"   -v vetly-storage:/var/lib/vetly/storage   vetly-api
+```
+
+O separador de configuração no ambiente é `__` (dois underscores), não `:` — é assim que o .NET mapeia variável de ambiente para chave aninhada.
+
+O volume não é opcional em produção. `Storage:Diretorio` guarda o áudio da consulta e o PDF do documento; sem ele montado, o container leva junto o áudio de uma consulta em andamento quando reiniciar.
+
+### O que precisa estar definido
+
+| Variável | Por que |
+|---|---|
+| `ConnectionStrings__OracleConnection` | Sem banco a API não entrega nada — `/health/ready` responde 503 |
+| `Jwt__Key` | Mínimo 32 caracteres. O arranque recusa a chave de exemplo do repositório |
+| `Servicos__TokenInterno` | Autentica o webhook de pagamento e o callback de transcrição. Ausente, as rotas internas recusam tudo; **de exemplo, o arranque recusa** |
+| `Storage__PublicBaseUrl` | A URL assinada do storage é consumida de fora do processo. Ausente, a API não sobe |
+| `AZURE_SPEECH_KEY` | Só com `Adaptadores__Stt=Azure`. Nunca vai para arquivo do repositório |
+
+Um adaptador com valor não reconhecido também derruba o arranque. Não existe fallback silencioso: uma configuração errada falha no deploy, não em produção às três da manhã.
+
+### Migrations
+
+Aplicadas fora do container, antes de subir a nova versão:
+
+```bash
+dotnet ef database update --project src/Vetly.Infrastructure --startup-project src/Vetly.API
+```
+
+### Atrás de proxy
+
+[`UseForwardedHeaders`](src/Vetly.API/Program.cs) roda antes de qualquer outro middleware, lendo `X-Forwarded-For` e `X-Forwarded-Proto`. Em container o TLS termina no ingress e o Kestrel só vê HTTP; sem isso, três coisas saem erradas ao mesmo tempo: o redirecionamento para HTTPS pega quem já veio por HTTPS, as URLs absolutas apontam para o endereço interno e o log registra o IP do proxy como se fosse o do cliente.
+
+`KnownNetworks` e `KnownProxies` são limpos porque em Kubernetes e nos PaaS o proxy fica numa faixa que muda — a proteção aqui é a topologia (a porta da aplicação não é exposta diretamente), não a origem do salto.
+
+### Sondas
+
+| Endpoint | Decide | Comportamento com Oracle fora |
+|---|---|---|
+| `/health/live` | reiniciar o container | 200 — reiniciar a API não levanta o banco |
+| `/health/ready` | receber tráfego | 503 — sai de rotação até o banco voltar |
+
+O Dockerfile **não** declara `HEALTHCHECK`: a imagem base do ASP.NET não traz cliente HTTP, e instalar um só para isso engordaria a imagem para resolver o que o orquestrador já faz de fora.
+
+### Não coberto por esta entrega
+
+`/metrics` e a documentação Scalar ficam públicos, como os health checks. Métrica agregada não carrega dado pessoal, mas revela volume de operação — em produção, restrinja os dois no nível do ingress.
 
 ---
 

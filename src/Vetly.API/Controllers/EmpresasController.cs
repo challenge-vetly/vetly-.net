@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Vetly.Application.DTOs.Empresa;
+using Vetly.Application.DTOs.Repasse;
 using Vetly.Application.Interfaces;
 
 namespace Vetly.API.Controllers;
@@ -34,6 +35,43 @@ public class EmpresasController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> ObterVeterinarios(Guid id) =>
         Ok(await _service.ObterVeterinariosAsync(id));
+
+/// <summary>Conta em que a unidade recebe o repasse (§4.1).</summary>
+    /// <remarks>
+    /// E a conta do <b>estabelecimento</b>, e nao a de nenhum profissional. A §7.3
+    /// veda ao administrador os dados bancarios pessoais dos vets vinculados, e e por
+    /// isso que as duas contas moram em rotas separadas: esta e do Admin da unidade,
+    /// a do veterinario e so dele (<c>GET /api/veterinarios/me/dados-repasse</c>).
+    ///
+    /// Conta e chave Pix voltam mascaradas, pela mesma razao da rota do veterinario.
+    /// </remarks>
+    [HttpGet("{id:guid}/dados-repasse")]
+    [Authorize(Policy = "ApenasAdmin")]
+    [ProducesResponseType(typeof(DadosDeRepasseDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ObterDadosDeRepasse(Guid id) =>
+        Ok(await _service.ObterDadosDeRepasseAsync(id));
+
+    /// <summary>Informa ou substitui a conta de repasse da unidade (§4.1).</summary>
+    /// <remarks>
+    /// Substitui a conta inteira. O documento do titular aceita CPF ou CNPJ, com ou
+    /// sem pontuacao, e comprimento diferente de 11 ou 14 devolve 400.
+    ///
+    /// No MVP o split segue <b>registrado, nao liquidado</b> (§1.1) — a rota resolve o
+    /// destinatario ter endereco de pagamento, nao o pagamento acontecer.
+    /// </remarks>
+    [HttpPut("{id:guid}/dados-repasse")]
+    [Authorize(Policy = "ApenasAdmin")]
+    [ProducesResponseType(typeof(DadosDeRepasseDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> DefinirDadosDeRepasse(
+        Guid id, [FromBody] DefinirDadosDeRepasseDto dto) =>
+        Ok(await _service.DefinirDadosDeRepasseAsync(id, dto));
 
     /// <summary>Cadastra uma nova empresa.</summary>
     [HttpPost]

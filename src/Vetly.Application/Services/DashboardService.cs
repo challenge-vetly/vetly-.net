@@ -22,7 +22,19 @@ public class DashboardService : IDashboardService
     private readonly IDocumentoRepository _documentoRepo;
     private readonly ICapturaRepository _capturaRepo;
     private readonly IAvaliacaoRepository _avaliacaoRepo;
+    private readonly ILembreteRepository _lembreteRepo;
+    private readonly IEmpresaRepository _empresaRepo;
+    private readonly IAgendaRepository _agendaRepo;
     private readonly IUsuarioAtual _usuario;
+
+    /// <summary>
+    /// Janela de alertas da régua exibida no painel (RN-095, §6.4).
+    ///
+    /// Noventa dias: um cuidado que ficou sem resposta há mais de um trimestre não é
+    /// mais um caso para ligar hoje, é histórico — e deixá-lo na lista faria o painel
+    /// crescer para sempre até ninguém mais olhar para ele.
+    /// </summary>
+    private static readonly TimeSpan JanelaDeAlertasDaRegua = TimeSpan.FromDays(90);
 
     public DashboardService(
         IConsultaRepository consultaRepo,
@@ -32,6 +44,9 @@ public class DashboardService : IDashboardService
         IDocumentoRepository documentoRepo,
         ICapturaRepository capturaRepo,
         IAvaliacaoRepository avaliacaoRepo,
+        ILembreteRepository lembreteRepo,
+        IEmpresaRepository empresaRepo,
+        IAgendaRepository agendaRepo,
         IUsuarioAtual usuario)
     {
         _consultaRepo = consultaRepo;
@@ -41,6 +56,9 @@ public class DashboardService : IDashboardService
         _documentoRepo = documentoRepo;
         _capturaRepo = capturaRepo;
         _avaliacaoRepo = avaliacaoRepo;
+        _lembreteRepo = lembreteRepo;
+        _empresaRepo = empresaRepo;
+        _agendaRepo = agendaRepo;
         _usuario = usuario;
     }
 
@@ -77,8 +95,157 @@ public class DashboardService : IDashboardService
             Mes = await MontarResumoDoMesAsync(inicioDoMes, fimDoMes, consultasDoMes),
             NotaMedia = vet.NotaMedia,
             NumAvaliacoes = vet.NumAvaliacoes,
-            NotaPublica = vet.TemNotaPublica()
+            NotaPublica = vet.TemNotaPublica(),
+
+            // §6.4: o alerta da régua era gravado e não chegava a lugar nenhum.
+            // Restrito aos animais que este profissional atendeu — a régua é do
+            // animal, mas quem tem contexto para ligar é quem já o viu.
+            ResponsaveisNaoResponsivos = await MontarAlertasDaReguaAsync([vetId])
         };
+    }
+
+/// <inheritdoc/>
+    public async Task<DashboardDaUnidadeDto> ObterDaUnidadeAsync(DateTime? data)
+    {
+        var empresa = await UnidadeDoTokenAsync();
+        var referencia = (data ?? DateTime.UtcNow).Date;
+
+        var inicioDoDia = referencia;
+        var fimDoDia = referencia.AddDays(1).AddTicks(-1);
+
+        var vinculados = (await _vetRepo.ObterPorEmpresaAsync(empresa.Id))
+            .OrderBy(v => v.Nome)
+            .ToList();
+
+        var painel = new DashboardDaUnidadeDto
+        {
+            EmpresaId = empresa.Id,
+            Nome = empresa.Nome,
+            Data = referencia
+        };
+
+        var indicadores = new IndicadoresDaUnidadeDto
+        {
+            ProfissionaisAtivos = vinculados.Count(v => v.Ativo)
+        };
+
+        foreach (var vet in vinculados)
+        {
+            var consultas = (await _consultaRepo.ObterPorVeterinarioAsync(vet.Id, inicioDoDia, fimDoDia))
+                .ToList();
+
+            var slots = (await _agendaRepo.ObterSlotsAsync(vet.Id, inicioDoDia, fimDoDia)).ToList();
+            var ocupados = slots.Count(s => s.Estado != EstadoSlot.Livre);
+
+            painel.Profissionais.Add(new AgendaDoProfissionalDto
+            {
+                VeterinarioId = vet.Id,
+                Nome = vet.Nome,
+                Ativo = vet.Ativo,
+                HorariosNoDia = slots.Count,
+                HorariosOcupados = ocupados,
+                AgendaDeHoje = await MontarAgendaAsync(consultas)
+            });
+
+            // Mesma regra do painel do profissional: cancelada e expirada não são
+            // atendimento, e contá-las como "do dia" inflaria a ocupação da unidade.
+            indicadores.AtendimentosNoDia += consultas.Count(c =>
+                c.Status is not (StatusConsulta.Cancelada or StatusConsulta.Expirada));
+
+            indicadores.Realizados += consultas.Count(c => c.Status == StatusConsulta.Realizada);
+            indicadores.Cancelados += consultas.Count(c => c.Status == StatusConsulta.Cancelada);
+            indicadores.NoShow += consultas.Count(c => c.Status == StatusConsulta.NoShow);
+
+            indicadores.HorariosNoDia += slots.Count;
+            indicadores.HorariosOcupados += ocupados;
+        }
+
+        // Unidade sem agenda materializada fica em 0%, e não em 100%: uma divisão por
+        // zero mal tratada faria a clínica que nem configurou agenda aparecer lotada.
+        indicadores.TaxaDeOcupacao = indicadores.HorariosNoDia == 0
+            ? 0m
+            : Math.Round(100m * indicadores.HorariosOcupados / indicadores.HorariosNoDia, 1);
+
+        painel.Indicadores = indicadores;
+        painel.ResponsaveisNaoResponsivos = await MontarAlertasDaReguaAsync(
+            [.. vinculados.Select(v => v.Id)]);
+
+        return painel;
+    }
+
+    /// <summary>
+    /// A unidade que o administrador da requisição administra (§7.3, RN-106).
+    ///
+    /// A empresa vem do vínculo do próprio Admin, e não de um id que o cliente
+    /// escolhe: com id na rota, qualquer Admin leria o painel de qualquer clínica, que
+    /// é o "dados de outros estabelecimentos" que a §7.3 veda em letra.
+    ///
+    /// Admin que administra mais de uma unidade recebe a primeira por ordem de nome —
+    /// o cadastro do MVP é de um administrador por unidade, e escolher entre várias é
+    /// uma tela que ainda não existe.
+    /// </summary>
+    private async Task<Empresa> UnidadeDoTokenAsync()
+    {
+        if (!_usuario.EhAdmin)
+            throw new AcessoNegadoException("RN-106",
+                "O painel da unidade e da administracao do estabelecimento.");
+
+        var vetId = _usuario.VeterinarioId
+            ?? throw new AcessoNegadoException("RN-106",
+                "O painel da unidade exige um administrador vinculado a um cadastro profissional.");
+
+        var administradas = (await _empresaRepo.ObterPorAdministradorAsync(vetId))
+            .OrderBy(e => e.Nome)
+            .ToList();
+
+        return administradas.FirstOrDefault()
+            ?? throw new NotFoundException("Empresa administrada por", vetId);
+    }
+
+    /// <summary>
+    /// Réguas que esgotaram as tentativas sem resposta, filtradas aos animais que os
+    /// profissionais informados atenderam (RN-095, §6.4).
+    ///
+    /// O filtro por animal atendido é o que impede o alerta de virar uma lista da
+    /// plataforma inteira: a régua nasce do calendário do animal e não guarda vet
+    /// nenhum, então quem "responde" por ela é quem o atendeu. Sem esse recorte, cada
+    /// clínica veria os Responsáveis omissos de todas as outras.
+    /// </summary>
+    private async Task<List<AlertaDeReguaDto>> MontarAlertasDaReguaAsync(Guid[] veterinarioIds)
+    {
+        var agora = DateTime.UtcNow;
+        var escalados = (await _lembreteRepo.ObterEscaladosParaClinicaAsync(
+            agora.Subtract(JanelaDeAlertasDaRegua))).ToList();
+
+        if (escalados.Count == 0)
+            return [];
+
+        // O cruzamento vai para o banco levando os DOIS conjuntos, e ambos sao pequenos:
+        // os animais saem das reguas que esgotaram tres tentativas, e os profissionais,
+        // de uma unidade. Carregar as consultas de cada vet para cruzar aqui leria o
+        // historico inteiro da clinica para responder sobre meia duzia de animais.
+        var atendidos = await _consultaRepo.ObterAnimaisAtendidosAsync(
+            veterinarioIds, escalados.Select(l => l.AnimalId));
+
+        var alertas = new List<AlertaDeReguaDto>();
+
+        foreach (var lembrete in escalados.Where(l => atendidos.Contains(l.AnimalId)))
+        {
+            var animal = await _animalRepo.ObterPorIdAsync(lembrete.AnimalId);
+
+            alertas.Add(new AlertaDeReguaDto
+            {
+                LembreteId = lembrete.Id,
+                AnimalId = lembrete.AnimalId,
+                AnimalNome = animal?.Nome ?? "Animal nao encontrado",
+                TutorId = lembrete.TutorId,
+                Tipo = lembrete.Tipo,
+                DataEvento = lembrete.DataEvento,
+                TentativasRealizadas = lembrete.TentativasRealizadas
+            });
+        }
+
+        return alertas;
     }
 
     /// <summary>

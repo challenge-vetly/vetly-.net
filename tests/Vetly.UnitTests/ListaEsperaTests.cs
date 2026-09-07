@@ -1,6 +1,7 @@
 using Moq;
 using Vetly.Application.DTOs.Consulta;
 using Vetly.Application.DTOs.ListaEspera;
+using Vetly.Application.DTOs.Notificacao;
 using Vetly.Application.Exceptions;
 using Vetly.Application.Interfaces;
 using Vetly.Application.Services;
@@ -21,6 +22,7 @@ public class ListaEsperaTests
     private readonly Mock<IVeterinarioRepository> _vetRepo = new();
     private readonly Mock<IAgendaRepository> _agendaRepo = new();
     private readonly Mock<IConsultaService> _consultaService = new();
+    private readonly Mock<INotificacaoService> _notificacoes = new();
     private readonly Mock<IUsuarioAtual> _usuario = new();
 
     private readonly Animal _animal;
@@ -46,7 +48,7 @@ public class ListaEsperaTests
 
     private ListaEsperaService CriarServico() =>
         new(_repo.Object, _animalRepo.Object, _vetRepo.Object,
-            _agendaRepo.Object, _consultaService.Object, _usuario.Object);
+            _agendaRepo.Object, _consultaService.Object, _notificacoes.Object, _usuario.Object);
 
     private EntrarNaListaDto Entrada() => new()
     {
@@ -113,6 +115,59 @@ public class ListaEsperaTests
         Assert.Equal(EstadoListaEspera.Notificado, promovido!.Estado);
         Assert.Equal(slot.Id, promovido.SlotOferecidoId);
         Assert.InRange(promovido.PrioridadeAte!.Value, antes.AddMinutes(14), antes.AddMinutes(16));
+    }
+
+// ── Aviso da vaga aberta (RN-037/RN-092, §3.4/§6.2) ──────────────────────
+
+    [Fact]
+    public async Task Promover_AvisaOResponsavelComTipoHorarioDisponivel()
+    {
+        var slot = SlotLivre();
+        var primeiro = new ItemListaEspera(_animal.TutorId, _animal.Id, _vet.Id, TipoServico.ConsultaRotina);
+        _repo.Setup(r => r.ObterPrimeiroAguardandoAsync(_vet.Id)).ReturnsAsync(primeiro);
+
+        await CriarServico().PromoverProximoAsync(slot.Id);
+
+        // O estado do pedido ja dizia "Notificado" antes desta regra existir, e ninguem
+        // era notificado: a prioridade de 15 minutos corria contra quem nao sabia dela.
+        _notificacoes.Verify(n => n.CriarAsync(It.Is<CriarNotificacaoDto>(d =>
+            d.TutorId == _animal.TutorId &&
+            d.Tipo == TipoNotificacao.HorarioDisponivel &&
+            d.AnimalId == _animal.Id)), Times.Once);
+    }
+
+    [Fact]
+    public async Task Promover_AvisoTrazOHorarioEOPrazoDeConfirmacao()
+    {
+        var slot = SlotLivre();
+        var primeiro = new ItemListaEspera(_animal.TutorId, _animal.Id, _vet.Id, TipoServico.ConsultaRotina);
+        _repo.Setup(r => r.ObterPrimeiroAguardandoAsync(_vet.Id)).ReturnsAsync(primeiro);
+
+        CriarNotificacaoDto? enviada = null;
+        _notificacoes.Setup(n => n.CriarAsync(It.IsAny<CriarNotificacaoDto>()))
+            .Callback<CriarNotificacaoDto>(d => enviada = d)
+            .ReturnsAsync(new NotificacaoDto());
+
+        await CriarServico().PromoverProximoAsync(slot.Id);
+
+        Assert.NotNull(enviada);
+
+        // Resposta em um toque exige saber quando e o horario e ate quando dava para
+        // responder — sem os dois, o aviso obriga a abrir o app para descobrir ambos.
+        Assert.Contains(slot.Inicio.ToString("dd/MM"), enviada!.Corpo);
+        Assert.Contains("15 minutos", enviada.Corpo);
+        Assert.Contains(_vet.Nome, enviada.Corpo);
+    }
+
+    [Fact]
+    public async Task Promover_FilaVazia_NaoAvisaNinguem()
+    {
+        var slot = SlotLivre();
+        _repo.Setup(r => r.ObterPrimeiroAguardandoAsync(_vet.Id)).ReturnsAsync((ItemListaEspera?)null);
+
+        await CriarServico().PromoverProximoAsync(slot.Id);
+
+        _notificacoes.Verify(n => n.CriarAsync(It.IsAny<CriarNotificacaoDto>()), Times.Never);
     }
 
     [Fact]

@@ -54,6 +54,36 @@ public class ReguaDeLembretesTests
     private void Vencendo(params ObrigacaoPet[] obrigacoes) =>
         _obrigacoes.Setup(r => r.ObterVencendoAteAsync(It.IsAny<DateTime>())).ReturnsAsync(obrigacoes);
 
+// ── Assunto da regua acompanha a obrigacao (§6.3) ────────────────────────
+
+    [Theory]
+    [InlineData(TipoObrigacaoPet.Vacina, TipoLembrete.Vacina)]
+    [InlineData(TipoObrigacaoPet.Vermifugo, TipoLembrete.Vermifugo)]
+    [InlineData(TipoObrigacaoPet.Antiparasitario, TipoLembrete.Vermifugo)]
+    [InlineData(TipoObrigacaoPet.Retorno, TipoLembrete.Retorno)]
+    [InlineData(TipoObrigacaoPet.MedicacaoContinua, TipoLembrete.Medicacao)]
+    [InlineData(TipoObrigacaoPet.CheckUp, TipoLembrete.CheckUp)]
+    [InlineData(TipoObrigacaoPet.Exame, TipoLembrete.CheckUp)]
+    public async Task Regua_NasceComOAssuntoDaObrigacaoQueAAbriu(
+        TipoObrigacaoPet obrigacao, TipoLembrete esperado)
+    {
+        // Toda regua nascia como Vacina, qualquer que fosse a obrigacao. Nao era so um
+        // rotulo torto: o assunto e o que a regua escreve nas tres tentativas
+        // ("Retorno em atraso") e o que a clinica le no alerta da RN-095. O
+        // Responsavel recebia tres avisos de vacina por um retorno.
+        Vencendo(new ObrigacaoPet(_animalId, _tutorId, obrigacao, "Cuidado",
+            DateTime.UtcNow.AddDays(10), 365));
+
+        LembreteAgendado? criado = null;
+        _lembretes.Setup(r => r.AdicionarAsync(It.IsAny<LembreteAgendado>()))
+            .Callback<LembreteAgendado>(l => criado = l).Returns(Task.CompletedTask);
+
+        await CriarRotina().ExecutarAsync(CancellationToken.None);
+
+        Assert.NotNull(criado);
+        Assert.Equal(esperado, criado!.Tipo);
+    }
+
     [Fact]
     public async Task Regua_ComObrigacaoVencendo_CriaAvisoELembrete()
     {

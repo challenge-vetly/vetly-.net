@@ -204,7 +204,7 @@ public class CarteiraTests
         new(_repo.Object, Mock.Of<IVeterinarioRepository>(), Mock.Of<IConsultaRepository>(),
             Mock.Of<IEmpresaRepository>(), Mock.Of<IPagamentoAdapter>(), Mock.Of<IAgendaRepository>(),
             Mock.Of<IFilaDeJobs>(), [], Mock.Of<IFidelidadeService>(), _usuario.Object,
-            Mock.Of<IColmeiaService>());
+            Mock.Of<IColmeiaService>(), Mock.Of<INotificacaoService>());
 
     private Pagamento Pagamento(decimal valor = 200m, bool confirmado = true, decimal? estorno = null)
     {

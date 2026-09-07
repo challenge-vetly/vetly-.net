@@ -78,6 +78,29 @@ public class ConsultaRepository : RepositoryBase<Consulta>, IConsultaRepository
         return new ResultadoPaginado<Consulta>(itens, total, paginacao);
     }
 
+/// <inheritdoc/>
+    public async Task<HashSet<Guid>> ObterAnimaisAtendidosAsync(
+        IEnumerable<Guid> veterinarioIds, IEnumerable<Guid> animalIds)
+    {
+        var vets = veterinarioIds.Distinct().ToList();
+        var animais = animalIds.Distinct().ToList();
+
+        // Conjunto vazio de qualquer um dos lados nao tem o que cruzar, e um IN () vazio
+        // e SQL invalido no Oracle.
+        if (vets.Count == 0 || animais.Count == 0)
+            return [];
+
+        // Distinct antes do ToListAsync: o interesse e a existencia do atendimento, e
+        // trazer uma linha por consulta repetiria o mesmo animal dezenas de vezes.
+        var atendidos = await _dbSet
+            .Where(c => vets.Contains(c.VeterinarioId) && animais.Contains(c.AnimalId))
+            .Select(c => c.AnimalId)
+            .Distinct()
+            .ToListAsync();
+
+        return [.. atendidos];
+    }
+
     /// <inheritdoc/>
     public async Task<IEnumerable<Consulta>> ObterRealizadasDoTutorDesdeAsync(Guid tutorId, DateTime desde) =>
         await _dbSet

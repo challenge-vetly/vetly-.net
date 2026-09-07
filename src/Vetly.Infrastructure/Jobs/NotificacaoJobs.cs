@@ -148,7 +148,8 @@ public class AvisarObrigacoesVencendo : IRotinaPeriodica
             // O lembrete é o que sustenta a régua: três tentativas sem resposta
             // acionam o alerta à clínica (RN-095).
             await _lembretes.AdicionarAsync(new LembreteAgendado(
-                doAnimal.Key, itens[0].TutorId, TipoLembrete.Vacina, itens[0].ProximoVencimento));
+                doAnimal.Key, itens[0].TutorId,
+                LembreteEquivalente(itens[0].Tipo), itens[0].ProximoVencimento));
 
             criadas++;
         }
@@ -179,4 +180,32 @@ public class AvisarObrigacoesVencendo : IRotinaPeriodica
             ? $"{primeira.Descricao} esta em atraso{complemento}. Toque para ver o que fazer."
             : $"{primeira.Descricao} vence em breve{complemento}. Toque para agendar.";
     }
+
+    /// <summary>
+    /// Assunto da régua correspondente à obrigação que a abriu (§6.3).
+    ///
+    /// Antes disto toda régua nascia como <c>Vacina</c>, qualquer que fosse a
+    /// obrigação. Não era só um rótulo torto: o assunto é o que a régua escreve nas
+    /// três tentativas ("Retorno em atraso", "Medicacao e amanha") e o que a clínica
+    /// lê no alerta da RN-095. O Responsável recebia três avisos de vacina por um
+    /// retorno, e a clínica era acionada sobre uma vacina que ninguém deixou de tomar.
+    ///
+    /// <see cref="TipoObrigacaoPet.Antiparasitario"/> cai em
+    /// <see cref="TipoLembrete.Vermifugo"/> e <see cref="TipoObrigacaoPet.Exame"/> em
+    /// <see cref="TipoLembrete.CheckUp"/> porque a régua tem cinco assuntos e a
+    /// obrigação tem sete: o mapa aproxima pelo que o Responsável precisa fazer —
+    /// aplicar um antiparasitário é a mesma tarefa doméstica do vermífugo, e um exame
+    /// de acompanhamento é a mesma ida à clínica do check-up.
+    /// </summary>
+    private static TipoLembrete LembreteEquivalente(TipoObrigacaoPet tipo) => tipo switch
+    {
+        TipoObrigacaoPet.Vacina => TipoLembrete.Vacina,
+        TipoObrigacaoPet.Vermifugo => TipoLembrete.Vermifugo,
+        TipoObrigacaoPet.Antiparasitario => TipoLembrete.Vermifugo,
+        TipoObrigacaoPet.Retorno => TipoLembrete.Retorno,
+        TipoObrigacaoPet.MedicacaoContinua => TipoLembrete.Medicacao,
+        TipoObrigacaoPet.CheckUp => TipoLembrete.CheckUp,
+        TipoObrigacaoPet.Exame => TipoLembrete.CheckUp,
+        _ => TipoLembrete.CheckUp
+    };
 }

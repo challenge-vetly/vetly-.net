@@ -171,7 +171,22 @@ public class AuthFluxoTests
         // Emitir JWT sem credencial fora de dev seria porta aberta: a rota some
         using var producao = new VetlyWebApplicationFactory();
         using var cliente = producao
-            .WithWebHostBuilder(builder => builder.UseEnvironment("Production"))
+            .WithWebHostBuilder(builder => builder
+                .UseEnvironment("Production")
+
+                // Segredos de verdade, porque em Producao a GuardaDeSegredos recusa
+                // subir com os placeholders do appsettings versionado — e e ela quem
+                // impede um deploy real de assinar JWT com chave publicada.
+                //
+                // UseSetting e nao ConfigureAppConfiguration: a guarda roda sobre o
+                // builder.Configuration logo no inicio do Program.cs, antes de o host
+                // ser construido, e as fontes registradas por ConfigureAppConfiguration
+                // so entram no Build(). UseSetting escreve na configuracao do host, que
+                // o WebApplicationBuilder ja enxerga desde a primeira linha.
+                .UseSetting("Jwt:Key", "chave-de-producao-com-mais-de-32-caracteres")
+                .UseSetting("Servicos:TokenInterno", "token-de-servico-de-teste")
+                .UseSetting("ConnectionStrings:OracleConnection",
+                    "User Id=vetly;Password=teste;Data Source=db:1521/orcl"))
             .CreateClient();
 
         var resposta = await cliente.PostAsync("/api/auth/token", Corpo(

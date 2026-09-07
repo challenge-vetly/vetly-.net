@@ -1,4 +1,5 @@
 using Vetly.Application.DTOs.Consulta;
+using Vetly.Application.DTOs.Repasse;
 using Vetly.Application.DTOs.Veterinario;
 
 namespace Vetly.Application.Interfaces;
@@ -40,4 +41,18 @@ public interface IVeterinarioService
     /// precisa é do registro financeiro do próprio trabalho.
     /// </summary>
     Task<ExtratoDoVeterinarioDto> ObterExtratoAsync(DateTime? inicio, DateTime? fim);
+
+    /// <summary>
+    /// Conta de repasse do próprio profissional, mascarada (§4.1, §7.3).
+    ///
+    /// Não há id na rota nem parâmetro de veterinário: a §7.3 veda ao administrador
+    /// da unidade os dados bancários pessoais dos vinculados, e um id na assinatura
+    /// seria a porta por onde essa vedação vazaria.
+    /// </summary>
+    Task<DadosDeRepasseDto> ObterDadosDeRepasseAsync();
+
+    /// <summary>
+    /// Informa ou substitui a conta de repasse do próprio profissional (§4.1).
+    /// </summary>
+    Task<DadosDeRepasseDto> DefinirDadosDeRepasseAsync(DefinirDadosDeRepasseDto dto);
 }

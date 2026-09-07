@@ -1,0 +1,41 @@
+# O contexto de build sobe inteiro para o daemon antes de a primeira instrucao rodar.
+# Sem este arquivo, bin/ e obj/ da maquina local viajam junto — e pior que lentidao:
+# um obj/ compilado no Windows invalida o cache de camada a cada build e pode vazar
+# artefato de outra configuracao para dentro da imagem.
+
+# Saidas de build
+**/bin/
+**/obj/
+**/out/
+**/publish/
+**/TestResults/
+
+# Segredos e configuracao de ambiente. NUNCA entram na imagem: em producao os valores
+# chegam por variavel de ambiente (ConnectionStrings__OracleConnection, Jwt__Key,
+# AZURE_SPEECH_KEY), e um appsettings.*.local.json copiado por engano venceria eles.
+**/appsettings.*.local.json
+**/secrets.json
+.env
+.env.*
+
+# Logs e storage local
+**/logs/
+*.log
+
+# Testes: nao entram na imagem de execucao
+tests/
+
+# Controle de versao e IDE
+.git/
+.gitignore
+.vs/
+.idea/
+**/*.user
+**/*.suo
+
+# Documentacao e ferramentas de desenvolvimento
+*.md
+.claude/
+coverlet.runsettings
+Dockerfile
+.dockerignore
