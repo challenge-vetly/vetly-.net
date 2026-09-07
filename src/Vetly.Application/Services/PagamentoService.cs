@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Vetly.Application.DTOs.Comum;
+using Vetly.Application.DTOs.Notificacao;
 using Vetly.Application.DTOs.Pagamento;
 using Vetly.Application.Exceptions;
 using Vetly.Application.Interfaces;
@@ -24,6 +25,7 @@ public class PagamentoService : IPagamentoService
     private readonly IFidelidadeService _fidelidade;
     private readonly IUsuarioAtual _usuario;
     private readonly IColmeiaService _colmeia;
+    private readonly INotificacaoService _notificacoes;
 
     public PagamentoService(
         IPagamentoRepository repo,
@@ -36,7 +38,8 @@ public class PagamentoService : IPagamentoService
         IEnumerable<ISplitFinanceiroStrategy> splitStrategies,
         IFidelidadeService fidelidade,
         IUsuarioAtual usuario,
-        IColmeiaService colmeia)
+        IColmeiaService colmeia,
+        INotificacaoService notificacoes)
     {
         _repo = repo;
         _vetRepo = vetRepo;
@@ -49,6 +52,7 @@ public class PagamentoService : IPagamentoService
         _fidelidade = fidelidade;
         _usuario = usuario;
         _colmeia = colmeia;
+        _notificacoes = notificacoes;
     }
 
     /// <summary>
@@ -413,6 +417,35 @@ public class PagamentoService : IPagamentoService
     /// </summary>
     private const int DiasDeColmeiaAposOAtendimento = 7;
 
+/// <summary>
+    /// Avisa o Responsável de que o agendamento foi confirmado (RN-007, §6.2).
+    ///
+    /// O corpo traz data, horário e profissional porque é isso que a RN-007 manda
+    /// comunicar — e porque um aviso que só diz "seu agendamento foi confirmado"
+    /// obriga a abrir o app para descobrir de quando ele é.
+    ///
+    /// Falha ao resolver o nome do profissional não derruba o aviso: perder a
+    /// confirmação inteira porque o cadastro do vet não respondeu seria trocar um
+    /// problema pequeno por um grande.
+    /// </summary>
+    private async Task AvisarAgendamentoConfirmadoAsync(Consulta consulta)
+    {
+        var vet = await _vetRepo.ObterPorIdAsync(consulta.VeterinarioId);
+        var comQuem = vet is null ? string.Empty : $" com {vet.Nome}";
+
+        await _notificacoes.CriarAsync(new CriarNotificacaoDto
+        {
+            TutorId = consulta.TutorId,
+            Tipo = TipoNotificacao.ConsultaConfirmada,
+            Titulo = "Agendamento confirmado",
+            Corpo = $"Seu atendimento{comQuem} esta confirmado para " +
+                    $"{consulta.DataHora:dd/MM 'as' HH:mm} (UTC).",
+            AnimalId = consulta.AnimalId,
+            ConsultaId = consulta.Id,
+            Destino = $"/consultas/{consulta.Id}"
+        });
+    }
+
     /// <summary>
     /// Propaga o desfecho do pagamento para a consulta e para o horario reservado.
     /// </summary>
@@ -440,6 +473,13 @@ public class PagamentoService : IPagamentoService
             await _colmeia.AbrirParaAtendimentoAsync(
                 consulta.AnimalId, consulta.VeterinarioId,
                 consulta.DataHora.AddDays(DiasDeColmeiaAposOAtendimento));
+
+            // Fluxo 1, passo 6: o agendamento so esta fechado quando o Responsavel foi
+            // avisado. O aviso nasce AQUI, no webhook, e nao na resposta sincrona da
+            // cobranca — pela mesma razao que a consulta so e confirmada aqui (RN-006):
+            // e este o estado autoritativo da transacao. Avisar na resposta da cobranca
+            // prometeria uma consulta que o gateway ainda pode recusar.
+            await AvisarAgendamentoConfirmadoAsync(consulta);
         }
 
         if (consulta.SlotId is { } slotId)

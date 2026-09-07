@@ -220,15 +220,12 @@ public class DashboardService : IDashboardService
         if (escalados.Count == 0)
             return [];
 
-        // Um conjunto dos animais atendidos, montado uma vez: o alternativo seria
-        // perguntar "este profissional atendeu este animal?" por linha de alerta.
-        var atendidos = new HashSet<Guid>();
-
-        foreach (var vetId in veterinarioIds)
-        {
-            foreach (var consulta in await _consultaRepo.ObterPorVeterinarioAsync(vetId))
-                atendidos.Add(consulta.AnimalId);
-        }
+        // O cruzamento vai para o banco levando os DOIS conjuntos, e ambos sao pequenos:
+        // os animais saem das reguas que esgotaram tres tentativas, e os profissionais,
+        // de uma unidade. Carregar as consultas de cada vet para cruzar aqui leria o
+        // historico inteiro da clinica para responder sobre meia duzia de animais.
+        var atendidos = await _consultaRepo.ObterAnimaisAtendidosAsync(
+            veterinarioIds, escalados.Select(l => l.AnimalId));
 
         var alertas = new List<AlertaDeReguaDto>();
 

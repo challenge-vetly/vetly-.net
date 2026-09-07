@@ -62,7 +62,17 @@ aponta para o lugar errado é pior do que nenhuma.
 | RN-070/RN-072 | O consolidado verifica explicitamente que comissão + repasse + desconto fecha o bruto, e agrupa o repasse por destinatário pela maior pendência | `FinanceiroService.ObterConsolidadoAsync` |
 | RN-071 | A liquidação registra um pagamento feito fora da plataforma, exige referência e ignora o que já estava liquidado; só cobrança confirmada entra | `FinanceiroService.LiquidarAsync` + `Pagamento.Liquidar` |
 | RN-105 | O painel é sempre do próprio veterinário e destaca só o que trava dinheiro ou documento; avaliação sem resposta não conta como pendência bloqueante | `DashboardService.ObterDoVeterinarioAsync` |
+| RN-105/RN-106 | O painel da unidade traz a agenda de todos os vinculados e os indicadores operacionais, com a empresa derivada do vínculo do próprio Admin — sem id na rota, porque com ele qualquer Admin leria o painel de qualquer clínica | `DashboardService.ObterDaUnidadeAsync` |
+| RN-072 | Conta de repasse do prestador (banco, agência, conta, CPF/CNPJ do titular e chave Pix) embutida no registro, substituída inteira e lida só pelo titular, com conta e chave mascaradas | `DadosDeRepasse` + `VeterinarioService.DefinirDadosDeRepasseAsync` + `EmpresaService` |
+| RN-072 | O consolidado diz **se** o destinatário tem conta de repasse, nunca qual — falso com repasse pendente é a linha que trava o fechamento | `FinanceiroService.ResolverDestinatarioAsync` |
 | RN-092 | Notificação é gravada antes de enviada e sobrevive ao push perdido; token recusado como inválido desativa o dispositivo, falha de provedor não | `Notificacao` + `NotificacaoService` + `IPushAdapter` |
+| RN-007/RN-092 | O agendamento só fecha com o aviso de confirmação, disparado no **webhook** — o estado autoritativo — e com data, horário e profissional no corpo | `PagamentoService.AvisarAgendamentoConfirmadoAsync` |
+| RN-037/RN-092 | Vaga aberta na lista de espera avisa o primeiro da fila, com o horário e o prazo de 15 min no corpo — o mesmo prazo que o domínio vai cobrar | `ListaEsperaService.AvisarVagaAbertaAsync` |
+| RN-014/RN-092 | O desfecho financeiro do cancelamento vira aviso, inclusive quando o reembolso é zero; quem cancelou muda o tipo — `ReembolsoConfirmado` para o Responsável, `CancelamentoPeloPrestador` para a operação | `ConsultaService.AvisarReembolsoAsync` |
+| RN-016/RN-092 | Crédito de pontos avisa, e a subida de tier é anunciada só quando ocorre — o tier é recalculado depois do crédito e comparado com o de antes | `FidelidadeService.AvisarCreditoAsync` |
+| RN-025/RN-092 | Redistribuição chega como `CancelamentoPeloPrestador`, e não como confirmação de agendamento: o app agrupa a caixa de entrada por tipo | `RedistribuicaoService.AvisarResponsavelAsync` |
+| RN-094 | A régua nasce com o assunto da obrigação que a abriu, e não fixo em `Vacina`; antiparasitário cai em vermífugo e exame em check-up, porque a régua tem cinco assuntos e a obrigação tem sete | `AvisarObrigacoesVencendo.LembreteEquivalente` |
+| RN-095 | O alerta de Responsável não responsivo aparece no painel do profissional e no da unidade, restrito aos animais que cada um atendeu | `DashboardService.MontarAlertasDaReguaAsync` + `ILembreteRepository.ObterEscaladosParaClinicaAsync` |
 | RN-094/RN-095 | Régua diária transforma obrigação vencendo em um aviso por animal, com intervalo mínimo de 7 dias, e cria o lembrete que aciona a clínica após 3 tentativas | `AvisarObrigacoesVencendo` + `LembreteAgendado` |
 | RN-055 | Só o Responsável atendido avalia, uma vez por consulta e em até **14 dias**; índice único garante a invariante sob concorrência | `Avaliacao` + `AvaliacaoService` |
 | RN-059 | Cancelamento invalida a avaliação — sai do cálculo da nota, mas a linha fica com o motivo | `Avaliacao.Invalidar` + `AvaliacaoService.InvalidarPorCancelamentoAsync` |
@@ -171,6 +181,64 @@ funciona; o que não existe é a automação que decide **quais** documentos exi
 é `POST /api/consultas/{id}/finalizar`, o mesmo ato que a RN-087 já exige do profissional:
 ele leva a sessão de captura a `Concluida` e devolve esse estado, que é o que tira o app
 do polling.
+
+---
+
+## A matriz de canais (§6.2) e onde cada evento nasce
+
+A matriz do documento de produto lista onze eventos que o Responsável tem de receber
+in-app e por push. Ela é fácil de ler como decoração de produto e difícil de auditar
+no código, porque nenhum lugar único a implementa — cada evento nasce no serviço que
+produz o fato. A tabela abaixo existe para que a auditoria seja uma leitura, e não uma
+busca.
+
+| Evento (§6.2) | Tipo | Onde é disparado |
+|---|---|---|
+| Confirmação de agendamento | `ConsultaConfirmada` | `PagamentoService.AvisarAgendamentoConfirmadoAsync` (webhook) · `ConsultaService` (retorno) |
+| Vaga aberta em lista de espera | `HorarioDisponivel` | `ListaEsperaService.PromoverProximoAsync` |
+| Documentos do atendimento | `DocumentoPublicado` | `DocumentoService.PublicarAsync` · `ExameService` |
+| Confirmação de reembolso | `ReembolsoConfirmado` | `ConsultaService.CancelarAsync` |
+| Lembrete de vacina / vermífugo | `ObrigacaoVencendo` | `AvisarObrigacoesVencendo` + `AgendarTentativasDaRegua` |
+| Lembrete de retorno | `ObrigacaoVencendo` | idem — o assunto vem do tipo da obrigação |
+| Lembrete de medicação / recompra | `ObrigacaoVencendo` | idem |
+| Check-up preventivo | `ObrigacaoVencendo` | idem |
+| Pontos creditados / mudança de tier | `PontosCreditados` | `FidelidadeService` (crédito por consulta e por obrigação) |
+| Promoções | `Promocao` | opt-in conferido em `NotificacaoService.CriarAsync` (RN-093) |
+| Mudança decidida pelo prestador | `CancelamentoPeloPrestador` | `RedistribuicaoService` · `ConsultaService.CancelarAsync` |
+
+Três tipos do enum **não** têm gatilho, e é deliberado registrar isso em vez de deixar
+a ausência parecer esquecimento: `ConsultaProxima` e `AvaliacaoPendente` não estão na
+matriz do produto — a avaliação é puxada pela rota `GET /api/avaliacoes/pendentes`, e
+não empurrada —, e `PontosExpirando` depende de uma rotina de varredura de lotes a
+vencer que a §6.2 não pede. Os três seguem no enum porque o app já os distingue por
+ícone e agrupamento, e removê-los renumeraria valores já persistidos.
+
+O agrupamento por tipo é o que dá sentido à distinção. `ReembolsoConfirmado` e
+`CancelamentoPeloPrestador` descrevem o mesmo cancelamento e existem separados porque
+respondem a perguntas diferentes: um diz o que aconteceu com o dinheiro de um ato que
+o Responsável praticou; o outro diz que alguém desmarcou o atendimento dele. Mandar o
+primeiro para quem não cancelou nada leria como confirmação de um ato próprio.
+
+---
+
+## Por que a conta de repasse não tem id na rota
+
+`GET /api/veterinarios/me/dados-repasse` e o `PUT` correspondente não aceitam id de
+veterinário, e isso não é economia de parâmetro. A §7.3 veda ao administrador da
+unidade os "dados bancários pessoais" dos profissionais vinculados. Com um `Guid` na
+rota, essa vedação dependeria de uma checagem no serviço — e passaria a existir
+enquanto ninguém a removesse por engano. Sem o parâmetro, não há o que trocar.
+
+A conta da **empresa** é outra coisa e mora em outra rota
+(`/api/empresas/{id}/dados-repasse`, `ApenasAdmin`): é a conta do estabelecimento, que
+é justamente quem recebe o repasse quando o vet é vinculado, e a remuneração interna
+fica fora do escopo da plataforma.
+
+A leitura devolve conta e chave Pix **mascaradas** nas duas rotas. Quem lê é o titular
+conferindo o que cadastrou, e os últimos dígitos bastam; devolver o número inteiro
+transformaria um token vazado, um log de resposta ou um print de tela em dado bancário
+completo. O mascaramento mora no value object, e não em cada mapeamento — a decisão de
+o que esconder é do domínio, não de quem lembrar de aplicá-la.
 
 ---
 

@@ -2,6 +2,7 @@ using Moq;
 using Vetly.Application.DTOs.Fidelidade;
 using Vetly.Application.DTOs.Pagamento;
 using Vetly.Application.Exceptions;
+using Vetly.Application.DTOs.Notificacao;
 using Vetly.Application.Interfaces;
 using Vetly.Application.Services;
 using Vetly.Application.Strategies.Split;
@@ -48,12 +49,13 @@ public class PagamentoWebhookTests
 
     private readonly Mock<IFidelidadeService> _fidelidade = new();
     private readonly Mock<IColmeiaService> _colmeia = new();
+    private readonly Mock<INotificacaoService> _notificacoes = new();
 
     private PagamentoService CriarServico() =>
         new(_repo.Object, _vetRepo.Object, _consultaRepo.Object, _empresaRepo.Object,
             _adaptador.Object, _agendaRepo.Object, _fila.Object,
             [new SplitBasicoStrategy(), new SplitProfissionalStrategy(), new SplitEnterpriseStrategy()],
-            _fidelidade.Object, _usuario.Object, _colmeia.Object);
+            _fidelidade.Object, _usuario.Object, _colmeia.Object, _notificacoes.Object);
 
     /// <summary>Monta consulta em checkout, com horario travado e pagamento pendente.</summary>
     private (Pagamento Pagamento, Consulta Consulta, Slot Slot) CenarioEmCheckout()
@@ -799,5 +801,55 @@ public class PagamentoWebhookTests
         // Consulta que nao vai acontecer nao justifica acesso a historico nenhum
         _colmeia.Verify(c => c.AbrirParaAtendimentoAsync(
             It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<DateTime>()), Times.Never);
+    }
+
+    // ── RN-007 / Fluxo 1, passo 6: o agendamento so fecha com o aviso ────────
+
+    [Fact]
+    public async Task Webhook_Confirmado_AvisaOResponsavelDoAgendamento()
+    {
+        var (_, consulta, _) = CenarioEmCheckout();
+        EventoDoProvedor(StatusPagamento.Confirmado);
+
+        await CriarServico().ProcessarWebhookAsync("{}", "assinatura");
+
+        // O aviso nasce no webhook, e nao na resposta sincrona da cobranca: e este o
+        // estado autoritativo da transacao (RN-006).
+        _notificacoes.Verify(n => n.CriarAsync(It.Is<CriarNotificacaoDto>(d =>
+            d.TutorId == consulta.TutorId &&
+            d.Tipo == TipoNotificacao.ConsultaConfirmada &&
+            d.ConsultaId == consulta.Id)), Times.Once);
+    }
+
+    [Fact]
+    public async Task Webhook_Confirmado_AvisoTrazDataHorarioEProfissional()
+    {
+        var (_, consulta, _) = CenarioEmCheckout();
+        EventoDoProvedor(StatusPagamento.Confirmado);
+
+        CriarNotificacaoDto? aviso = null;
+        _notificacoes.Setup(n => n.CriarAsync(It.IsAny<CriarNotificacaoDto>()))
+            .Callback<CriarNotificacaoDto>(d => aviso = d)
+            .ReturnsAsync(new NotificacaoDto());
+
+        await CriarServico().ProcessarWebhookAsync("{}", "assinatura");
+
+        Assert.NotNull(aviso);
+
+        // A RN-007 manda comunicar data, horario e profissional. "Seu agendamento foi
+        // confirmado" sozinho obriga a abrir o app para descobrir de quando ele e.
+        Assert.Contains(consulta.DataHora.ToString("dd/MM"), aviso!.Corpo);
+    }
+
+    [Fact]
+    public async Task Webhook_Recusado_NaoAvisaAgendamentoConfirmado()
+    {
+        CenarioEmCheckout();
+        EventoDoProvedor(StatusPagamento.Recusado);
+
+        await CriarServico().ProcessarWebhookAsync("{}", "assinatura");
+
+        _notificacoes.Verify(n => n.CriarAsync(It.Is<CriarNotificacaoDto>(
+            d => d.Tipo == TipoNotificacao.ConsultaConfirmada)), Times.Never);
     }
 }

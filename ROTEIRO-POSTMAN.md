@@ -164,6 +164,36 @@ A vitrine com preço e duração. **É daqui que sai o valor cobrado** — nunca
 pm.environment.set("servicoId", pm.response.json()[0].id);
 ```
 
+### 1.6 · Cadastrar a conta de repasse
+
+`PUT {{baseUrl}}/api/veterinarios/me/dados-repasse` · Bearer `{{tokenVet}}`
+
+Fecha o onboarding financeiro (§4.1). **Não há id na rota**: a conta é sempre a de quem
+está com o token, porque a §7.3 veda ao administrador da unidade os dados bancários
+pessoais dos vinculados — com um `Guid` aqui, bastaria trocá-lo.
+
+```json
+{
+  "banco": "341",
+  "agencia": "1234",
+  "conta": "0012345-6",
+  "documentoTitular": "123.456.789-09",
+  "chavePix": "marina@clinicavetly.com.br"
+}
+```
+
+O documento aceita CPF ou CNPJ, com ou sem pontuação, e é gravado só com os dígitos.
+Comprimento diferente de 11 ou 14 devolve **400**.
+
+`GET` na mesma rota devolve a conta com o número e a chave Pix **mascarados** — a tela
+de conferência precisa dos últimos dígitos, não do número inteiro. Antes do cadastro,
+responde `200` com `"configurado": false`, e não 404: o veterinário existe, o que falta
+é um passo do onboarding.
+
+Para a **empresa**, a rota equivalente é `PUT /api/empresas/{{empresaId}}/dados-repasse`
+com token de Admin: é a conta do estabelecimento, que é quem recebe o repasse quando o
+vet é vinculado.
+
 ---
 
 ## Fluxo 2 — Onboarding do Responsável
@@ -658,6 +688,12 @@ Depois do caminho feliz, estes são os que mostram as regras funcionando.
 | 7.10 | `GET /api/financeiro/consolidado` *(Admin)* | O campo `fecha` confirma `bruto = comissão + repasse + desconto` |
 | 7.11 | `POST /api/colmeia` *(Tutor)* | Autoriza um vet de fora a alcançar o histórico, com escopo e prazo |
 | 7.12 | `GET /api/animais/{{animalId}}/acessos` *(Tutor)* | A trilha append-only de todo acesso ao histórico — permitido **ou** negado |
+| 7.13 | `GET /api/notificacoes/tutor/{{tutorId}}` *(Tutor)*, logo após o passo 3.5 | A confirmação do agendamento (`ConsultaConfirmada`) está lá. O aviso nasce no **webhook**, não na resposta da cobrança |
+| 7.14 | O mesmo, depois do 7.2 | `ReembolsoConfirmado` quando quem cancelou foi o Responsável; `CancelamentoPeloPrestador` quando foi a operação. Cancelamento sem reembolso também avisa |
+| 7.15 | O mesmo, depois de a consulta ser realizada e o job de pontos rodar | `PontosCreditados`. O título anuncia o tier só quando a faixa muda |
+| 7.16 | `GET /api/dashboard/unidade` *(Admin da unidade)* | Agenda de todos os vinculados no dia, ocupação e `responsaveisNaoResponsivos`. **Sem id na rota** — a unidade sai do vínculo do próprio Admin (§7.3) |
+| 7.17 | `GET /api/dashboard/unidade` com token de **Vet** | **403**. O painel da unidade é da administração |
+| 7.18 | `GET /api/veterinarios/me/dados-repasse` com token de **Admin sem cadastro profissional** | **403**. Não existe `Guid` na rota para o Admin trocar (§7.3) |
 
 Corpo do 7.11:
 
@@ -710,5 +746,5 @@ Sem autenticação.
 
 ---
 
-Documentação interativa com todos os ~147 endpoints: **`https://localhost:7262/scalar/v1`**.
+Documentação interativa com todos os 152 endpoints: **`https://localhost:7262/scalar/v1`**.
 Regras de negócio por código: [REGRAS-DE-NEGOCIO.md](REGRAS-DE-NEGOCIO.md).

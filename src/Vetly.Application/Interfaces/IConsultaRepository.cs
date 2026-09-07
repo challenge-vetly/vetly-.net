@@ -33,4 +33,17 @@ public interface IConsultaRepository : IRepositoryBase<Consulta>
     /// avaliações pendentes (RN-055).
     /// </summary>
     Task<IEnumerable<Consulta>> ObterRealizadasDoTutorDesdeAsync(Guid tutorId, DateTime desde);
+
+    /// <summary>
+    /// Quais dos animais informados foram atendidos por algum dos profissionais
+    /// informados. É o recorte do alerta da régua (RN-095, §6.4).
+    ///
+    /// Recebe os <b>dois</b> conjuntos e filtra no banco de propósito. O caminho
+    /// natural seria carregar as consultas de cada profissional e cruzar em memória —
+    /// e isso leria o histórico inteiro da unidade para responder sobre meia dúzia de
+    /// animais. Os dois conjuntos aqui são pequenos por construção: os animais vêm das
+    /// réguas que esgotaram três tentativas, e os profissionais, de uma unidade.
+    /// </summary>
+    Task<HashSet<Guid>> ObterAnimaisAtendidosAsync(
+        IEnumerable<Guid> veterinarioIds, IEnumerable<Guid> animalIds);
 }

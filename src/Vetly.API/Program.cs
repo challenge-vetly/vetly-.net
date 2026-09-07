@@ -448,18 +448,18 @@ var app = builder.Build();
 // ── Middlewares ───────────────────────────────────────────────────────────────
 // A ordem aqui nao e estetica; cada posicao resolve um problema:
 //
-//   1. CorrelationId  — precisa ser o primeiro: e ele que define o TraceIdentifier que
-//                       todos os outros (inclusive o ProblemDetails de erro) vao usar.
-//   2. Log de request — por fora do tratador de excecao, para registrar o status FINAL
+//   1. Forwarded      — antes de todos: o esquema e o IP que ele corrige sao os que os
+//                       quatro seguintes (e o UseHttpsRedirection) vao enxergar. Depois
+//                       do CorrelationId ja e tarde — o log registraria o IP do proxy.
+//   2. CorrelationId  — precisa vir antes dos que registram: e ele que define o
+//                       TraceIdentifier que todos os outros (inclusive o ProblemDetails
+//                       de erro) vao usar.
+//   3. Log de request — por fora do tratador de excecao, para registrar o status FINAL
 //                       da resposta, e nao o caminho que estourou no meio.
-//   3. Metricas HTTP  — mesma razao: mede o tempo que o cliente esperou de verdade,
+//   4. Metricas HTTP  — mesma razao: mede o tempo que o cliente esperou de verdade,
 //                       incluindo o custo de montar a resposta de erro.
-//   4. Excecoes       — o mais interno dos quatro: converte excecao em ProblemDetails.
-// Antes de tudo: o esquema e o IP corrigidos aqui sao os que o log de requisicoes, as
-// metricas e o UseHttpsRedirection vao enxergar. Depois do primeiro middleware ja e
-// tarde — o CorrelationId registraria o IP do proxy.
+//   5. Excecoes       — o mais interno dos cinco: converte excecao em ProblemDetails.
 app.UseForwardedHeaders();
-
 app.UseMiddleware<CorrelationIdMiddleware>();
 app.UseLogDeRequisicoes();
 app.UseMiddleware<MetricasHttpMiddleware>();

@@ -53,6 +53,9 @@ public class DashboardDaUnidadeTests
             .ReturnsAsync([]);
 
         _lembreteRepo.Setup(r => r.ObterEscaladosParaClinicaAsync(It.IsAny<DateTime>())).ReturnsAsync([]);
+
+        _consultaRepo.Setup(r => r.ObterAnimaisAtendidosAsync(
+            It.IsAny<IEnumerable<Guid>>(), It.IsAny<IEnumerable<Guid>>())).ReturnsAsync([]);
     }
 
     private DashboardService CriarServico() =>
@@ -235,10 +238,9 @@ public class DashboardDaUnidadeTests
 
         _vetRepo.Setup(r => r.ObterPorEmpresaAsync(_empresa.Id)).ReturnsAsync([vet]);
 
-        var atendida = new Consulta(dia.AddDays(-10), ModalidadeAtendimento.Presencial,
-            animal.TutorId, animal.Id, vet.Id);
-
-        _consultaRepo.Setup(r => r.ObterPorVeterinarioAsync(vet.Id, null, null)).ReturnsAsync([atendida]);
+        _consultaRepo.Setup(r => r.ObterAnimaisAtendidosAsync(
+                It.IsAny<IEnumerable<Guid>>(), It.IsAny<IEnumerable<Guid>>()))
+            .ReturnsAsync([animal.Id]);
 
         _lembreteRepo.Setup(r => r.ObterEscaladosParaClinicaAsync(It.IsAny<DateTime>()))
             .ReturnsAsync([ReguaEsgotada(animal.Id, animal.TutorId)]);
