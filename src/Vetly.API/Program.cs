@@ -100,14 +100,17 @@ builder.Services.AddOpenApi();
 // por HTTPS, as URLs absolutas (CreatedAtAction, a URL assinada do storage) apontam
 // para o endereco interno, e o log registra o IP do proxy como se fosse o do cliente.
 //
-// KnownNetworks/KnownProxies sao limpos porque em Kubernetes e nos PaaS o proxy fica
+// KnownIPNetworks/KnownProxies sao limpos porque em Kubernetes e nos PaaS o proxy fica
 // numa faixa que muda: a lista branca padrao (loopback) rejeitaria o cabecalho
 // legitimo. A protecao aqui e a topologia — a porta da aplicacao nao e exposta
 // diretamente —, e nao a origem do salto.
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
 {
     options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
-    options.KnownNetworks.Clear();
+
+    // KnownIPNetworks e nao KnownNetworks: a propriedade antiga esta obsoleta no
+    // .NET 10 (ASPDEPR005) e some numa versao futura.
+    options.KnownIPNetworks.Clear();
     options.KnownProxies.Clear();
 });
 
