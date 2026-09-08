@@ -112,15 +112,22 @@ function New-Segredo {
 function Invoke-Ssh {
     param([string]$Comando, [switch]$IgnorarFalha)
 
-    $saida = ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null `
-        -o LogLevel=ERROR "$usuario@$fqdn" $Comando 2>&1
-
-    $saida | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
+    # SEM 2>&1: no PowerShell 5.1, mesclar o stderr de um executavel nativo transforma
+    # cada linha em ErrorRecord, e com ErrorActionPreference=Stop isso derruba o script
+    # na PRIMEIRA linha de progresso do Docker ("Pulling", "Building") — que sai por
+    # stderr e nao significa falha nenhuma. Foi exatamente o que aconteceu aqui: o
+    # `docker compose up --build` morreu no meio porque a mensagem "Pulling" do Caddy
+    # foi lida como erro.
+    #
+    # Sem redirecionar, o stdout e o stderr do ssh fluem direto para o console — e
+    # continuam visiveis no log. $LASTEXITCODE, e nao a presenca de stderr, e quem diz
+    # se o comando remoto falhou.
+    ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null `
+        -o LogLevel=ERROR "$usuario@$fqdn" $Comando
 
     if ($LASTEXITCODE -ne 0 -and -not $IgnorarFalha) {
         throw "Comando remoto falhou (codigo $LASTEXITCODE): $Comando"
     }
-    return $saida
 }
 
 # ── 0. Sessao ─────────────────────────────────────────────────────────────────
@@ -153,6 +160,21 @@ if (-not $SomenteAplicacao) {
     } else {
         $cloudInit = Join-Path $PSScriptRoot 'vm/cloud-init.yaml'
         if (-not (Test-Path $cloudInit)) { throw "cloud-init nao encontrado em $cloudInit" }
+
+        # O Azure CLI le o --custom-data como latin-1. Um travessao ou aspa curva num
+        # comentario derruba o `az vm create` com "'latin-1' codec can't encode", e a
+        # mensagem nao diz que arquivo nem que caractere — so a posicao no byte stream.
+        # Conferir aqui troca isso por um erro que aponta o problema.
+        $bytes = [IO.File]::ReadAllBytes($cloudInit)
+        $foraDaTabela = $bytes | Where-Object { $_ -gt 127 }
+
+        if ($foraDaTabela) {
+            $texto = [Text.Encoding]::UTF8.GetString($bytes)
+            $ofensores = ($texto.ToCharArray() | Where-Object { [int]$_ -gt 127 } |
+                Select-Object -Unique | ForEach-Object { "U+{0:X4} '{1}'" -f [int]$_, $_ }) -join ', '
+
+            throw "cloud-init.yaml tem caracteres fora do latin-1 ($ofensores). O Azure CLI nao os aceita em --custom-data; troque por ASCII."
+        }
 
         # StandardSSD no disco: o gargalo desta maquina e CPU, nao IOPS. Premium SSD
         # custaria o dobro para acelerar algo que nao esta lento.

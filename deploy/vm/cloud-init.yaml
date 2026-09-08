@@ -2,7 +2,7 @@
 # Preparacao da VM da Vetly: Docker Engine + plugin de Compose.
 #
 # Roda uma vez, no primeiro boot, antes de qualquer deploy. O script de provisionamento
-# espera pelo arquivo-sentinela /opt/vetly/pronto antes de copiar o codigo — sem isso,
+# espera pelo arquivo-sentinela /opt/vetly/pronto antes de copiar o codigo - sem isso,
 # ele tentaria rodar `docker` numa maquina que ainda esta instalando o Docker, e a
 # falha apareceria como "command not found" no meio do deploy.
 #
