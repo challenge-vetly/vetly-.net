@@ -26,7 +26,10 @@ public class RegistroIdempotenciaConfiguration : IEntityTypeConfiguration<Regist
             .HasColumnType("VARCHAR2(200)").HasColumnName("ROTA").IsRequired();
 
         builder.Property(r => r.StatusHttp)
-            .HasColumnType("NUMBER(3)").HasColumnName("STATUS_HTTP").IsRequired();
+            // Sem HasColumnType: "NUMBER(3)" mapeava para byte, e status HTTP passa de
+            // 255 com frequencia — 404 virava 148, 422 virava 166, 500 virava 244. A
+            // rota idempotente reentregava um status que nunca existiu.
+            .HasColumnName("STATUS_HTTP").IsRequired();
 
         // CLOB: o corpo da resposta nao cabe em VARCHAR2(4000)
         builder.Property(r => r.Resposta)

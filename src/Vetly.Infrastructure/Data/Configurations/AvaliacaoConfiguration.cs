@@ -27,7 +27,12 @@ public class AvaliacaoConfiguration : IEntityTypeConfiguration<Avaliacao>
             .HasColumnType("CHAR(36)").HasColumnName("EMPRESA_ID");
 
         builder.Property(a => a.Nota)
-            .HasColumnType("NUMBER(1)").HasColumnName("NOTA").IsRequired();
+            // Sem HasColumnType, e aqui era o caso mais grave. "NUMBER(1)" fazia o
+            // provider Oracle resolver a propriedade como BOOLEAN: a nota de 1 a 5
+            // (RN-055) seria gravada como 0 ou 1, e toda reputacao da plataforma
+            // (RN-057, NotaMedia) nasceria colapsada em 1,0. Nenhuma avaliacao tinha
+            // sido gravada ainda quando isto foi encontrado.
+            .HasColumnName("NOTA").IsRequired();
 
         builder.Property(a => a.Comentario)
             .HasColumnType("VARCHAR2(1000)").HasColumnName("COMENTARIO");

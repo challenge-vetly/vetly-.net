@@ -25,17 +25,28 @@ public class AgendaConfigConfiguration : IEntityTypeConfiguration<AgendaConfig>
 
         // Horario em minutos desde a meia-noite: inteiro simples, sem depender de
         // suporte a TimeOnly no provider Oracle.
+        //
+        // SEM HasColumnType, e isso e deliberado. Declarar "NUMBER(4)" fazia o provider
+        // Oracle escolher um mapeamento de UM BYTE pela precisao — o modelo do EF
+        // passava a tratar a propriedade como byte, ainda que a entidade seja int, e
+        // todo valor acima de 255 era truncado modulo 256 NA ESCRITA, em silencio.
+        // 08:00 (480 min) virava 224 no banco, ou seja 03:44; 18:00 (1080) virava 56.
+        // A coluna NUMBER(4) comportava o valor — quem truncava era o mapeamento.
+        //
+        // Sem o tipo explicito, o EF usa o mapeamento natural de int e CLR e coluna
+        // param de discordar. A suite nao pegava isso porque os testes de integracao
+        // rodam sobre InMemory, que nao aplica mapeamento de tipo do Oracle.
         builder.Property(a => a.InicioEmMinutos)
-            .HasColumnType("NUMBER(4)").HasColumnName("INICIO_EM_MINUTOS").IsRequired();
+            .HasColumnName("INICIO_EM_MINUTOS").IsRequired();
 
         builder.Property(a => a.FimEmMinutos)
-            .HasColumnType("NUMBER(4)").HasColumnName("FIM_EM_MINUTOS").IsRequired();
+            .HasColumnName("FIM_EM_MINUTOS").IsRequired();
 
         builder.Property(a => a.DuracaoMinutos)
-            .HasColumnType("NUMBER(4)").HasColumnName("DURACAO_MINUTOS").IsRequired();
+            .HasColumnName("DURACAO_MINUTOS").IsRequired();
 
         builder.Property(a => a.IntervaloMinutos)
-            .HasColumnType("NUMBER(4)").HasColumnName("INTERVALO_MINUTOS").IsRequired();
+            .HasColumnName("INTERVALO_MINUTOS").IsRequired();
 
         builder.Property(a => a.AtualizadaEm).HasColumnName("ATUALIZADA_EM").IsRequired();
 

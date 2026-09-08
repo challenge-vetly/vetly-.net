@@ -30,7 +30,10 @@ public class ServicoConfiguration : IEntityTypeConfiguration<Servico>
             .HasColumnType("NUMBER(1)").HasColumnName("ACEITA_PLANO_PET").IsRequired();
 
         builder.Property(s => s.DuracaoMinutos)
-            .HasColumnType("NUMBER(4)").HasColumnName("DURACAO_MINUTOS").IsRequired();
+            // Sem HasColumnType: "NUMBER(4)" fazia o provider Oracle mapear a
+            // propriedade como byte e truncar modulo 256 na escrita. Uma cirurgia de
+            // 300 minutos viraria 44.
+            .HasColumnName("DURACAO_MINUTOS").IsRequired();
 
         builder.Property(s => s.Ativo)
             .HasColumnType("NUMBER(1)").HasColumnName("ATIVO").IsRequired();
