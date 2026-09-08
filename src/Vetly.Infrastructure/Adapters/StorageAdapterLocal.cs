@@ -150,7 +150,18 @@ public class StorageAdapterLocal : IStorageAdapter
         var expiraEmUnix = expiraEm.ToUnixTimeSeconds();
         var assinatura = CalcularAssinatura(chave, operacao, expiraEmUnix);
 
-        var url = $"{_baseUrlPublica}{_baseUrl}/{Uri.EscapeDataString(chave)}" +
+        // Escapa SEGMENTO A SEGMENTO, e não a chave inteira. Escapar de uma vez
+        // transforma as barras em %2F, e o Kestrel não decodifica %2F no path — é uma
+        // defesa deliberada dele contra confusão de caminho. O resultado é que a chave
+        // chegava ao controller na forma codificada e não batia com a que foi
+        // assinada: a API devolvia 403 no upload que ela mesma acabara de emitir, e o
+        // motor de transcrição não conseguia baixar o áudio que ela mesma apontou.
+        //
+        // Escapando por segmento, a URL continua sendo um caminho de verdade e a rota
+        // catch-all entrega exatamente a chave que foi assinada.
+        var caminho = string.Join('/', chave.Split('/').Select(Uri.EscapeDataString));
+
+        var url = $"{_baseUrlPublica}{_baseUrl}/{caminho}" +
                   $"?operacao={operacao}&expiraEm={expiraEmUnix}&assinatura={Uri.EscapeDataString(assinatura)}";
 
         return new UrlAssinadaDto(url, expiraEm.UtcDateTime);

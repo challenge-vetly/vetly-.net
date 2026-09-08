@@ -1,3 +1,5 @@
+using Vetly.Application.Interfaces;
+using Microsoft.Extensions.DependencyInjection;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -300,4 +302,38 @@ public class MidiaStorageTests
 
     private static long ExtrairExpiracao(string url) =>
         long.Parse(url.Split("expiraEm=")[1].Split('&')[0]);
+
+    // ── Round-trip HTTP de verdade (o que os testes de adaptador nao pegam) ──
+
+    [Fact]
+    public async Task UrlAssinada_FazORoundTripHttpCompleto()
+    {
+        // Os demais testes assinam e conferem a MESMA string em memoria, e por isso
+        // nunca viram este defeito: a URL emitida escapava a chave inteira, virando as
+        // barras em %2F, e o Kestrel nao decodifica %2F no path. A chave chegava ao
+        // controller codificada, nao batia com a assinada, e a API respondia 403 ao
+        // upload que ela mesma tinha acabado de emitir — quebrando tambem o download
+        // do audio pelo motor de transcricao.
+        var fabrica = new VetlyWebApplicationFactory();
+        using var cliente = fabrica.CreateClient();
+
+        var storage = (StorageAdapterLocal)fabrica.Services
+            .CreateScope().ServiceProvider.GetRequiredService<IStorageAdapter>();
+
+        const string chave = "audioconsulta/2026/09/round-trip";
+        var upload = await storage.GerarUrlDeUploadAsync(chave, "audio/wav", TimeSpan.FromMinutes(15));
+
+        // So o caminho relativo: o cliente de teste tem base propria.
+        var relativa = new Uri(upload.Url).PathAndQuery;
+
+        var conteudo = new ByteArrayContent([1, 2, 3, 4]);
+        conteudo.Headers.ContentType = new MediaTypeHeaderValue("audio/wav");
+
+        var resposta = await cliente.PutAsync(relativa, conteudo);
+
+        // 404 seria aceitavel aqui (a midia nao existe no banco deste teste); 403 nao,
+        // porque significa que a assinatura da propria API nao confere com ela mesma.
+        Assert.NotEqual(HttpStatusCode.Forbidden, resposta.StatusCode);
+    }
+
 }
