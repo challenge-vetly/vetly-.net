@@ -405,6 +405,12 @@ builder.Services.AddScoped<IRotinaPeriodica, AgendarTentativasDaRegua>();
 
 builder.Services.AddHostedService<VetlyBackgroundService>();
 
+// §4.1: cria o primeiro administrador quando Bootstrap:AdminEmail esta definido e nao
+// ha unidade nenhuma. Sem ele, a plataforma sobe em producao com a persona de
+// administracao inalcancavel — a role Admin e derivada de administrar uma empresa, e
+// criar empresa exige ser Admin.
+builder.Services.AddHostedService<SemeadorDoAdministrador>();
+
 // ── Health Checks ────────────────────────────────────────────────────────────
 // Registrado depois das dependencias (DbContext e HttpClient do Ollama) para que
 // cada check reaproveite exatamente a mesma configuracao usada pela aplicacao.

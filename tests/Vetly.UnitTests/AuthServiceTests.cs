@@ -16,6 +16,7 @@ public class AuthServiceTests
     private readonly Mock<ITutorRepository> _tutorRepo = new();
     private readonly Mock<IVeterinarioRepository> _vetRepo = new();
     private readonly Mock<IRefreshTokenRepository> _refreshRepo = new();
+    private readonly Mock<IEmpresaRepository> _empresaRepo = new();
     private readonly Mock<ISenhaHasher> _hasher = new();
     private readonly Mock<IGeradorDeTokenJwt> _gerador = new();
 
@@ -32,12 +33,17 @@ public class AuthServiceTests
         _refreshRepo.Setup(r => r.AdicionarAsync(It.IsAny<RefreshToken>())).Returns(Task.CompletedTask);
         _refreshRepo.Setup(r => r.SalvarAsync()).ReturnsAsync(1);
         _vetRepo.Setup(r => r.ObterPorEmailAsync(It.IsAny<string>())).ReturnsAsync((Veterinario?)null);
+
+        // Por padrao o veterinario nao administra unidade nenhuma: a role Admin e
+        // derivada desse vinculo, e o caso comum e nao existir.
+        _empresaRepo.Setup(r => r.ObterPorAdministradorAsync(It.IsAny<Guid>())).ReturnsAsync([]);
         _tutorRepo.Setup(r => r.AdicionarAsync(It.IsAny<Tutor>())).Returns(Task.CompletedTask);
         _tutorRepo.Setup(r => r.SalvarAsync()).ReturnsAsync(1);
     }
 
     private AuthService CriarServico() =>
-        new(_tutorRepo.Object, _vetRepo.Object, _refreshRepo.Object, _hasher.Object, _gerador.Object);
+        new(_tutorRepo.Object, _vetRepo.Object, _refreshRepo.Object, _empresaRepo.Object,
+            _hasher.Object, _gerador.Object);
 
     private static Tutor TutorComCredencial()
     {
@@ -415,4 +421,65 @@ public class AuthServiceTests
         Assert.Equal("AUTH-001", ex.Codigo);
         Assert.Equal("E-mail ou senha invalidos.", ex.Message);
     }
+
+    // ── Role de administrador derivada do vinculo com a empresa (§4.1) ───────
+
+    /// <summary>Prepara o login de um veterinario, com o hasher aceitando a senha.</summary>
+    private Veterinario PrepararLoginDeVet(bool ativo = true)
+    {
+        var vet = VetComCredencial(ativo);
+
+        _tutorRepo.Setup(r => r.ObterPorEmailAsync(It.IsAny<string>())).ReturnsAsync((Tutor?)null);
+        _vetRepo.Setup(r => r.ObterPorEmailAsync("marina@exemplo.com")).ReturnsAsync(vet);
+        _hasher.Setup(h => h.Confere(It.IsAny<string>(), It.IsAny<string>())).Returns(true);
+
+        return vet;
+    }
+
+    private static LoginDto LoginDaMarina() =>
+        new() { Email = "marina@exemplo.com", Senha = "SenhaTemp123" };
+
+    [Fact]
+    public async Task LoginAsync_VetQueAdministraEmpresa_RecebeRoleAdmin()
+    {
+        // Antes desta regra, NENHUMA rota em Producao emitia Admin: a role so saia do
+        // token de desenvolvimento, que responde 404 fora de Development. Toda a
+        // persona de administracao — cadastrar vet, criar unidade, consolidado
+        // financeiro, painel da unidade — ficava inalcancavel em producao.
+        var vet = PrepararLoginDeVet();
+        var empresa = new Empresa("Clinica Vetly", "Clinica", vet.Id, PlanoAssinatura.Enterprise);
+
+        _empresaRepo.Setup(r => r.ObterPorAdministradorAsync(vet.Id)).ReturnsAsync([empresa]);
+
+        var resultado = await CriarServico().LoginAsync(LoginDaMarina());
+
+        Assert.Equal("Admin", resultado.Role);
+    }
+
+    [Fact]
+    public async Task LoginAsync_VetQueNaoAdministraNada_SegueVeterinario()
+    {
+        PrepararLoginDeVet();
+
+        var resultado = await CriarServico().LoginAsync(LoginDaMarina());
+
+        Assert.Equal("Veterinario", resultado.Role);
+    }
+
+    [Fact]
+    public async Task LoginAsync_AdministradorDesativado_CaiParaVetDesativado()
+    {
+        // A ordem das checagens importa: desativar tem de vencer a administracao. Sem
+        // isso, desligar um administrador da unidade nao tiraria dele o poder de
+        // administra-la (RN-022).
+        var vet = PrepararLoginDeVet(ativo: false);
+        var empresa = new Empresa("Clinica Vetly", "Clinica", vet.Id, PlanoAssinatura.Enterprise);
+
+        _empresaRepo.Setup(r => r.ObterPorAdministradorAsync(vet.Id)).ReturnsAsync([empresa]);
+
+        var resultado = await CriarServico().LoginAsync(LoginDaMarina());
+
+        Assert.Equal("VetDesativado", resultado.Role);
+    }
+
 }

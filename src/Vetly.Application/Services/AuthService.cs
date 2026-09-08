@@ -27,12 +27,25 @@ public class AuthService : IAuthService
     /// </summary>
     public const string RoleDoVetDesativado = "VetDesativado";
 
+    /// <summary>
+    /// Role do administrador da unidade (§4.1).
+    ///
+    /// <b>Não</b> é um cadastro à parte: administrador é o veterinário que a empresa
+    /// aponta em <see cref="Empresa.AdministradorId"/>. O produto define assim — "na
+    /// empresa há um administrador que cadastra, edita e desativa os veterinários
+    /// vinculados" — e derivar a role do vínculo, em vez de guardá-la numa coluna,
+    /// mantém uma única fonte da verdade: trocar o administrador da empresa troca
+    /// quem administra, sem um segundo lugar para atualizar e esquecer.
+    /// </summary>
+    public const string RoleDoAdmin = "Admin";
+
     /// <summary>Validade do refresh token. Renovado a cada uso, por rotação.</summary>
     private static readonly TimeSpan ValidadeDoRefreshToken = TimeSpan.FromDays(30);
 
     private readonly ITutorRepository _tutorRepo;
     private readonly IVeterinarioRepository _vetRepo;
     private readonly IRefreshTokenRepository _refreshRepo;
+    private readonly IEmpresaRepository _empresaRepo;
     private readonly ISenhaHasher _hasher;
     private readonly IGeradorDeTokenJwt _gerador;
 
@@ -40,12 +53,14 @@ public class AuthService : IAuthService
         ITutorRepository tutorRepo,
         IVeterinarioRepository vetRepo,
         IRefreshTokenRepository refreshRepo,
+        IEmpresaRepository empresaRepo,
         ISenhaHasher hasher,
         IGeradorDeTokenJwt gerador)
     {
         _tutorRepo = tutorRepo;
         _vetRepo = vetRepo;
         _refreshRepo = refreshRepo;
+        _empresaRepo = empresaRepo;
         _hasher = hasher;
         _gerador = gerador;
     }
@@ -183,7 +198,7 @@ public class AuthService : IAuthService
             Id = vet.Id,
             Nome = vet.Nome,
             Email = vet.Email ?? string.Empty,
-            Role = RoleDeVeterinario(vet),
+            Role = await RoleDeVeterinarioAsync(vet),
             TipoUsuario = TipoUsuario.Veterinario,
             Pendencias = pendenciasDoVet
         };
@@ -228,11 +243,34 @@ public class AuthService : IAuthService
         new("AUTH-001", "E-mail ou senha invalidos.");
 
     /// <summary>
-    /// Role do veterinário: desativado mantém acesso só ao extrato dos próprios
-    /// atendimentos (RN-022/RN-024).
+    /// Role do veterinário (RN-022/RN-024, §4.1).
+    ///
+    /// Três desfechos, nesta ordem, e a ordem importa:
+    ///
+    /// <list type="number">
+    ///   <item>Desativado vira <c>VetDesativado</c> — <b>antes</b> de qualquer outra
+    ///   coisa. Administrador desligado da unidade não pode continuar administrando,
+    ///   e inverter a ordem daria a ele exatamente isso (RN-022).</item>
+    ///   <item>Quem administra alguma empresa vira <c>Admin</c>.</item>
+    ///   <item>O resto é <c>Veterinario</c>.</item>
+    /// </list>
+    ///
+    /// Antes desta regra, <b>nenhuma rota em Produção emitia a role Admin</b>: ela só
+    /// saía do token de desenvolvimento, que responde 404 fora de Development. O
+    /// efeito era que toda a persona de administração — cadastrar veterinário, criar
+    /// empresa, ver o consolidado financeiro, o painel da unidade, redistribuir
+    /// consulta — ficava inalcançável em produção, e o onboarding do §4.1 não tinha
+    /// por onde começar.
     /// </summary>
-    private static string RoleDeVeterinario(Veterinario vet) =>
-        vet.Ativo ? RoleDoVeterinario : RoleDoVetDesativado;
+    private async Task<string> RoleDeVeterinarioAsync(Veterinario vet)
+    {
+        if (!vet.Ativo)
+            return RoleDoVetDesativado;
+
+        var administradas = await _empresaRepo.ObterPorAdministradorAsync(vet.Id);
+
+        return administradas.Any() ? RoleDoAdmin : RoleDoVeterinario;
+    }
 
     private async Task<TokenEmitidoDto> RenovarSessaoDeTutorAsync(RefreshToken token)
     {
@@ -278,7 +316,7 @@ public class AuthService : IAuthService
     private async Task<TokenEmitidoDto> EmitirSessaoDeVeterinarioAsync(
         Veterinario vet, RefreshToken? tokenRotacionado = null)
     {
-        var role = RoleDeVeterinario(vet);
+        var role = await RoleDeVeterinarioAsync(vet);
 
         var claims = new List<Claim>
         {
