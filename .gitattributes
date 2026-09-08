@@ -1,0 +1,23 @@
+# Normalizacao de fim de linha.
+#
+# O repositorio e desenvolvido no Windows (core.autocrlf=true), mas parte dos arquivos
+# e consumida por Linux — e la um \r no fim da linha nao e invisivel, e sintaxe.
+#
+# O caso concreto que motivou este arquivo: o script bash embutido no cloud-init.yaml
+# saia do `git archive` com CRLF e a VM respondia `$'\r': command not found` no
+# primeiro boot, deixando a maquina sem Docker e o deploy travado num ponto que nao
+# apontava para a causa.
+
+# Padrao: o Git decide o que e texto e normaliza para LF no repositorio.
+* text=auto
+
+# ── Consumidos por Linux: LF obrigatorio ─────────────────────────────────────
+Dockerfile          text eol=lf
+.dockerignore       text eol=lf
+*.sh                text eol=lf
+deploy/vm/**        text eol=lf
+
+# ── Consumidos por Windows: CRLF ─────────────────────────────────────────────
+*.ps1               text eol=crlf
+*.cmd               text eol=crlf
+*.bat               text eol=crlf
