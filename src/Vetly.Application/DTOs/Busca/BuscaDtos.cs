@@ -12,7 +12,12 @@ public class FiltroBuscaDto
     /// Animal que será atendido. A espécie dele é filtro eliminatório: vet que não
     /// atende a espécie nunca aparece (RN-029).
     /// </summary>
+    // GuidObrigatorio junto do Required: sozinho, o Required nao dispara num Guid nao
+    // anulavel — o campo ausente vira Guid.Empty, passa na validacao e a busca devolve
+    // 404 dizendo que o animal 00000000-... nao existe, em vez do 400 que explica o que
+    // faltou. Ver GuidObrigatorioAttribute.
     [Required(ErrorMessage = "Informe o animal que será atendido.")]
+    [Comum.GuidObrigatorio(ErrorMessage = "Informe o animal que será atendido.")]
     public Guid AnimalId { get; set; }
 
     /// <summary>Necessidade do momento (RN-002/RN-032).</summary>
