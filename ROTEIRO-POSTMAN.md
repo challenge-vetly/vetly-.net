@@ -63,9 +63,9 @@ Perfil: **Admin**, depois **Veterinário**.
 
 ### 1.1 · Token de Admin
 
-`POST {{baseUrl}}/api/auth/token`
+Há dois caminhos, e o certo depende do ambiente.
 
-Emite um JWT de Admin sem senha. **Só existe em `Development`** — em qualquer outro ambiente responde 404.
+**Em `Development`** — `POST {{baseUrl}}/api/auth/token` emite um JWT de Admin sem senha:
 
 ```json
 {
@@ -74,8 +74,23 @@ Emite um JWT de Admin sem senha. **Só existe em `Development`** — em qualquer
 }
 ```
 
+**Em qualquer outro ambiente essa rota responde 404**, e é deliberado: emitir token sem credencial em produção seria porta aberta. Lá o Admin faz login normal, como qualquer usuário:
+
+`POST {{baseUrl}}/api/auth/login`
+
+```json
+{
+  "email": "admin@vetly.com.br",
+  "senha": "SUA_SENHA"
+}
+```
+
+A role `Admin` **não** vem de um cadastro separado: ela é derivada de o veterinário administrar alguma empresa (`Empresa.AdministradorId`, §4.1). O primeiro administrador é criado no arranque pelo [SemeadorDoAdministrador](src/Vetly.API/Jobs/SemeadorDoAdministrador.cs), a partir de `Bootstrap__AdminEmail` — ver a seção de Deploy do [README](README.md#7-deploy).
+
+Confira `"role": "Admin"` na resposta. Se vier `"Veterinario"`, o profissional não administra unidade nenhuma e as rotas de administração vão responder 403.
+
 ```js
-// Aba Tests
+// Aba Tests — serve para os dois caminhos
 pm.environment.set("tokenAdmin", pm.response.json().token);
 ```
 
@@ -746,5 +761,7 @@ Sem autenticação.
 
 ---
 
-Documentação interativa com todos os 152 endpoints: **`https://localhost:7262/scalar/v1`**.
+Todos os 152 endpoints são exercitados contra um ambiente real por [deploy/validar-endpoints.py](deploy/validar-endpoints.py).
+
+Documentação interativa: **`https://localhost:7262/scalar/v1`**.
 Regras de negócio por código: [REGRAS-DE-NEGOCIO.md](REGRAS-DE-NEGOCIO.md).

@@ -2,7 +2,7 @@
 
 **Plataforma que conecta responsáveis de pets a clínicas e veterinários autônomos — agendamento, pagamento com split, prontuário assistido por IA e fidelidade em uma única API.**
 
-`.NET 10` · `ASP.NET Core` · `EF Core 10` · `Oracle` · `Docker` · `1.070 testes automatizados`
+`.NET 10` · `ASP.NET Core` · `EF Core 10` · `Oracle` · `Docker` · `1.080 testes automatizados`
 
 O ciclo completo do produto vive aqui: busca por proximidade, agenda com controle de concorrência, cobrança antecipada, captura de áudio da consulta, estruturação do prontuário por LLM, emissão de documentos assinados e programa de pontos.
 
@@ -128,7 +128,7 @@ Nenhuma seta sai do `Domain`. Ele não referencia projeto nem pacote algum — n
 | Camada | Conteúdo | Referencia |
 |---|---|---|
 | **Vetly.API** | 24 controllers (152 endpoints), 3 filtros globais, 3 middlewares, 4 health checks, worker hospedado | Application, Infrastructure |
-| **Vetly.Infrastructure** | EF Core + Oracle, 33 DbSets, 32 migrations, 27 configurations, 24 repositórios, 9 adaptadores | Application, Domain |
+| **Vetly.Infrastructure** | EF Core + Oracle, 33 DbSets, 34 migrations, 27 configurations, 24 repositórios, 9 adaptadores | Application, Domain |
 | **Vetly.Application** | 29 serviços, 62 interfaces, 72 arquivos de DTO | Domain + 2 pacotes `*.Abstractions` |
 | **Vetly.Domain** | 31 entidades, 42 enums, 7 value objects | **nada** |
 
@@ -169,8 +169,8 @@ src/
 └── Vetly.API/              Controllers · Filters · Middlewares
                             HealthChecks · Observability · Jobs · Security
 tests/
-├── Vetly.UnitTests/        44 arquivos — regras de negócio isoladas
-└── Vetly.IntegrationTests/ 28 arquivos — API completa em memória
+├── Vetly.UnitTests/        45 arquivos — regras de negócio isoladas
+└── Vetly.IntegrationTests/ 31 arquivos — API completa em memória
 ```
 
 ---
@@ -221,7 +221,7 @@ JWT Bearer com refresh token rotativo — cada uso invalida o anterior. Senhas e
 |---|---|
 | `Tutor` | Responsável pelo animal: busca, agenda, paga, autoriza acesso ao histórico, avalia |
 | `Veterinario` | Agenda, atende, valida diagnóstico, emite e assina documentos |
-| `Admin` | Administra a clínica: cadastra veterinários, define plano, painel e consolidado financeiro da unidade |
+| `Admin` | Administra a clínica: cadastra veterinários, define plano, painel e consolidado financeiro da unidade. **Não é cadastro à parte** — é o veterinário apontado em `Empresa.AdministradorId`, e a role é derivada desse vínculo no login (§4.1). Desativar o profissional rebaixa a role antes de qualquer outra coisa (RN-022) |
 | `VetDesativado` | Bloqueado em toda rota de negócio; mantém apenas o próprio extrato |
 
 As policies registradas são `ApenasAdmin`, `VeterinarioOuAdmin`, `ApenasTutor` e `TutorOuAdmin`.
@@ -261,8 +261,8 @@ xUnit com Moq. Asserções nativas, sem biblioteca de fluência.
 
 | Suíte | Arquivos | O que cobre |
 |---|---|---|
-| `Vetly.UnitTests` | 44 | Regras de negócio isoladas, um arquivo por serviço |
-| `Vetly.IntegrationTests` | 28 | API real via `WebApplicationFactory` — pipeline, filtros, auth e worker |
+| `Vetly.UnitTests` | 45 | Regras de negócio isoladas, um arquivo por serviço |
+| `Vetly.IntegrationTests` | 31 | API real via `WebApplicationFactory` — pipeline, filtros, auth e worker |
 
 ```bash
 dotnet test                                              # tudo
@@ -274,64 +274,126 @@ dotnet test --collect:"XPlat Code Coverage" --settings coverlet.runsettings
 
 O [coverlet.runsettings](coverlet.runsettings) exclui as migrations geradas — sem esse filtro, ~7 mil linhas de código gerado afundam a cobertura da Infrastructure.
 
-**O limite conhecido:** os testes de integração usam EF InMemory, que não traduz SQL. Consultas válidas em LINQ podem falhar no Oracle real — foi o que aconteceu com um `AnyAsync` que virou `ORA-00904`. A defesa é uma guarda estática (`CompatibilidadeComOracleTests`) que varre o fonte da Infrastructure atrás dos padrões que já quebraram, mais um smoke manual contra o banco real antes de entregar.
+**O limite conhecido:** os testes de integração usam EF InMemory, que não traduz SQL **nem aplica o mapeamento de tipo do Oracle**. Duas classes de defeito passam por ele:
+
+- LINQ válido que o provider Oracle não traduz — foi o caso de um `AnyAsync` que virou `ORA-00904`.
+- Divergência entre o tipo da entidade e o que o provider resolve pela precisão da coluna: `NUMBER(4)` mapeia para *byte* e trunca módulo 256 na escrita, `NUMBER(1)` mapeia para *boolean*. No InMemory, 480 entra e 480 volta.
+
+A defesa são duas guardas que inspecionam sem precisar de banco: [CompatibilidadeComOracleTests](tests/Vetly.UnitTests/CompatibilidadeComOracleTests.cs) varre o fonte atrás dos padrões que já quebraram, e [MapeamentoNumericoOracleTests](tests/Vetly.IntegrationTests/MapeamentoNumericoOracleTests.cs) constrói o modelo com o provider Oracle de verdade e falha quando uma propriedade `int` acaba mapeada para um tipo mais estreito. Mais o [validador de endpoints](deploy/validar-endpoints.py) contra um ambiente real antes de entregar.
 
 ---
 
 ## 7. Deploy
 
-### Imagem
+O alvo é **uma VM Linux com tudo dentro**: API, Ollama e proxy HTTPS no mesmo host, orquestrados por Docker Compose.
 
-O [Dockerfile](Dockerfile) é multi-stage: o SDK compila, a imagem final carrega só o runtime do ASP.NET e roda como usuário sem privilégio.
+A escolha não é de arquitetura, é de restrição. O Ollama precisa de um processo residente com o modelo carregado na memória, e nenhum serviço gerenciado da Azure entrega isso barato — App Service e Container Apps cobram por manter memória de pé e não guardam o modelo entre execuções. Numa VM, a API fala com o Ollama pela rede interna do Compose, sem sair da máquina.
 
-```bash
-docker build -t vetly-api .
+### O que fica exposto
 
-docker run -p 8080:8080   -e ConnectionStrings__OracleConnection="User Id=vetly;Password=...;Data Source=host:1521/orcl"   -e Jwt__Key="uma-chave-com-no-minimo-32-caracteres"   -e Servicos__TokenInterno="um-token-de-servico"   -e Storage__PublicBaseUrl="https://api.seudominio.com"   -v vetly-storage:/var/lib/vetly/storage   vetly-api
+Só a porta 443, no Caddy, que emite e renova o certificado sozinho. A API (8080) e o Ollama (11434) vivem na rede interna do Compose — **o Ollama não tem autenticação nenhuma**, e publicá-lo seria entregar um LLM aberto a quem passar.
+
+### Provisionar
+
+```powershell
+./deploy/azure-vm-deploy.ps1 `
+  -ConnectionStringOracle "User Id=...;Password=...;Data Source=oracle.fiap.com.br:1521/orcl"
 ```
 
-O separador de configuração no ambiente é `__` (dois underscores), não `:` — é assim que o .NET mapeia variável de ambiente para chave aninhada.
+O script é idempotente: rodar de novo reaproveita a VM, recopia o código e refaz o build — que é exatamente o que se quer num redeploy. Guarde o **sufixo** que ele imprime; é o que faz a próxima execução encontrar os recursos da anterior em vez de criar um conjunto novo.
 
-O volume não é opcional em produção. `Storage:Diretorio` guarda o áudio da consulta e o PDF do documento; sem ele montado, o container leva junto o áudio de uma consulta em andamento quando reiniciar.
+`-SomenteAplicacao` pula o provisionamento e só atualiza o código.
 
-### O que precisa estar definido
+| Parâmetro | Padrão | Nota |
+|---|---|---|
+| `-Regiao` | `canadacentral` | Precisa estar na policy `Allowed resource deployment regions` da assinatura |
+| `-TamanhoDaVm` | `Standard_D4as_v4` | 4 vCPU / 16 GB. Ver o dimensionamento abaixo |
+| `-ModeloDeIa` | `llama3.1` | O mesmo do `appsettings.json` |
+| `-AzureSpeechKey` | — | Sem ela, o STT fica em `Simulado` |
+
+### Dimensionamento — por que 16 GB
+
+O `llama3.1` de 8B quantizado ocupa 5–6 GB só de modelo. Com 8 GB de RAM total, sobrariam menos de 2 GB para a API, o Caddy e o sistema — funciona até a primeira inferência concorrente. Medido em produção: a VM usa ~10 dos 16 GB com tudo no ar.
+
+A família é **dedicada e não burstable** de propósito: inferência é carga sustentada, e numa B-series os créditos acabam justamente quando a máquina está em uso. Vale conferir o preço antes de trocar — em Canada Central o `B4ms` custa **mais** que o `D4as_v4`.
+
+### Bootstrap do primeiro administrador
+
+Administrador não é cadastro à parte: é o veterinário que a empresa aponta em `Empresa.AdministradorId`, e a role `Admin` é **derivada desse vínculo no login**. Isso cria um ovo-e-galinha no primeiro deploy — criar empresa exige ser Admin.
+
+[SemeadorDoAdministrador](src/Vetly.API/Jobs/SemeadorDoAdministrador.cs) resolve por configuração:
+
+```
+Bootstrap__AdminEmail=admin@vetly.com.br
+Bootstrap__AdminSenha=<uma-senha-forte>
+Bootstrap__EmpresaNome=Clinica Vetly Central
+```
+
+Só age quando o e-mail está definido **e** não existe nenhuma unidade. Havendo qualquer empresa cadastrada, ele se cala — senão um redeploy ressuscitaria um acesso que alguém removeu de propósito. A senha nasce marcada como temporária, porque passou por variável de ambiente e log de deploy: troque-a por `POST /api/auth/trocar-senha` e remova `Bootstrap__AdminSenha` depois do primeiro arranque.
+
+### Variáveis obrigatórias
+
+O separador de chave aninhada no ambiente é `__` (dois underscores), não `:`.
 
 | Variável | Por que |
 |---|---|
 | `ConnectionStrings__OracleConnection` | Sem banco a API não entrega nada — `/health/ready` responde 503 |
-| `Jwt__Key` | Mínimo 32 caracteres. O arranque recusa a chave de exemplo do repositório |
-| `Servicos__TokenInterno` | Autentica o webhook de pagamento e o callback de transcrição. Ausente, as rotas internas recusam tudo; **de exemplo, o arranque recusa** |
-| `Storage__PublicBaseUrl` | A URL assinada do storage é consumida de fora do processo. Ausente, a API não sobe |
+| `Jwt__Key` | Mínimo 32 caracteres. O arranque **recusa** a chave de exemplo do repositório |
+| `Servicos__TokenInterno` | Autentica o webhook de pagamento e o callback de transcrição. Ausente, as rotas internas recusam tudo; de exemplo, o arranque recusa |
+| `Storage__PublicBaseUrl` | A URL assinada é consumida de fora do processo. Ausente, a API não sobe |
 | `AZURE_SPEECH_KEY` | Só com `Adaptadores__Stt=Azure`. Nunca vai para arquivo do repositório |
 
-Um adaptador com valor não reconhecido também derruba o arranque. Não existe fallback silencioso: uma configuração errada falha no deploy, não em produção às três da manhã.
+Um adaptador com valor não reconhecido também derruba o arranque. Não existe fallback silencioso: configuração errada falha no deploy, não em produção às três da manhã.
 
 ### Migrations
 
-Aplicadas fora do container, antes de subir a nova versão:
+Aplicadas **fora** do host, antes de subir a versão nova. Não há `Database.Migrate()` no código: com mais de uma réplica, seria cada uma alterando o schema ao mesmo tempo.
 
 ```bash
 dotnet ef database update --project src/Vetly.Infrastructure --startup-project src/Vetly.API
 ```
 
-### Atrás de proxy
+### Validar o ambiente
 
-[`UseForwardedHeaders`](src/Vetly.API/Program.cs) roda antes de qualquer outro middleware, lendo `X-Forwarded-For` e `X-Forwarded-Proto`. Em container o TLS termina no ingress e o Kestrel só vê HTTP; sem isso, três coisas saem erradas ao mesmo tempo: o redirecionamento para HTTPS pega quem já veio por HTTPS, as URLs absolutas apontam para o endereço interno e o log registra o IP do proxy como se fosse o do cliente.
+[validar-endpoints.py](deploy/validar-endpoints.py) percorre a API inteira contra um ambiente de verdade — autentica as três personas, encadeia o ciclo clínico completo e confere o status de cada rota:
 
-`KnownNetworks` e `KnownProxies` são limpos porque em Kubernetes e nos PaaS o proxy fica numa faixa que muda — a proteção aqui é a topologia (a porta da aplicação não é exposta diretamente), não a origem do salto.
+```bash
+python deploy/validar-endpoints.py https://seu-host <senha-do-admin>
+python deploy/validar-endpoints.py https://seu-host <senha> --rapido   # pula as rotas de IA
+```
+
+Não substitui a suíte: ela prova regra de negócio isolada, e o validador prova que o conjunto sobe, se autentica e responde pelo caminho que o app percorre. Foi ele que encontrou o `[Required]` inócuo da busca e o truncamento de inteiro do Oracle — defeitos que a suíte não pegava porque roda sobre InMemory.
 
 ### Sondas
 
-| Endpoint | Decide | Comportamento com Oracle fora |
+| Endpoint | Decide | Com Oracle fora |
 |---|---|---|
-| `/health/live` | reiniciar o container | 200 — reiniciar a API não levanta o banco |
-| `/health/ready` | receber tráfego | 503 — sai de rotação até o banco voltar |
+| `/health/live` | reiniciar o container | 200 — reiniciar não levanta o banco |
+| `/health/ready` | receber tráfego | 503 — sai de rotação |
 
-O Dockerfile **não** declara `HEALTHCHECK`: a imagem base do ASP.NET não traz cliente HTTP, e instalar um só para isso engordaria a imagem para resolver o que o orquestrador já faz de fora.
+### Custo
 
-### Não coberto por esta entrega
+Preços de Canada Central, pay-as-you-go:
 
-`/metrics` e a documentação Scalar ficam públicos, como os health checks. Métrica agregada não carrega dado pessoal, mas revela volume de operação — em produção, restrinja os dois no nível do ingress.
+| Item | USD/mês |
+|---|---|
+| VM `Standard_D4as_v4` — $0,214/h | 156,22 |
+| Disco StandardSSD 64 GB (E6) | 5,28 |
+| IP público Standard estático | 3,65 |
+| **Total 24/7** | **≈ 165** |
+
+A maior alavanca é desligar quando não estiver usando:
+
+```bash
+az vm deallocate -g rg-vetly-vm -n vetly-vm-<sufixo>
+az vm start      -g rg-vetly-vm -n vetly-vm-<sufixo>
+```
+
+Desalocada, restam ~US$ 9/mês (disco e IP, que continuam reservados). Usando 8h por dia útil, fica em ~US$ 46/mês.
+
+### O que fica de fora desta entrega
+
+`/metrics` e a documentação Scalar ficam públicos, como os health checks. Métrica agregada não carrega dado pessoal, mas revela volume de operação — em produção, restrinja os dois no nível do proxy.
 
 ---
 

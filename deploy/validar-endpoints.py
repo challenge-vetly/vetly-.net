@@ -446,10 +446,208 @@ secao("Isolamento entre Responsaveis (RN-105)")
 r = requests.post(f"{BASE}/api/auth/registro/tutor", json={
     "nome": "Intruso", "email": f"intruso-{marca}@exemplo.com",
     "telefone": "11999990000", "senha": "senha-forte-123"}, timeout=60)
-intruso = (corpo(r) or {}).get("token")
+d_int = corpo(r) or {}
+intruso, intruso_id = d_int.get("token"), d_int.get("tutorId")
+
+# O intruso PRECISA consentir: sem isso o filtro de LGPD responde 422 antes de a posse
+# por linha ser avaliada, e o teste provaria o portao de consentimento, nao a RN-105.
+if intruso and intruso_id:
+    requests.put(f"{BASE}/api/tutores/{intruso_id}/consentimentos",
+                 headers={"Authorization": f"Bearer {intruso}",
+                          "Content-Type": "application/json"},
+                 json={"consentimentos": [{"finalidade": "Atendimento", "concedido": True}]},
+                 timeout=60)
+
 if intruso and animal:
-    chamar("GET", f"/api/animais/{animal}", token=intruso, esperado=[403, 422])
-    chamar("GET", f"/api/tutores/{tid}/carteira", token=intruso, esperado=[403, 422])
+    chamar("GET", f"/api/animais/{animal}", token=intruso, esperado=403)
+    chamar("GET", f"/api/tutores/{tid}/carteira", token=intruso, esperado=403)
+    chamar("GET", f"/api/animais/{animal}/board", token=intruso, esperado=403)
+    if estado.get("consulta"):
+        chamar("GET", f"/api/consultas/{estado['consulta']}", token=intruso, esperado=403)
+
+
+# -----------------------------------------------------------------------------
+secao("Ciclo clinico completo: webhook -> captura -> IA -> documento -> avaliacao")
+
+import os
+token_servico = os.environ.get("VETLY_TOKEN_INTERNO")
+
+if token_servico and estado.get("ref"):
+    rr = requests.post(f"{BASE}/api/internos/pagamentos/webhook",
+                       headers={"X-Vetly-Service-Token": token_servico,
+                                "Content-Type": "application/json"},
+                       json={"referenciaExterna": estado["ref"],
+                             "status": "Confirmado", "assinado": True}, timeout=120)
+    registrar("POST", "/api/internos/pagamentos/webhook (confirmado)", 200, rr.status_code)
+    dd = corpo(rr) or {}
+    print(f"        pagamento={dd.get('statusPagamento')} consulta={dd.get('statusConsulta')}")
+
+c = estado.get("consulta")
+
+if c and vt:
+    chamar("POST", f"/api/consultas/{c}/iniciar", token=vt, esperado=200, corpo={})
+    chamar("POST", f"/api/consultas/{c}/iniciar", token=vt, esperado=409, corpo={})
+    chamar("GET", f"/api/consultas/{c}/captura", token=vt, esperado=200)
+
+    if estado.get("midia"):
+        chamar("POST", f"/api/consultas/{c}/captura/segmentos", token=vt, esperado=202, corpo={
+            "sequencia": 1, "midiaId": estado["midia"],
+            "duracaoMs": 2000, "inicioRelativoMs": 0})
+        chamar("POST", f"/api/consultas/{c}/captura/segmentos", token=vt, esperado=409, corpo={
+            "sequencia": 1, "midiaId": estado["midia"],
+            "duracaoMs": 2000, "inicioRelativoMs": 0})
+
+    chamar("POST", f"/api/consultas/{c}/encerrar", token=vt, esperado=200, corpo={})
+
+    pronto = False
+    for _ in range(40):
+        time.sleep(15)
+        rr = requests.get(f"{BASE}/api/consultas/{c}/rascunho",
+                          headers={"Authorization": f"Bearer {vt}"}, timeout=60)
+        if rr.status_code == 200:
+            pronto = True
+            break
+    registrar("GET", "/api/consultas/{id}/rascunho", 200, 200 if pronto else 408,
+              "" if pronto else "rascunho nao ficou pronto")
+
+    chamar("PUT", f"/api/consultas/{c}/validar-diagnostico", token=vt, esperado=200, corpo={
+        "decisao": "Aprovado",
+        "anamnese": "Vomito ha 2 dias, recusa alimentar.",
+        "exameFisico": "Mucosas normocoradas, TPC 2s.",
+        "hipotesesDiagnosticas": ["Gastroenterite aguda"],
+        "conduta": "Metronidazol 15mg/kg BID por 5 dias.",
+        "orientacoes": "Retorno em 5 dias."})
+
+    chamar("GET", f"/api/consultas/{c}/auditoria-ia", token=vt, esperado=200)
+
+    r = chamar("POST", f"/api/documentos/consulta/{c}?tipo=Prontuario", token=vt, esperado=201)
+    doc = (corpo(r) or {}).get("id")
+
+    r2 = chamar("POST", f"/api/documentos/consulta/{c}?tipo=ReceitaVeterinaria",
+                token=vt, esperado=[201, 422])
+    receita = (corpo(r2) or {}).get("id")
+
+    chamar("GET", f"/api/documentos/consulta/{c}", token=vt, esperado=200)
+
+    if doc:
+        chamar("GET", f"/api/documentos/{doc}", token=vt, esperado=200)
+        chamar("POST", f"/api/documentos/{doc}/assinar", token=vt, esperado=200,
+               corpo={"nomeCompleto": "Dra. Marina Validacao"})
+        chamar("POST", f"/api/documentos/{doc}/publicar", token=vt, esperado=200)
+        chamar("POST", f"/api/documentos/{doc}/lido", token=tk, esperado=[200, 204])
+        chamar("POST", f"/api/documentos/{doc}/correcao", token=vt, esperado=[200, 201], corpo={
+            "conteudo": "Correcao: dose ajustada para 12mg/kg.",
+            "justificativa": "Ajuste de posologia pelo peso aferido."})
+
+    if receita:
+        chamar("POST", f"/api/documentos/{receita}/assinar", token=vt, esperado=200,
+               corpo={"nomeCompleto": "Dra. Marina Validacao"})
+
+    if animal:
+        chamar("GET", f"/api/documentos/animal/{animal}", token=tk, esperado=200)
+
+    chamar("POST", f"/api/consultas/{c}/finalizar", token=vt, esperado=200, corpo={})
+
+    r = chamar("POST", f"/api/avaliacoes/consulta/{c}", token=tk, esperado=[200, 201], corpo={
+        "nota": 5, "comentario": "Atendimento excelente."})
+    aval = (corpo(r) or {}).get("id")
+
+    if aval:
+        det = corpo(chamar("GET", f"/api/avaliacoes/veterinario/{vet_id}", token=tk, esperado=200))
+        notas = [a.get("nota") for a in det] if isinstance(det, list) else []
+        if notas:
+            marca_ok = "OK" if 5 in notas else "<-- COLAPSADA"
+            print(f"        notas gravadas: {notas} {marca_ok}")
+            if 5 not in notas:
+                resultados.append(("GET", "avaliacoes (nota)", "5", str(notas), False, "colapsada"))
+        chamar("POST", f"/api/avaliacoes/{aval}/resposta", token=vt, esperado=[200, 204],
+               corpo={"resposta": "Obrigada pela confianca!"})
+        if adm:
+            chamar("POST", f"/api/avaliacoes/{aval}/moderar", token=adm, esperado=[200, 204],
+                   corpo={"motivo": "Revisao de rotina"})
+
+    disp2 = corpo(requests.get(f"{BASE}/api/veterinarios/{vet_id}/disponibilidade",
+                               headers={"Authorization": f"Bearer {tk}"}, timeout=60))
+    livres = [h["id"] for d in (disp2 or {}).get("dias", []) for h in d.get("horarios", [])]
+    if livres:
+        chamar("POST", f"/api/consultas/{c}/retorno", token=vt, esperado=[200, 201], idem=True,
+               corpo={"slotId": livres[0], "motivo": "Reavaliacao apos 5 dias."})
+
+# -----------------------------------------------------------------------------
+secao("Exames e internacoes")
+
+if vt and animal and vet_id:
+    r = chamar("POST", "/api/exames", token=vt, esperado=201, corpo={
+        "animalId": animal, "veterinarioId": vet_id,
+        "tipo": "Hemograma", "observacoes": "Jejum de 8h."})
+    exame = (corpo(r) or {}).get("id")
+    if exame:
+        chamar("GET", f"/api/exames/{exame}", token=vt, esperado=200)
+        chamar("PUT", f"/api/exames/{exame}/resultado", token=vt, esperado=[200, 204], corpo={
+            "resultado": "Leucocitose discreta.", "midiaIds": []})
+        chamar("PUT", f"/api/exames/{exame}/liberar", token=vt, esperado=[200, 204])
+
+    r = chamar("POST", "/api/internacoes", token=vt, esperado=201, corpo={
+        "animalId": animal, "veterinarioId": vet_id,
+        "motivo": "Desidratacao severa", "valorCaucao": 500.0})
+    intern = (corpo(r) or {}).get("id")
+    if intern:
+        chamar("GET", f"/api/internacoes/{intern}", token=vt, esperado=200)
+        chamar("PUT", f"/api/internacoes/{intern}/procedimentos", token=vt, esperado=[200, 204],
+               corpo={"procedimentos": [
+                   {"descricao": "Fluidoterapia",
+                    "data": datetime.now(timezone.utc).isoformat(), "valor": 150.0}]})
+        chamar("POST", f"/api/internacoes/{intern}/alta", token=vt, esperado=200,
+               corpo={"resumoAlta": "Alta com melhora clinica.", "diarias": 2})
+
+# -----------------------------------------------------------------------------
+secao("Colmeia e lembretes")
+
+if animal and tk:
+    outros = corpo(requests.get(f"{BASE}/api/veterinarios",
+                                headers={"Authorization": f"Bearer {tk}"}, timeout=60)) or []
+    externo = next((v["id"] for v in outros if v.get("id") != vet_id), None)
+    if externo:
+        r = chamar("POST", "/api/colmeia", token=tk, esperado=[201, 409], corpo={
+            "animalId": animal, "veterinarioId": externo,
+            "escopo": "HistoricoCompleto", "validadeEmDias": 30,
+            "motivo": "Atendimento de emergencia em outra clinica."})
+        acesso = (corpo(r) or {}).get("id")
+        if acesso:
+            chamar("DELETE", f"/api/colmeia/{acesso}", token=tk, esperado=[200, 204])
+
+if vt and animal:
+    r = chamar("POST", "/api/lembretes", token=vt, esperado=[200, 201], corpo={
+        "animalId": animal, "tutorId": tid, "tipo": "Retorno",
+        "dataEvento": (datetime.now(timezone.utc) + timedelta(days=5)).isoformat()})
+    lem = (corpo(r) or {}).get("id")
+    if lem:
+        chamar("POST", f"/api/lembretes/{lem}/tentativa", token=vt, esperado=[200, 204])
+        chamar("POST", f"/api/lembretes/{lem}/resposta", token=tk, esperado=[200, 204])
+
+# -----------------------------------------------------------------------------
+secao("Notificacoes: marcar como lida")
+
+ns = corpo(requests.get(f"{BASE}/api/notificacoes/tutor/{tid}",
+                        headers={"Authorization": f"Bearer {tk}"}, timeout=60))
+lista = ns if isinstance(ns, list) else (ns or {}).get("itens", [])
+if lista:
+    chamar("POST", f"/api/notificacoes/{lista[0]['id']}/lida", token=tk, esperado=200)
+    print(f"        notificacoes na caixa: {len(lista)}")
+    for n in lista[:6]:
+        print(f"          [{n.get('tipo')}] {n.get('titulo')}")
+
+# -----------------------------------------------------------------------------
+secao("Sessao: refresh rotativo e logout")
+
+if estado.get("tutor_refresh"):
+    r = chamar("POST", "/api/auth/refresh", esperado=200,
+               corpo={"refreshToken": estado["tutor_refresh"]})
+    novo = (corpo(r) or {}).get("refreshToken")
+    chamar("POST", "/api/auth/refresh", esperado=[401, 422],
+           corpo={"refreshToken": estado["tutor_refresh"]})
+    if novo:
+        chamar("POST", "/api/auth/logout", esperado=[200, 204], corpo={"refreshToken": novo})
 
 # ─────────────────────────────────────────────────────────────────────────────
 if not RAPIDO:

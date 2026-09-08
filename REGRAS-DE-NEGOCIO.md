@@ -94,6 +94,7 @@ aponta para o lugar errado é pior do que nenhuma.
 | RN-090 | Todo acesso pela colmeia — permitido ou negado — vai para uma trilha append-only que o Responsável consulta; revogar não apaga o que já foi acessado | `LogAcessoColmeia` + `ColmeiaRepository` |
 | RN-105/RN-106 | Escopo por linha: o Responsável só alcança os próprios dados, o veterinário só os animais que atende, e o escopo vem do token — não de parâmetro do cliente | `IUsuarioAtual` + guardas em `AnimalService`, `ConsultaService`, `PagamentoService`, `TutorService` |
 | RN-001/RN-002 | Busca lista clínicas e vets autônomos por proximidade e necessidade, ordenados por score | `BuscaService` |
+| RN-029 | O animal é obrigatório na busca, e a ausência devolve 400 e não 404: `[Required]` sobre `Guid` não anulável nunca dispara, e sem a guarda o `Guid.Empty` chegava ao serviço como chave | `GuidObrigatorioAttribute` + `FiltroBuscaDto` |
 | RN-027 | Distância entre a posição do Responsável e a coordenada do prestador; CEP é o fallback quando a localização é negada | `BuscaService.ResolverPosicaoAsync` |
 | RN-028 | Raio de 10 km por padrão, expansível até 25 km | `BuscaService` |
 | RN-029 | Espécie atendida é filtro **eliminatório** — matching clinicamente inválido não aparece | `BuscaService.Elegivel` |
@@ -109,6 +110,8 @@ aponta para o lugar errado é pior do que nenhuma.
 | RN-041/RN-042 | Cancelamento entre 2h e 24h = reembolso parcial, com o percentual configurado pela clínica (padrão 30%) | `ReembolsoParcialStrategy` + `ConsultaService.CancelarAsync` |
 | RN-041 | Cancelamento com menos de 2h = sem reembolso | `SemReembolsoStrategy` |
 | RN-022/RN-024 | Vet desativado entra com role `VetDesativado` e é bloqueado em toda rota de negócio, mantendo só o que a RN-024 garante | `VetDesativadoFilter` + `AuthService` |
+| RN-022 (§4.1) | Administrador **não** é cadastro à parte: é o veterinário que a empresa aponta em `Empresa.AdministradorId`, e a role `Admin` é derivada desse vínculo no login. Desativado vence administração — inverter a ordem deixaria um administrador desligado da unidade continuando a administrá-la | `AuthService.RoleDeVeterinarioAsync` |
+| §4.1 | O primeiro administrador nasce da configuração, e só quando não há unidade nenhuma: criar empresa exige ser `Admin`, e ser `Admin` exige administrar empresa | `SemeadorDoAdministrador` |
 | RN-024 | O extrato é a única rota de negócio que o vet desativado alcança, e não carrega dado de Responsável, de animal nem clínico — só o registro financeiro do próprio trabalho | `VeterinarioService.ObterExtratoAsync` + `[PermitidoAoVetDesativado]` |
 | RN-060 | Sem consentimento de atendimento, as rotas de negócio do Responsável devolvem 422 — a base legal precede o tratamento | `ConsentimentoAtendimentoFilter` |
 | RN-061/RN-062 | Consentimento granular por finalidade, com data de concessão e de revogação; revogar não apaga registro clínico já produzido | `Tutor.RegistrarConsentimento` + `TutorService` |
