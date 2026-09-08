@@ -1,0 +1,36 @@
+# Proxy da Vetly: termina TLS e entrega a requisicao a API por HTTP interno.
+#
+# O certificado e obtido e renovado sozinho pelo Caddy, contra o Let's Encrypt, usando
+# o FQDN que a Azure atribui ao IP publico. Nao ha passo manual de certificado.
+#
+# A API roda com UseHttpsRedirection ligado, e isso NAO causa laco de redirecionamento
+# aqui: o Caddy encaminha X-Forwarded-Proto: https por padrao, o UseForwardedHeaders da
+# API le esse cabecalho e passa a enxergar a requisicao como HTTPS. Sem aquele
+# middleware, a API redirecionaria para HTTPS quem ja tinha chegado por HTTPS — e o
+# navegador entraria em laco.
+
+{$VETLY_FQDN} {
+	reverse_proxy api:8080 {
+		# Sonda de saude do proprio proxy: instancia doente sai da rotacao em vez de
+		# receber requisicao e devolver erro.
+		health_uri /health/live
+		health_interval 30s
+		health_timeout 5s
+	}
+
+	encode gzip
+
+	header {
+		# HSTS, sem preload: preload e uma via de mao unica, e este FQDN e temporario.
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}

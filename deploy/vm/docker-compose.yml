@@ -1,0 +1,91 @@
+# Vetly em uma VM: API, Ollama e proxy com HTTPS automatico.
+#
+# Tres containers numa rede interna. So o Caddy publica portas — a API e o Ollama nao
+# sao alcancaveis de fora da VM, e e assim que tem de ser: o Ollama nao tem
+# autenticacao nenhuma, e expor a 11434 na internet e entregar um LLM aberto a quem
+# passar.
+#
+# O contexto de build e a raiz do repositorio (../..), porque e la que o Dockerfile
+# espera encontrar o Vetly.slnx e a pasta src/.
+
+name: vetly
+
+services:
+
+  # ── Proxy reverso e terminacao TLS ─────────────────────────────────────────
+  # O Caddy obtem e renova o certificado Let's Encrypt sozinho, usando o FQDN que a
+  # Azure da ao IP publico. Sem dominio proprio, e o caminho mais curto para um
+  # certificado de verdade — e o front-end nao consegue consumir uma API com
+  # certificado autoassinado sem gambiarra no cliente.
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      VETLY_FQDN: ${VETLY_FQDN:?defina VETLY_FQDN no .env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Os certificados precisam sobreviver a um `compose down`: o Let's Encrypt tem
+      # limite de emissoes por semana, e recriar o volume a cada deploy queimaria a
+      # cota rapido.
+      - caddy-dados:/data
+      - caddy-config:/config
+    depends_on:
+      - api
+    networks:
+      - vetly
+
+  # ── A API ──────────────────────────────────────────────────────────────────
+  api:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    image: vetly-api:local
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      # Nome do servico na rede do compose. E o que substitui o localhost:11434 do
+      # appsettings — dentro do container, localhost seria o proprio container.
+      Ollama__BaseUrl: http://ollama:11434
+      Storage__Diretorio: /var/lib/vetly/storage
+    volumes:
+      # Audio de consulta e PDF de documento. O container e descartavel; isto nao e.
+      - vetly-storage:/var/lib/vetly/storage
+    depends_on:
+      ollama:
+        condition: service_started
+    networks:
+      - vetly
+
+  # ── Ollama ─────────────────────────────────────────────────────────────────
+  # Sem portas publicadas de proposito: quem fala com ele e a API, pela rede interna.
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    volumes:
+      # O modelo tem ~5 GB. Sem volume, todo restart baixaria tudo de novo.
+      - ollama-modelos:/root/.ollama
+    networks:
+      - vetly
+    # Inferencia em CPU e o gargalo desta VM. O limite existe para o Ollama nao
+    # consumir os quatro nucleos e deixar a API sem CPU para responder requisicao
+    # nenhuma enquanto gera um prontuario.
+    deploy:
+      resources:
+        limits:
+          cpus: '3.0'
+          memory: 10G
+
+volumes:
+  vetly-storage:
+  ollama-modelos:
+  caddy-dados:
+  caddy-config:
+
+networks:
+  vetly:
+    driver: bridge
