@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Vetly.Application.Exceptions;
 using Vetly.Application.Interfaces;
@@ -33,7 +34,8 @@ public class PagamentoServiceTests
         new(_repoMock.Object, _vetRepoMock.Object, _consultaRepoMock.Object,
             _empresaRepoMock.Object, _adaptadorMock.Object, _agendaRepoMock.Object,
             _filaMock.Object, strategies, _fidelidadeMock.Object, _usuarioMock.Object,
-            _colmeiaMock.Object, _notificacoesMock.Object);
+            _colmeiaMock.Object, _notificacoesMock.Object,
+            NullLogger<PagamentoService>.Instance);
 
     /// <summary>Todas as strategies de plano, como o DI as registra (RN-070).</summary>
     private static ISplitFinanceiroStrategy[] TodasAsStrategies() =>

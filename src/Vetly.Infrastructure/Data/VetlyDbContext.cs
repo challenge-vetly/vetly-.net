@@ -91,4 +91,46 @@ public class VetlyDbContext : DbContext
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(VetlyDbContext).Assembly);
         base.OnModelCreating(modelBuilder);
     }
+
+    /// <summary>
+    /// Incrementa o token de concorrência de toda <see cref="Consulta"/> modificada,
+    /// antes de gravar.
+    ///
+    /// <para>
+    /// Fica aqui, e não em cada mutador da entidade, porque o token não é uma decisão
+    /// de negócio: é uma propriedade da gravação. Espalhá-lo pelos métodos do domínio
+    /// só criaria o caminho de esquecer um deles — e o esquecido seria justamente o
+    /// que reintroduziria a perda silenciosa.
+    /// </para>
+    /// <para>
+    /// O EF põe o valor <b>anterior</b> no <c>WHERE</c> do UPDATE. Uma transação que
+    /// carregou a linha antes de outra gravar leva a versão velha, não encontra
+    /// linha nenhuma e lança <see cref="DbUpdateConcurrencyException"/> em vez de
+    /// sobrescrever o que a outra escreveu.
+    /// </para>
+    /// </summary>
+    private void IncrementarVersaoDasConsultas()
+    {
+        foreach (var entrada in ChangeTracker.Entries<Consulta>())
+        {
+            if (entrada.State == EntityState.Modified)
+                entrada.CurrentValues[nameof(Consulta.Versao)] =
+                    entrada.OriginalValues.GetValue<int>(nameof(Consulta.Versao)) + 1;
+        }
+    }
+
+    /// <inheritdoc/>
+    public override int SaveChanges()
+    {
+        IncrementarVersaoDasConsultas();
+        return base.SaveChanges();
+    }
+
+    /// <inheritdoc/>
+    public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+    {
+        IncrementarVersaoDasConsultas();
+        return base.SaveChangesAsync(cancellationToken);
+    }
+
 }

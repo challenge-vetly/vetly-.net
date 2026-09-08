@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using System.Net;
 using Microsoft.AspNetCore.Mvc;
 using Vetly.Application.Exceptions;
@@ -70,6 +71,24 @@ public class ExceptionHandlingMiddleware
             Instrumentar(ex.Codigo, ex);
             await EscreverRespostaAsync(context, HttpStatusCode.Conflict,
                 ex.Message, correlationId, ex.Codigo);
+        }
+        catch (DbUpdateConcurrencyException ex)
+        {
+            // 409 e nao 500: nao ha defeito nenhum aqui. Duas transacoes tocaram a
+            // mesma consulta, e o token de concorrencia fez a defasada falhar em vez
+            // de sobrescrever silenciosamente o que a outra gravou.
+            //
+            // O cliente resolve recarregando e repetindo. O job resolve sozinho, na
+            // retentativa com estado fresco. O que nao pode acontecer -- e era o que
+            // acontecia antes -- e a escrita velha vencer e a confirmacao de pagamento
+            // sumir sem deixar rastro.
+            _logger.LogWarning(ex,
+                "Conflito de concorrencia ao gravar; a escrita defasada foi recusada.");
+
+            Instrumentar("CONCORRENCIA-001", ex);
+            await EscreverRespostaAsync(context, HttpStatusCode.Conflict,
+                "O registro foi alterado por outra operacao. Recarregue e tente de novo.",
+                correlationId, "CONCORRENCIA-001");
         }
         catch (BusinessRuleException ex)
         {

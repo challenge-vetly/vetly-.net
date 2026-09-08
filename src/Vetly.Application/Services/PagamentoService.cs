@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Microsoft.Extensions.Logging;
 using Vetly.Application.DTOs.Comum;
 using Vetly.Application.DTOs.Notificacao;
 using Vetly.Application.DTOs.Pagamento;
@@ -26,6 +27,7 @@ public class PagamentoService : IPagamentoService
     private readonly IUsuarioAtual _usuario;
     private readonly IColmeiaService _colmeia;
     private readonly INotificacaoService _notificacoes;
+    private readonly ILogger<PagamentoService> _logger;
 
     public PagamentoService(
         IPagamentoRepository repo,
@@ -39,7 +41,8 @@ public class PagamentoService : IPagamentoService
         IFidelidadeService fidelidade,
         IUsuarioAtual usuario,
         IColmeiaService colmeia,
-        INotificacaoService notificacoes)
+        INotificacaoService notificacoes,
+        ILogger<PagamentoService> logger)
     {
         _repo = repo;
         _vetRepo = vetRepo;
@@ -53,6 +56,7 @@ public class PagamentoService : IPagamentoService
         _usuario = usuario;
         _colmeia = colmeia;
         _notificacoes = notificacoes;
+        _logger = logger;
     }
 
     /// <summary>
@@ -326,7 +330,14 @@ public class PagamentoService : IPagamentoService
             VetlyTelemetry.PagamentosProcessados.Add(1,
                 new KeyValuePair<string, object?>("status", "inalterado"));
 
-            return Inalterado(pagamento);
+            // ...mas antes de sair calado, confere se a consulta acompanhou o
+            // pagamento. Sair aqui sem olhar era o que tornava PERMANENTE qualquer
+            // divergencia: com o pagamento ja confirmado, toda reentrega batia neste
+            // return e a consulta ficava em EmCheckout ate a rotina de expiracao
+            // devolver o horario — o Responsavel pagava e perdia a consulta.
+            var reconciliada = await ReconciliarConsultaAsync(pagamento);
+
+            return Inalterado(pagamento, reconciliada);
         }
 
         atividade?.SetTag("vetly.pagamento_id", pagamento.Id);
@@ -340,13 +351,51 @@ public class PagamentoService : IPagamentoService
         };
     }
 
-    private static ResultadoDoWebhookDto Inalterado(Pagamento pagamento) => new()
+    private static ResultadoDoWebhookDto Inalterado(Pagamento pagamento, Consulta? consulta = null) => new()
     {
         PagamentoId = pagamento.Id,
         StatusPagamento = pagamento.StatusPagamento,
         ConsultaId = pagamento.ConsultaId,
+        StatusConsulta = consulta?.Status,
         Ignorado = true
     };
+
+    /// <summary>
+    /// Alinha a consulta ao desfecho que o pagamento ja teve, quando os dois
+    /// divergiram (RN-006).
+    ///
+    /// <para>
+    /// A divergencia e possivel porque pagamento e consulta sao gravados em transacoes
+    /// separadas: a primeira commita, e a segunda pode se perder — por conflito de
+    /// concorrencia, por falha de rede, por processo derrubado no meio. O token de
+    /// concorrencia da consulta faz esse tipo de perda falhar alto em vez de passar em
+    /// silencio, e este metodo e o caminho de volta para o que ja divergiu.
+    /// </para>
+    /// <para>
+    /// Nao inventa desfecho nenhum: so leva a consulta ao estado que o pagamento ja
+    /// tem, e apenas quando ela ainda esta em <c>EmCheckout</c>. Consulta cancelada,
+    /// realizada ou expirada nao e tocada — reescrever historia fechada seria pior que
+    /// a divergencia.
+    /// </para>
+    /// </summary>
+    private async Task<Consulta?> ReconciliarConsultaAsync(Pagamento pagamento)
+    {
+        if (pagamento.ConsultaId is not { } consultaId)
+            return null;
+
+        var consulta = await _consultaRepo.ObterPorIdAsync(consultaId);
+
+        if (consulta is null || consulta.Status != StatusConsulta.EmCheckout)
+            return consulta;
+
+        var confirmada = pagamento.StatusPagamento == StatusPagamento.Confirmado;
+
+        _logger.LogWarning(
+            "Consulta {ConsultaId} estava em EmCheckout com pagamento {Status}; reconciliando.",
+            consulta.Id, pagamento.StatusPagamento);
+
+        return await AtualizarConsultaAsync(pagamento, confirmada);
+    }
 
     /// <summary>
     /// Confirmacao: pagamento confirmado, consulta promovida e horario ocupado em

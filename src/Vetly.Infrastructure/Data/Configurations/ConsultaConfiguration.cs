@@ -14,6 +14,19 @@ public class ConsultaConfiguration : IEntityTypeConfiguration<Consulta>
     {
         builder.ToTable("TB_CONSULTA");
 
+        // Token de concorrencia otimista. O Oracle nao tem rowversion nativo, entao a
+        // coluna e um contador que o DbContext incrementa a cada gravacao; o EF a poe
+        // no WHERE do UPDATE, e a escrita defasada afeta zero linhas e lanca.
+        //
+        // Sem isto, duas transacoes que carregam a mesma consulta antes de qualquer
+        // uma salvar produzem last-write-wins sobre TODAS as colunas -- e foi assim
+        // que uma confirmacao de pagamento se perdeu para uma gravacao de
+        // pre-sintomas ocorrida no mesmo segundo.
+        builder.Property(c => c.Versao)
+            .HasColumnName("VERSAO")
+            .IsConcurrencyToken()
+            .IsRequired();
+
         builder.HasKey(c => c.Id);
         builder.Property(c => c.Id)
             .HasColumnType("CHAR(36)")

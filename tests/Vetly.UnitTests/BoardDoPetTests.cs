@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Vetly.Application.DTOs.Obrigacao;
 using Vetly.Application.DTOs.Pagamento;
@@ -204,7 +205,8 @@ public class CarteiraTests
         new(_repo.Object, Mock.Of<IVeterinarioRepository>(), Mock.Of<IConsultaRepository>(),
             Mock.Of<IEmpresaRepository>(), Mock.Of<IPagamentoAdapter>(), Mock.Of<IAgendaRepository>(),
             Mock.Of<IFilaDeJobs>(), [], Mock.Of<IFidelidadeService>(), _usuario.Object,
-            Mock.Of<IColmeiaService>(), Mock.Of<INotificacaoService>());
+            Mock.Of<IColmeiaService>(), Mock.Of<INotificacaoService>(),
+            NullLogger<PagamentoService>.Instance);
 
     private Pagamento Pagamento(decimal valor = 200m, bool confirmado = true, decimal? estorno = null)
     {

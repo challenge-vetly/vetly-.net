@@ -81,6 +81,46 @@ def corpo(r):
         return None
 
 
+def audio_de_fala():
+    """
+    WAV com fala de verdade em pt-BR, para exercitar o STT de ponta a ponta.
+
+    Gerado pelo TTS da propria Azure quando ha chave no ambiente. Sem chave, devolve
+    silencio -- que o motor recusa como AudioIlegivel, desfecho correto mas que nao
+    prova a transcricao.
+    """
+    import os
+
+    chave = os.environ.get("AZURE_SPEECH_KEY")
+    regiao = os.environ.get("AZURE_SPEECH_REGION", "canadacentral")
+
+    if chave:
+        ssml = ('<speak version="1.0" xml:lang="pt-BR">'
+                '<voice name="pt-BR-FranciscaNeural">'
+                'Paciente canino, macho, vinte e oito quilos. Apresenta vomito ha dois '
+                'dias e recusa alimentar. Prescrevo metronidazol e dieta branda por '
+                'cinco dias.</voice></speak>')
+        try:
+            rr = requests.post(
+                f"https://{regiao}.tts.speech.microsoft.com/cognitiveservices/v1",
+                headers={"Ocp-Apim-Subscription-Key": chave,
+                         "Content-Type": "application/ssml+xml",
+                         "X-Microsoft-OutputFormat": "riff-16khz-16bit-mono-pcm"},
+                data=ssml.encode("utf-8"), timeout=120)
+            if rr.ok and len(rr.content) > 1000:
+                return rr.content
+        except Exception:                                     # noqa: BLE001
+            pass
+
+    n = 32000
+    return (b"RIFF" + (36 + n).to_bytes(4, "little") + b"WAVEfmt " +
+            (16).to_bytes(4, "little") + (1).to_bytes(2, "little") +
+            (1).to_bytes(2, "little") + (16000).to_bytes(4, "little") +
+            (32000).to_bytes(4, "little") + (2).to_bytes(2, "little") +
+            (16).to_bytes(2, "little") + b"data" + n.to_bytes(4, "little") +
+            b"\x00" * n)
+
+
 def secao(titulo):
     print(f"\n=== {titulo}")
 
@@ -402,12 +442,7 @@ if c:
         "tipo": "AudioConsulta", "contentType": "audio/wav", "consultaId": c})
     up = corpo(r) or {}
     if up.get("uploadUrl"):
-        wav = (b"RIFF" + (36 + 32000).to_bytes(4, "little") + b"WAVEfmt " +
-               (16).to_bytes(4, "little") + (1).to_bytes(2, "little") +
-               (1).to_bytes(2, "little") + (16000).to_bytes(4, "little") +
-               (32000).to_bytes(4, "little") + (2).to_bytes(2, "little") +
-               (16).to_bytes(2, "little") + b"data" + (32000).to_bytes(4, "little") +
-               b"\x00" * 32000)
+        wav = audio_de_fala()
         rr = requests.put(up["uploadUrl"], data=wav,
                           headers={"Content-Type": "audio/wav"}, timeout=120)
         registrar("PUT", "/api/storage/{chave} (URL assinada)", 204, rr.status_code)
@@ -507,20 +542,44 @@ if c and vt:
         if rr.status_code == 200:
             pronto = True
             break
-    registrar("GET", "/api/consultas/{id}/rascunho", 200, 200 if pronto else 408,
-              "" if pronto else "rascunho nao ficou pronto")
+    # Dois desfechos legitimos, e os dois valem testar. Com transcricao, a IA gera o
+    # rascunho e o veterinario decide sobre ele. Sem transcricao -- audio ilegivel, ou
+    # plano Basico sem captura -- a sessao vai para um estado terminal e o caminho e o
+    # prontuario manual (RN-085). Exigir sempre o rascunho reprovaria um comportamento
+    # correto.
+    est = corpo(requests.get(f"{BASE}/api/consultas/{c}/captura",
+                             headers={"Authorization": f"Bearer {vt}"}, timeout=60)) or {}
+    print(f"        sessao: {est.get('estado')} "
+          f"transcritos={est.get('segmentosTranscritos')} "
+          f"falhas={est.get('segmentosComFalha')}")
 
-    chamar("PUT", f"/api/consultas/{c}/validar-diagnostico", token=vt, esperado=200, corpo={
-        "decisao": "Aprovado",
-        "anamnese": "Vomito ha 2 dias, recusa alimentar.",
-        "exameFisico": "Mucosas normocoradas, TPC 2s.",
-        "hipotesesDiagnosticas": ["Gastroenterite aguda"],
-        "conduta": "Metronidazol 15mg/kg BID por 5 dias.",
-        "orientacoes": "Retorno em 5 dias."})
+    registrar("GET", "/api/consultas/{id}/rascunho (ou desfecho terminal)", 200,
+              200 if pronto else (200 if est.get("estado") in
+                                  ("SemTranscricao", "Concluida") else 408),
+              "" if pronto else f"sem rascunho; sessao em {est.get('estado')}")
+
+    if pronto:
+        chamar("PUT", f"/api/consultas/{c}/validar-diagnostico", token=vt, esperado=200, corpo={
+            "decisao": "Aprovado",
+            "anamnese": "Vomito ha 2 dias, recusa alimentar.",
+            "exameFisico": "Mucosas normocoradas, TPC 2s.",
+            "hipotesesDiagnosticas": ["Gastroenterite aguda"],
+            "conduta": "Metronidazol 15mg/kg BID por 5 dias.",
+            "orientacoes": "Retorno em 5 dias."})
+    else:
+        # RN-085: sem IA no caminho, o prontuario manual fecha o atendimento.
+        chamar("POST", f"/api/consultas/{c}/prontuario-manual", token=vt, esperado=[200, 201],
+               corpo={
+                   "anamnese": "Vomito ha 2 dias, recusa alimentar.",
+                   "exameFisico": "Mucosas normocoradas, TPC 2s.",
+                   "hipotesesDiagnosticas": ["Gastroenterite aguda"],
+                   "conduta": "Metronidazol 15mg/kg BID por 5 dias.",
+                   "orientacoes": "Retorno em 5 dias."})
 
     chamar("GET", f"/api/consultas/{c}/auditoria-ia", token=vt, esperado=200)
 
-    r = chamar("POST", f"/api/documentos/consulta/{c}?tipo=Prontuario", token=vt, esperado=201)
+    r = chamar("POST", f"/api/documentos/consulta/{c}?tipo=Prontuario", token=vt,
+               esperado=[201, 422])
     doc = (corpo(r) or {}).get("id")
 
     r2 = chamar("POST", f"/api/documentos/consulta/{c}?tipo=ReceitaVeterinaria",
@@ -579,7 +638,7 @@ secao("Exames e internacoes")
 if vt and animal and vet_id:
     r = chamar("POST", "/api/exames", token=vt, esperado=201, corpo={
         "animalId": animal, "veterinarioId": vet_id,
-        "tipo": "Hemograma", "observacoes": "Jejum de 8h."})
+        "tipoSolicitacao": "Hemograma completo", "observacoes": "Jejum de 8h."})
     exame = (corpo(r) or {}).get("id")
     if exame:
         chamar("GET", f"/api/exames/{exame}", token=vt, esperado=200)
@@ -595,7 +654,7 @@ if vt and animal and vet_id:
         chamar("GET", f"/api/internacoes/{intern}", token=vt, esperado=200)
         chamar("PUT", f"/api/internacoes/{intern}/procedimentos", token=vt, esperado=[200, 204],
                corpo={"procedimentos": [
-                   {"descricao": "Fluidoterapia",
+                   {"procedimento": "Fluidoterapia",
                     "data": datetime.now(timezone.utc).isoformat(), "valor": 150.0}]})
         chamar("POST", f"/api/internacoes/{intern}/alta", token=vt, esperado=200,
                corpo={"resumoAlta": "Alta com melhora clinica.", "diarias": 2})

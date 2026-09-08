@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Vetly.Application.DTOs.Fidelidade;
 using Vetly.Application.DTOs.Pagamento;
@@ -55,7 +56,7 @@ public class PagamentoWebhookTests
         new(_repo.Object, _vetRepo.Object, _consultaRepo.Object, _empresaRepo.Object,
             _adaptador.Object, _agendaRepo.Object, _fila.Object,
             [new SplitBasicoStrategy(), new SplitProfissionalStrategy(), new SplitEnterpriseStrategy()],
-            _fidelidade.Object, _usuario.Object, _colmeia.Object, _notificacoes.Object);
+            _fidelidade.Object, _usuario.Object, _colmeia.Object, _notificacoes.Object, NullLogger<PagamentoService>.Instance);
 
     /// <summary>Monta consulta em checkout, com horario travado e pagamento pendente.</summary>
     private (Pagamento Pagamento, Consulta Consulta, Slot Slot) CenarioEmCheckout()

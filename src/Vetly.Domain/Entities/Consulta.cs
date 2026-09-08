@@ -105,6 +105,30 @@ public class Consulta
     /// </summary>
     public DateTime? EncerradaEm { get; private set; }
 
+    /// <summary>
+    /// Contador de versão da linha, usado como token de concorrência otimista.
+    ///
+    /// <para>
+    /// Existe por causa de uma perda de atualização observada em produção. O webhook
+    /// confirmou o pagamento e, no mesmo segundo, o Responsável gravou os
+    /// pré-sintomas. As duas transações carregaram a consulta antes de qualquer uma
+    /// salvar, e o EF grava a linha inteira: a segunda escrita devolveu ao banco a
+    /// visão velha que ela tinha carregado, desfazendo a confirmação.
+    /// </para>
+    /// <para>
+    /// O resultado não era um erro — era silêncio. O pagamento ficava
+    /// <c>Confirmado</c> e a consulta presa em <c>EmCheckout</c> até a rotina de
+    /// expiração devolver o horário à fila. O Responsável pagava e perdia a consulta,
+    /// e não havia nada no log dizendo por quê.
+    /// </para>
+    /// <para>
+    /// Com o token, a escrita defasada falha em vez de vencer: o job retenta com
+    /// estado fresco e a requisição HTTP responde 409. Trocar silêncio por conflito é
+    /// o ponto — conflito se resolve, perda não se descobre.
+    /// </para>
+    /// </summary>
+    public int Versao { get; private set; }
+
     /// <summary>Construtor privado reservado ao EF Core para materialização de entidades.</summary>
     private Consulta() { }
 
