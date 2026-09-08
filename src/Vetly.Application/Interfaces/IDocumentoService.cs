@@ -23,7 +23,14 @@ public interface IDocumentoService
     Task<DocumentoDto> AssinarAsync(Guid id, string? nomeCompleto);
 
     /// <summary>Cria uma versão corrigida do documento (RN-088/RN-089).</summary>
-    Task<DocumentoDto> CorrigirAsync(Guid id, string novosDados, string? justificativa, string crmvSolicitante);
+    /// <summary>
+    /// Cria a versão corrigida de um documento (RN-088/RN-089, §5.8).
+    ///
+    /// O CRMV do autor <b>não</b> é parâmetro: vem do cadastro de quem está
+    /// autenticado. A §5.8 pede anotação automática do profissional, e receber o valor
+    /// do cliente permitiria assinar a correção com o CRMV de outro.
+    /// </summary>
+    Task<DocumentoDto> CorrigirAsync(Guid id, string novosDados, string? justificativa);
 
     /// <summary>
     /// Publica o documento no board do pet, onde o Responsável o alcança

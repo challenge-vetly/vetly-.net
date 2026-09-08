@@ -136,6 +136,9 @@ aponta para o lugar errado é pior do que nenhuma.
 | RN-087 (C-04) | Finalizar exige que todo documento **já emitido** que precise de assinatura esteja assinado — receita e atestado; consulta que não prescreveu nada finaliza normalmente | `Documento.PendenteDeAssinatura` + `ConsultaService.FinalizarAsync` |
 | RN-087 | Assinatura por adaptador: nome digitado conferido contra o registrado, carimbo no corpo do documento dizendo como foi assinado e o que não habilita | `IAssinaturaAdapter` + `AssinaturaAdapterNomeDigitado` |
 | RN-088 | Correção cria nova versão do documento (original preservado com `VersaoOriginalId`) | `DocumentoService.CorrigirAsync` |
+| RN-088 (§5.8) | O CRMV da correção vem do cadastro de quem está autenticado, nunca do corpo: a §5.8 pede anotação **automática** do profissional, e aceitar o valor do cliente deixaria assinar a correção com o registro de outro | `DocumentoService.CorrigirAsync` + `ObterSignatarioAsync` |
+| RN-006 | Consulta tem token de concorrência otimista: duas transações que a carregam antes de qualquer uma salvar não produzem mais last-write-wins, e a escrita defasada falha com 409 em vez de apagar a confirmação do pagamento | `Consulta.Versao` + `VetlyDbContext.SaveChangesAsync` |
+| RN-006 | Reentrega de webhook com pagamento já resolvido reconcilia a consulta que ficou para trás, em vez de sair calada — sem isso, a divergência era permanente | `PagamentoService.ReconciliarConsultaAsync` |
 | RN-089 | Correção após 24h exige justificativa não vazia | `DocumentoService.CorrigirAsync` |
 | RN-094 | Resposta do tutor encerra a régua de contato | `LembreteService.RegistrarRespostaAsync` |
 | RN-095 | Após 3 tentativas sem resposta, `AlertaEnviadoClinica = true` | `LembreteService.ProcessarTentativaAsync` |

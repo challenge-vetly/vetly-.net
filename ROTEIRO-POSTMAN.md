@@ -588,7 +588,6 @@ Cria uma **nova versão** — o original é preservado. Depois de 24h a justific
 {
   "novosDados": "Conteudo corrigido do documento.",
   "justificativa": "Correcao da dosagem prescrita.",
-  "crmvSolicitante": "12345-SP"
 }
 ```
 

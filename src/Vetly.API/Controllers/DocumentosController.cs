@@ -87,12 +87,22 @@ public class DocumentosController : ControllerBase
         Ok(await _service.AssinarAsync(id, request.NomeCompleto));
 
     /// <summary>Cria uma versao corrigida de um documento (RN-088/RN-089).</summary>
+    /// <remarks>
+    /// O original permanece intacto: a correcao e outra versao, ligada a ele por
+    /// <c>VersaoOriginalId</c>.
+    ///
+    /// O CRMV do autor <b>nao</b> vai no corpo — vem do cadastro de quem esta
+    /// autenticado. A §5.8 pede anotacao automatica do profissional, e aceitar o valor
+    /// do cliente deixaria carimbar a correcao com o CRMV de outro.
+    ///
+    /// Passadas 24 horas da emissao, a justificativa passa a ser obrigatoria (RN-089).
+    /// </remarks>
     [HttpPost("{id:guid}/correcao")]
     [ProducesResponseType(typeof(DocumentoDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
     public async Task<IActionResult> Corrigir(Guid id, [FromBody] CorrecaoDocumentoRequest request) =>
-        Ok(await _service.CorrigirAsync(id, request.NovosDados, request.Justificativa, request.CrmvSolicitante));
+        Ok(await _service.CorrigirAsync(id, request.NovosDados, request.Justificativa));
 
     /// <summary>
     /// Publica o documento no board do pet, onde o Responsavel o alcanca
@@ -159,6 +169,7 @@ public sealed class AssinaturaRequest
 public sealed class CorrecaoDocumentoRequest
 {
     public string NovosDados { get; set; } = string.Empty;
+
+    /// <summary>Obrigatória para correções após 24 horas (RN-089).</summary>
     public string? Justificativa { get; set; }
-    public string CrmvSolicitante { get; set; } = string.Empty;
 }

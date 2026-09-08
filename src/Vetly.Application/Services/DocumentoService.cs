@@ -253,7 +253,7 @@ public class DocumentoService : IDocumentoService
 
     /// <inheritdoc/>
     public async Task<DocumentoDto> CorrigirAsync(
-        Guid id, string novosDados, string? justificativa, string crmvSolicitante)
+        Guid id, string novosDados, string? justificativa)
     {
         var doc = await _repo.ObterPorIdAsync(id)
             ?? throw new NotFoundException("Documento", id);
@@ -266,8 +266,21 @@ public class DocumentoService : IDocumentoService
         if (horasDesdeGeracao > 24 && string.IsNullOrWhiteSpace(justificativa))
             throw new BusinessRuleException("RN-089", "Correcoes apos 24h exigem justificativa.");
 
-        var corrigido = new Documento(doc.TipoDocumento, crmvSolicitante, doc.ConsultaId, doc.InternacaoId);
-        corrigido.Corrigir(doc.Id, DateTime.UtcNow, crmvSolicitante);
+        // O CRMV vem do cadastro de quem esta autenticado, NUNCA do corpo da
+        // requisicao. A §5.8 exige "anotacao automatica de data, hora e CRMV do
+        // profissional" — automatica, e nao declarada por quem pede. Aceitar o valor
+        // do cliente permitiria carimbar a correcao de um documento clinico com o CRMV
+        // de outro profissional, que e falsidade de atribuicao num registro que a
+        // legislacao trata como ato privativo.
+        //
+        // Tambem era a origem de um ORA-01400: o campo vinha vazio do cliente, a coluna
+        // CRMV_SIGNATARIO e NOT NULL, e a correcao respondia 500. A correcao de
+        // documento simplesmente nao funcionava.
+        var signatario = await ObterSignatarioAsync(doc);
+        var crmvDoAutor = signatario.Crmv.Valor;
+
+        var corrigido = new Documento(doc.TipoDocumento, crmvDoAutor, doc.ConsultaId, doc.InternacaoId);
+        corrigido.Corrigir(doc.Id, DateTime.UtcNow, crmvDoAutor);
 
         // O documento original permanece intacto (RN-088): a correção é outra versão,
         // e o conteúdo novo entra aqui em vez de sobrescrever o que já foi publicado.

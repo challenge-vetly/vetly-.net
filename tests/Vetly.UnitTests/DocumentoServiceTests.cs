@@ -330,6 +330,12 @@ public class DocumentoServiceTests
         var consulta = CriarConsultaValidada();
         _consultaRepoMock.Setup(r => r.ObterPorIdAsync(consulta.Id)).ReturnsAsync(consulta);
 
+        // O CRMV da correcao vem do cadastro do veterinario, e nao do corpo da
+        // requisicao (§5.8): o repositorio precisa devolve-lo.
+        var vet = new Veterinario("Dr. Vet", new Crmv("12345-SP"), "SP",
+            PersonaVeterinario.Autonomo, PlanoAssinatura.Profissional);
+        _vetRepoMock.Setup(r => r.ObterPorIdAsync(It.IsAny<Guid>())).ReturnsAsync(vet);
+
         var doc = new Documento(TipoDocumento.Prontuario, "12345-SP", consulta.Id);
         typeof(Documento)
             .GetField("<DataGeracao>k__BackingField", BindingFlags.NonPublic | BindingFlags.Instance)!
@@ -346,7 +352,7 @@ public class DocumentoServiceTests
         _docRepoMock.Setup(r => r.AdicionarAsync(It.IsAny<Documento>())).Returns(Task.CompletedTask);
         _docRepoMock.Setup(r => r.SalvarAsync()).ReturnsAsync(1);
 
-        var resultado = await CriarServico().CorrigirAsync(doc.Id, "novos dados", null, "12345-SP");
+        var resultado = await CriarServico().CorrigirAsync(doc.Id, "novos dados", null);
 
         Assert.NotNull(resultado);
         Assert.Equal(doc.Id, resultado.VersaoOriginalId);
@@ -361,7 +367,7 @@ public class DocumentoServiceTests
         _docRepoMock.Setup(r => r.ObterPorIdAsync(doc.Id)).ReturnsAsync(doc);
 
         var ex = await Assert.ThrowsAsync<BusinessRuleException>(
-            () => CriarServico().CorrigirAsync(doc.Id, "novos dados", null, "12345-SP"));
+            () => CriarServico().CorrigirAsync(doc.Id, "novos dados", null));
 
         Assert.Equal("RN-089", ex.Codigo);
     }
@@ -375,10 +381,30 @@ public class DocumentoServiceTests
         _docRepoMock.Setup(r => r.AdicionarAsync(It.IsAny<Documento>())).Returns(Task.CompletedTask);
         _docRepoMock.Setup(r => r.SalvarAsync()).ReturnsAsync(1);
 
-        var resultado = await CriarServico().CorrigirAsync(doc.Id, "novos dados", "Erro de preenchimento", "12345-SP");
+        var resultado = await CriarServico().CorrigirAsync(doc.Id, "novos dados", "Erro de preenchimento");
 
         Assert.Equal(doc.Id, resultado.VersaoOriginalId);
         Assert.Equal("12345-SP", resultado.CrmvSolicitanteCorrecao);
+    }
+
+[Fact]
+    public async Task CorrigirAsync_CarimbaOCrmvDoCadastro_ENaoUmVindoDoCliente()
+    {
+        // A §5.8 exige anotacao AUTOMATICA do profissional. Antes, o CRMV vinha no
+        // corpo da requisicao: dava para assinar a correcao de um documento clinico
+        // com o registro de outro. E, vindo vazio, a coluna NOT NULL derrubava a rota
+        // com 500 -- a correcao nao funcionava de jeito nenhum.
+        var doc = CriarDocumentoComDataGeracao(DateTime.UtcNow.AddHours(-2));
+
+        _docRepoMock.Setup(r => r.ObterPorIdAsync(doc.Id)).ReturnsAsync(doc);
+        _docRepoMock.Setup(r => r.AdicionarAsync(It.IsAny<Documento>())).Returns(Task.CompletedTask);
+        _docRepoMock.Setup(r => r.SalvarAsync()).ReturnsAsync(1);
+
+        var resultado = await CriarServico().CorrigirAsync(doc.Id, "novos dados", null);
+
+        Assert.Equal("12345-SP", resultado.CrmvSignatario);
+        Assert.Equal("12345-SP", resultado.CrmvSolicitanteCorrecao);
+        Assert.False(string.IsNullOrWhiteSpace(resultado.CrmvSignatario));
     }
 
     [Fact]
