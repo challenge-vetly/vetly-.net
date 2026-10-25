@@ -24,8 +24,14 @@
           <!-- Codigo gerado pelo EF Core: migrations e snapshot do modelo. -->
           <Exclude>[Vetly.Infrastructure]Vetly.Infrastructure.Migrations.*</Exclude>
 
-          <!-- Atributos que marcam codigo gerado tambem sao respeitados. -->
-          <ExcludeByAttribute>Obsolete,GeneratedCodeAttribute,CompilerGeneratedAttribute</ExcludeByAttribute>
+          <!-- Atributos que marcam codigo gerado tambem sao respeitados.
+
+               CompilerGeneratedAttribute NAO entra, embora pareca "codigo gerado": o
+               compilador o aplica a maquina de estados de todo metodo async, e e la
+               que mora o corpo do metodo. Com ele na lista, o ConsultaService (mais de
+               mil linhas) era medido por 73 — so os metodos sincronos — e a cobertura
+               reportada era a de uma fracao escolhida pelo compilador, nao pelo teste. -->
+          <ExcludeByAttribute>Obsolete,GeneratedCodeAttribute</ExcludeByAttribute>
 
           <!-- Arquivos de migration, por caminho, para o caso de o filtro por
                namespace nao alcancar as classes parciais do designer. -->
