@@ -168,10 +168,17 @@ public class ConsultaService : IConsultaService
         return empresa is null ? nomeDoVet : empresa.Nome;
     }
 
+    /// <summary>
+    /// Lista consultas no escopo do token (RN-105/RN-106), com filtros e ordenação.
+    /// Campo de ordenação fora da whitelist cai no padrão, data e hora decrescente.
+    /// </summary>
     public async Task<ResultadoPaginado<ConsultaDto>> ObterTodosAsync(
-        FiltroConsultaDto filtro, Paginacao paginacao)
+        FiltroConsultaDto filtro, Paginacao paginacao, Ordenacao? ordenacao = null)
     {
-        var pagina = await _repo.ObterComFiltrosAsync(AplicarEscopo(filtro), paginacao);
+        var criterio = (ordenacao ?? new Ordenacao()).Resolver(
+            CamposDeOrdenacao.Consultas.Todos, CamposDeOrdenacao.Consultas.DataHora, descendentePadrao: true);
+
+        var pagina = await _repo.ObterComFiltrosAsync(AplicarEscopo(filtro), paginacao, criterio);
         return pagina.Mapear(MapearParaDto);
     }
 

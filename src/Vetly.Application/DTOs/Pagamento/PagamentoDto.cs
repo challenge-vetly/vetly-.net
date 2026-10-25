@@ -31,4 +31,7 @@ public class PagamentoDto
     /// <summary>Quem recebe o repasse: o veterinário autônomo ou a empresa (RN-072).</summary>
     public Guid? DestinatarioRepasseId { get; set; }
     public decimal? ValorEstornado { get; set; }
+
+    /// <summary>O que foi cobrado: consulta, caução ou saldo de internação (RN-101).</summary>
+    public TipoPagamento Tipo { get; set; }
 }

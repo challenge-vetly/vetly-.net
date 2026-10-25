@@ -39,7 +39,7 @@ public class ConsultaRepository : RepositoryBase<Consulta>, IConsultaRepository
 
     /// <inheritdoc/>
     public async Task<ResultadoPaginado<Consulta>> ObterComFiltrosAsync(
-        FiltroConsultaDto filtro, Paginacao paginacao)
+        FiltroConsultaDto filtro, Paginacao paginacao, CriterioDeOrdenacao? ordenacao = null)
     {
         // Constrói a query dinamicamente — apenas os filtros informados são aplicados
         var query = _dbSet.AsQueryable();
@@ -69,13 +69,41 @@ public class ConsultaRepository : RepositoryBase<Consulta>, IConsultaRepository
         // A contagem roda sobre o filtro inteiro, antes do recorte da pagina
         var total = await query.CountAsync();
 
-        var itens = await query
-            .OrderByDescending(c => c.DataHora)
+        // A ordenacao entra no IQueryable antes do Skip/Take: ordenar depois de recortar
+        // ordenaria so a pagina, e a pagina 2 poderia repetir ou pular registros.
+        var itens = await Ordenar(query, ordenacao ?? PadraoConsultas)
             .Skip(paginacao.Deslocamento)
             .Take(paginacao.Tamanho)
             .ToListAsync();
 
         return new ResultadoPaginado<Consulta>(itens, total, paginacao);
+    }
+
+    /// <summary>Data e hora decrescente: o que a listagem sempre devolveu.</summary>
+    private static readonly CriterioDeOrdenacao PadraoConsultas =
+        new(CamposDeOrdenacao.Consultas.DataHora, Descendente: true);
+
+    /// <summary>
+    /// Traduz o campo da whitelist em expressao, num switch fechado.
+    ///
+    /// O desempate por <c>Id</c> nao e enfeite: com dois registros no mesmo valor de
+    /// ordenacao, o banco pode devolve-los em ordem diferente a cada execucao, e o
+    /// mesmo registro aparece na pagina 1 e na 2 enquanto outro some. Com uma chave
+    /// unica no fim, a ordem e total e a paginacao fica estavel.
+    /// </summary>
+    private static IQueryable<Consulta> Ordenar(IQueryable<Consulta> query, CriterioDeOrdenacao criterio)
+    {
+        var ordenada = (criterio.Campo, criterio.Descendente) switch
+        {
+            (CamposDeOrdenacao.Consultas.Status, false) =>
+                query.OrderBy(c => c.Status).ThenByDescending(c => c.DataHora),
+            (CamposDeOrdenacao.Consultas.Status, true) =>
+                query.OrderByDescending(c => c.Status).ThenByDescending(c => c.DataHora),
+            (_, false) => query.OrderBy(c => c.DataHora),
+            (_, true) => query.OrderByDescending(c => c.DataHora)
+        };
+
+        return ordenada.ThenBy(c => c.Id);
     }
 
 /// <inheritdoc/>

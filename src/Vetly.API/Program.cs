@@ -18,6 +18,7 @@ using Vetly.Infrastructure.Security;
 using Vetly.API.Middlewares;
 using Vetly.API.HealthChecks;
 using Vetly.API.Filters;
+using Vetly.API.Hateoas;
 using Vetly.API.Jobs;
 using Vetly.API.Security;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
@@ -90,8 +91,26 @@ builder.Services
         options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
     });
 
+// ── HATEOAS (Sprint 4) ────────────────────────────────────────────────────────
+// Opt-in por Accept: application/hal+json ou ?hateoas=true; sem isso, o corpo de
+// sempre. O formatador hal+json entra primeiro e reusa as opcoes JSON da API (enums
+// como texto), mas so escreve os envelopes Recurso/RecursoPaginado.
+builder.Services.AddOptions<Microsoft.AspNetCore.Mvc.MvcOptions>()
+    .Configure<Microsoft.Extensions.Options.IOptions<Microsoft.AspNetCore.Mvc.JsonOptions>>((mvc, json) =>
+        mvc.OutputFormatters.Insert(0, new FormatadorHalJson(json.Value.JsonSerializerOptions)));
+// Links em minusculas (/api/consultas, nao /api/Consultas, que e o que o token
+// [controller] produz). O roteamento ja ignora caixa; isto so muda as URLs geradas —
+// links de HATEOAS e o Location do 201 — para baterem com a documentacao.
+builder.Services.Configure<RouteOptions>(o => o.LowercaseUrls = true);
+builder.Services.AddScoped<ConstrutorDeLinks>();
+builder.Services.AddScoped<RespostaHateoas>();
+builder.Services.AddScoped<ILinksDoRecurso<Vetly.Application.DTOs.Consulta.ConsultaDto>, LinksDeConsulta>();
+builder.Services.AddScoped<ILinksDoRecurso<Vetly.Application.DTOs.Pagamento.PagamentoDto>, LinksDePagamento>();
+
 // ── OpenAPI / Scalar ─────────────────────────────────────────────────────────
-builder.Services.AddOpenApi();
+// O transformer documenta a variante hal+json do 200 e o ?hateoas=true das rotas
+// marcadas com [RespostaHal] — o ApiExplorer so guarda um tipo por status.
+builder.Services.AddOpenApi(options => options.AddOperationTransformer<TransformadorHalOpenApi>());
 
 // ── Cabecalhos de proxy reverso (§ Deploy) ───────────────────────────────────
 // Em container a API fala HTTP com o ingress, e e o ingress que termina o TLS. Sem

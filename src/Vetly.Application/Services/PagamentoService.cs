@@ -63,12 +63,17 @@ public class PagamentoService : IPagamentoService
     /// Lista pagamentos no escopo de quem chama: o Responsável vê a própria carteira,
     /// o Admin vê o consolidado (RN-106).
     /// </summary>
-    public async Task<ResultadoPaginado<PagamentoDto>> ObterTodosAsync(Paginacao paginacao)
+    public async Task<ResultadoPaginado<PagamentoDto>> ObterTodosAsync(
+        Paginacao paginacao, FiltroPagamentoDto? filtro = null, Ordenacao? ordenacao = null)
     {
         // Escopo do token, nunca parametro do cliente. Sem escopo reconhecido, nada.
         Guid? tutorId = _usuario.EhAdmin ? null : (_usuario.TutorId ?? Guid.Empty);
 
-        var pagina = await _repo.ObterPaginadoAsync(paginacao, tutorId);
+        // Campo fora da whitelist cai no padrao: momento decrescente
+        var criterio = (ordenacao ?? new Ordenacao()).Resolver(
+            CamposDeOrdenacao.Pagamentos.Todos, CamposDeOrdenacao.Pagamentos.Momento, descendentePadrao: true);
+
+        var pagina = await _repo.ObterPaginadoAsync(paginacao, tutorId, filtro, criterio);
         return pagina.Mapear(MapearParaDto);
     }
 
@@ -692,7 +697,7 @@ public class PagamentoService : IPagamentoService
         Id = p.Id, TutorId = p.TutorId, ConsultaId = p.ConsultaId, InternacaoId = p.InternacaoId,
         Valor = p.Valor, MeioPagamento = p.MeioPagamento, Momento = p.Momento,
         StatusPagamento = p.StatusPagamento, PercentualSplit = p.PercentualSplit,
-        ValorEstornado = p.ValorEstornado,
+        ValorEstornado = p.ValorEstornado, Tipo = p.Tipo,
         PlanoAplicado = p.PlanoAplicado, TakeRate = p.TakeRate,
         Comissao = p.Comissao, Repasse = p.Repasse,
         DestinatarioRepasseId = p.DestinatarioRepasseId

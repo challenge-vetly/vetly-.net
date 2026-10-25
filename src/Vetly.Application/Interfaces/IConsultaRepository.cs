@@ -20,7 +20,14 @@ public interface IConsultaRepository : IRepositoryBase<Consulta>
     /// Retorna uma página de consultas aplicando os filtros informados.
     /// A contagem total é feita sobre o filtro, antes do recorte da página.
     /// </summary>
-    Task<ResultadoPaginado<Consulta>> ObterComFiltrosAsync(FiltroConsultaDto filtro, Paginacao paginacao);
+    /// <param name="filtro">Filtros já com o escopo do token aplicado (RN-105/RN-106).</param>
+    /// <param name="paginacao">Página pedida.</param>
+    /// <param name="ordenacao">
+    /// Critério já resolvido contra <see cref="CamposDeOrdenacao.Consultas"/>. Nulo
+    /// mantém o comportamento anterior: data e hora, da mais recente para a mais antiga.
+    /// </param>
+    Task<ResultadoPaginado<Consulta>> ObterComFiltrosAsync(
+        FiltroConsultaDto filtro, Paginacao paginacao, CriterioDeOrdenacao? ordenacao = null);
 
     /// <summary>
     /// Consultas de um período, sem paginação. É a base do funil de atendimento

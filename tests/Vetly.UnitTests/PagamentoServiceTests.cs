@@ -1,5 +1,7 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
+using Vetly.Application.DTOs.Comum;
+using Vetly.Application.DTOs.Pagamento;
 using Vetly.Application.Exceptions;
 using Vetly.Application.Interfaces;
 using Vetly.Application.Services;
@@ -244,5 +246,48 @@ public class PagamentoServiceTests
 
         // Reentrega de webhook nao pode virar erro
         Assert.Equal(consultaId, pagamento.ConsultaId);
+    }
+
+    // ── Listagem: filtros e ordenacao (Sprint 4) ─────────────────────────────
+
+    [Fact]
+    public async Task ObterTodosAsync_ComoResponsavel_RepassaEscopoFiltroEOrdenacaoResolvida()
+    {
+        // Arrange — Responsavel pedindo "VALOR" crescente: o campo chega normalizado
+        var tutorId = Guid.NewGuid();
+        _usuarioMock.SetupGet(u => u.EhAdmin).Returns(false);
+        _usuarioMock.SetupGet(u => u.TutorId).Returns(tutorId);
+
+        var filtro = new FiltroPagamentoDto { Status = StatusPagamento.Confirmado };
+        var paginacao = new Paginacao();
+        _repoMock
+            .Setup(r => r.ObterPaginadoAsync(paginacao, tutorId, filtro,
+                It.Is<CriterioDeOrdenacao>(c => c.Campo == "valor" && !c.Descendente)))
+            .ReturnsAsync(new ResultadoPaginado<Pagamento>([], 0, paginacao));
+
+        // Act
+        var resultado = await CriarServico().ObterTodosAsync(
+            paginacao, filtro, new Ordenacao { OrdenarPor = "VALOR", Direcao = "asc" });
+
+        // Assert
+        Assert.Empty(resultado.Itens);
+        _repoMock.VerifyAll();
+    }
+
+    [Fact]
+    public async Task ObterTodosAsync_CampoForaDaWhitelist_UsaMomentoDecrescente()
+    {
+        // Arrange
+        var paginacao = new Paginacao();
+        _repoMock
+            .Setup(r => r.ObterPaginadoAsync(paginacao, null, null,
+                It.Is<CriterioDeOrdenacao>(c => c.Campo == "momento" && c.Descendente)))
+            .ReturnsAsync(new ResultadoPaginado<Pagamento>([], 0, paginacao));
+
+        // Act
+        await CriarServico().ObterTodosAsync(paginacao, ordenacao: new Ordenacao { OrdenarPor = "referenciaExterna" });
+
+        // Assert
+        _repoMock.VerifyAll();
     }
 }

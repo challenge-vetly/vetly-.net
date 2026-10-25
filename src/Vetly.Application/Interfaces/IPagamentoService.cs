@@ -6,8 +6,13 @@ namespace Vetly.Application.Interfaces;
 /// <summary>Contrato do serviço de pagamentos.</summary>
 public interface IPagamentoService
 {
-    /// <summary>Lista pagamentos paginados (§2.3).</summary>
-    Task<ResultadoPaginado<PagamentoDto>> ObterTodosAsync(Paginacao paginacao);
+    /// <summary>
+    /// Lista pagamentos paginados (§2.3), no escopo do token (RN-106), com filtros de
+    /// status, tipo e período e a ordenação da whitelist
+    /// <see cref="CamposDeOrdenacao.Pagamentos"/>.
+    /// </summary>
+    Task<ResultadoPaginado<PagamentoDto>> ObterTodosAsync(
+        Paginacao paginacao, FiltroPagamentoDto? filtro = null, Ordenacao? ordenacao = null);
     Task<PagamentoDto> ObterPorIdAsync(Guid id);
     /// <summary>
     /// Cria a cobrança com o split já apurado. O pagamento fica pendente: quem
