@@ -53,7 +53,7 @@ public class PagamentoWebhookTests
     private readonly Mock<INotificacaoService> _notificacoes = new();
 
     private PagamentoService CriarServico() =>
-        new(_repo.Object, _vetRepo.Object, _consultaRepo.Object, _empresaRepo.Object,
+        new(_repo.Object, _vetRepo.Object, _consultaRepo.Object, Mock.Of<IInternacaoRepository>(), _empresaRepo.Object,
             _adaptador.Object, _agendaRepo.Object, _fila.Object,
             [new SplitBasicoStrategy(), new SplitProfissionalStrategy(), new SplitEnterpriseStrategy()],
             _fidelidade.Object, _usuario.Object, _colmeia.Object, _notificacoes.Object, NullLogger<PagamentoService>.Instance);

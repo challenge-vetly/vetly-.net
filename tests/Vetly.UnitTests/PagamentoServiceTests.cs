@@ -33,7 +33,7 @@ public class PagamentoServiceTests
     private readonly Mock<INotificacaoService> _notificacoesMock = new();
 
     private PagamentoService CriarServico(params ISplitFinanceiroStrategy[] strategies) =>
-        new(_repoMock.Object, _vetRepoMock.Object, _consultaRepoMock.Object,
+        new(_repoMock.Object, _vetRepoMock.Object, _consultaRepoMock.Object, Mock.Of<IInternacaoRepository>(),
             _empresaRepoMock.Object, _adaptadorMock.Object, _agendaRepoMock.Object,
             _filaMock.Object, strategies, _fidelidadeMock.Object, _usuarioMock.Object,
             _colmeiaMock.Object, _notificacoesMock.Object,
