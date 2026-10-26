@@ -184,6 +184,10 @@ namespace Vetly.Infrastructure.Migrations
                         .HasColumnType("NUMBER(5,2)")
                         .HasColumnName("PESO_KG");
 
+                    b.Property<DateTime?>("PesoRegistradoEm")
+                        .HasColumnType("TIMESTAMP(7)")
+                        .HasColumnName("PESO_REGISTRADO_EM");
+
                     b.Property<string>("Raca")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -1541,6 +1545,10 @@ namespace Vetly.Infrastructure.Migrations
                     b.Property<DateTime?>("UltimoCumprimento")
                         .HasColumnType("TIMESTAMP(7)")
                         .HasColumnName("ULTIMO_CUMPRIMENTO");
+
+                    b.Property<bool>("UltimoCumprimentoNoPrazo")
+                        .HasColumnType("NUMBER(1)")
+                        .HasColumnName("ULTIMO_CUMPRIMENTO_NO_PRAZO");
 
                     b.HasKey("Id");
 

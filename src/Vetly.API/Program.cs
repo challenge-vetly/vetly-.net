@@ -108,6 +108,7 @@ builder.Services.AddScoped<ILinksDoRecurso<Vetly.Application.DTOs.Consulta.Consu
 builder.Services.AddScoped<ILinksDoRecurso<Vetly.Application.DTOs.Pagamento.PagamentoDto>, LinksDePagamento>();
 builder.Services.AddScoped<ILinksDoRecurso<Vetly.Application.DTOs.Marketplace.ItemMarketplaceDto>, LinksDeItemMarketplace>();
 builder.Services.AddScoped<ILinksDoRecurso<Vetly.Application.DTOs.Marketplace.ItemMarketplaceDetalheDto>, LinksDeItemMarketplace>();
+builder.Services.AddScoped<ILinksDoRecurso<Vetly.Application.DTOs.Animal.AvatarDoPetDto>, LinksDoAvatar>();
 
 // ── OpenAPI / Scalar ─────────────────────────────────────────────────────────
 // O transformer documenta a variante hal+json do 200 e o ?hateoas=true das rotas
@@ -366,6 +367,8 @@ builder.Services.AddScoped<IColmeiaService, ColmeiaService>();
 builder.Services.AddScoped<IObrigacaoService, ObrigacaoService>();
 builder.Services.AddScoped<IFidelidadeService, FidelidadeService>();
 builder.Services.AddScoped<IMarketplaceService, MarketplaceService>();
+builder.Services.AddScoped<CalculadoraDoAvatar>();
+builder.Services.AddScoped<IAvatarService, AvatarService>();
 builder.Services.AddScoped<IAvaliacaoService, AvaliacaoService>();
 builder.Services.AddScoped<INotificacaoService, NotificacaoService>();
 builder.Services.AddScoped<IDashboardService, DashboardService>();

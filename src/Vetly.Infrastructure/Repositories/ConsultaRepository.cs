@@ -38,6 +38,17 @@ public class ConsultaRepository : RepositoryBase<Consulta>, IConsultaRepository
             .ToListAsync();
 
     /// <inheritdoc/>
+    public async Task<DateTime?> ObterDataDaUltimaRealizadaAsync(Guid animalId) =>
+        // Projecao em DateTime? para FirstOrDefault devolver nulo, e nao DateTime.MinValue,
+        // quando o animal nunca teve consulta realizada
+        await _dbSet
+            .AsNoTracking()
+            .Where(c => c.AnimalId == animalId && c.Status == StatusConsulta.Realizada)
+            .OrderByDescending(c => c.DataHora)
+            .Select(c => (DateTime?)c.DataHora)
+            .FirstOrDefaultAsync();
+
+    /// <inheritdoc/>
     public async Task<ResultadoPaginado<Consulta>> ObterComFiltrosAsync(
         FiltroConsultaDto filtro, Paginacao paginacao, CriterioDeOrdenacao? ordenacao = null)
     {

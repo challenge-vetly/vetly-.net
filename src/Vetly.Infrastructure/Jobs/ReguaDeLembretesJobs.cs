@@ -149,6 +149,7 @@ public class AgendarTentativasDaRegua : IRotinaPeriodica
         TipoLembrete.Retorno => "Retorno",
         TipoLembrete.Medicacao => "Medicacao",
         TipoLembrete.CheckUp => "Check-up",
+        TipoLembrete.Higiene => "Banho e tosa",
         _ => "Cuidado"
     };
 }

@@ -70,6 +70,11 @@ public class AnimalConfiguration : IEntityTypeConfiguration<Animal>
             .HasColumnType("NUMBER(5,2)")
             .HasColumnName("PESO_KG");
 
+        // Quando o peso foi medido: peso velho nao serve para dose (RN-081) e pesa no
+        // avatar (RN-112). Nulo nas linhas anteriores a Sprint 4.
+        builder.Property(a => a.PesoRegistradoEm)
+            .HasColumnName("PESO_REGISTRADO_EM");
+
         // NUMBER(10) para enum — mesmo tipo ja usado em MODALIDADE (TB_CONSULTA)
         builder.Property(a => a.Sexo)
             .HasColumnType("NUMBER(10)")

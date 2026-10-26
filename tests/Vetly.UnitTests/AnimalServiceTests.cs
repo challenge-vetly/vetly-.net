@@ -25,7 +25,8 @@ public class AnimalServiceTests
 
     private AnimalService CriarServico() =>
         new(_repoMock.Object, _colmeiaMock.Object, _obrigacoesMock.Object,
-            _documentoRepoMock.Object, _vetRepoMock.Object, _usuarioMock.Object);
+            _documentoRepoMock.Object, _vetRepoMock.Object, _usuarioMock.Object,
+            new CalculadoraDoAvatar(Mock.Of<IObrigacaoRepository>(), Mock.Of<IConsultaRepository>()));
 
     /// <summary>Por padrao os testes rodam como Admin, que enxerga todo o escopo.</summary>
     public AnimalServiceTests() => _usuarioMock.SetupGet(u => u.EhAdmin).Returns(true);

@@ -20,6 +20,13 @@ public class ObrigacaoPet
     /// <summary>Janela em que a obrigação já aparece como "vencendo" no board.</summary>
     public static readonly TimeSpan JanelaDeAviso = TimeSpan.FromDays(30);
 
+    /// <summary>
+    /// Periodicidade da higienização quando não informada. Banho e tosa é sempre
+    /// recorrente: uma higienização de "uma vez só" se arquivaria no primeiro banho e
+    /// o pelo do avatar nunca mais cresceria.
+    /// </summary>
+    public const int PeriodicidadePadraoDaHigienizacaoEmDias = 30;
+
     /// <summary>Identificador da obrigação (chave primária).</summary>
     public Guid Id { get; private set; }
 
@@ -62,6 +69,13 @@ public class ObrigacaoPet
     public Guid? RegistradaPorVeterinarioId { get; private set; }
 
     /// <summary>
+    /// O último cumprimento aconteceu até o vencimento. Precisa ser guardado porque
+    /// cumprir empurra o vencimento: depois, não há mais como saber se foi no prazo.
+    /// É o que rende pontos (RN-047) e o bônus de humor do avatar (RN-112).
+    /// </summary>
+    public bool UltimoCumprimentoNoPrazo { get; private set; }
+
+    /// <summary>
     /// Obrigação criada a partir da carteira de vacinação já existente, e não digitada
     /// por alguém. Fica marcado porque muda o quanto se pode confiar na data.
     /// </summary>
@@ -101,7 +115,9 @@ public class ObrigacaoPet
         Tipo = tipo;
         Descricao = descricao.Trim();
         ProximoVencimento = proximoVencimento;
-        PeriodicidadeEmDias = periodicidadeEmDias;
+        PeriodicidadeEmDias = tipo == TipoObrigacaoPet.Higienizacao && periodicidadeEmDias == 0
+            ? PeriodicidadePadraoDaHigienizacaoEmDias
+            : periodicidadeEmDias;
         DerivadaDaCarteira = derivadaDaCarteira;
         CriadaEm = DateTime.UtcNow;
     }
@@ -115,6 +131,8 @@ public class ObrigacaoPet
     /// </summary>
     public void Cumprir(DateTime quando, Guid? consultaId = null, Guid? veterinarioId = null)
     {
+        // Antes de empurrar o vencimento: depois dele, o prazo original se perde
+        UltimoCumprimentoNoPrazo = quando <= ProximoVencimento;
         UltimoCumprimento = quando;
         UltimaConsultaId = consultaId;
         RegistradaPorVeterinarioId = veterinarioId;

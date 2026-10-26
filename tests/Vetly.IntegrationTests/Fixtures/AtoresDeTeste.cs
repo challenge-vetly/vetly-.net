@@ -59,6 +59,19 @@ public static class AtoresDeTeste
         return new Responsavel(tutorId, token);
     }
 
+    /// <summary>Cadastra um cachorro do Responsável pelo fluxo real e devolve o id.</summary>
+    public static async Task<Guid> CriarPetAsync(HttpClient cliente, Responsavel responsavel, string nome = "Thor")
+    {
+        var resposta = await EnviarAsync(cliente, HttpMethod.Post, "/api/animais", responsavel.Token,
+            $$"""
+            {"nome":"{{nome}}","especie":"Canino","raca":"SRD",
+             "dataNascimento":"2023-04-10T00:00:00Z","tutorId":"{{responsavel.TutorId}}","pesoKg":12.5}
+            """);
+        Assert.Equal(HttpStatusCode.Created, resposta.StatusCode);
+
+        return (await JsonDe(resposta)).GetProperty("id").GetGuid();
+    }
+
     /// <summary>Token de Admin assinado com a chave de teste.</summary>
     public static string TokenAdmin() => Token("Admin");
 

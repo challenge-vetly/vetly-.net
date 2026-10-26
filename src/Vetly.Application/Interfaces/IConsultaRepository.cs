@@ -17,6 +17,12 @@ public interface IConsultaRepository : IRepositoryBase<Consulta>
     Task<IEnumerable<Consulta>> ObterPorAnimalAsync(Guid animalId);
 
     /// <summary>
+    /// Data da consulta realizada mais recente do animal, ou nulo se nunca houve.
+    /// Base da linha "sem consulta há 12 meses" do avatar (RN-112).
+    /// </summary>
+    Task<DateTime?> ObterDataDaUltimaRealizadaAsync(Guid animalId);
+
+    /// <summary>
     /// Retorna uma página de consultas aplicando os filtros informados.
     /// A contagem total é feita sobre o filtro, antes do recorte da página.
     /// </summary>
