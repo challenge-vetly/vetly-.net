@@ -4,6 +4,7 @@ using Vetly.Application.DTOs.Agenda;
 using Vetly.Application.DTOs.Repasse;
 using Vetly.Application.DTOs.Veterinario;
 using Vetly.API.Filters;
+using Vetly.API.Hateoas;
 using Vetly.Application.Interfaces;
 
 namespace Vetly.API.Controllers;
@@ -16,11 +17,13 @@ public class VeterinariosController : ControllerBase
 {
     private readonly IVeterinarioService _service;
     private readonly IAgendaService _agenda;
+    private readonly RespostaHateoas _hateoas;
 
-    public VeterinariosController(IVeterinarioService service, IAgendaService agenda)
+    public VeterinariosController(IVeterinarioService service, IAgendaService agenda, RespostaHateoas hateoas)
     {
         _service = service;
         _agenda = agenda;
+        _hateoas = hateoas;
     }
 
     /// <summary>
@@ -103,23 +106,33 @@ public class VeterinariosController : ControllerBase
         Ok(await _service.DefinirDadosDeRepasseAsync(dto));
 
     /// <summary>Retorna todos os veterinarios ativos.</summary>
+    /// <remarks>
+    /// Com HATEOAS, cada profissional traz servicos, disponibilidade e CRMV; a agenda
+    /// so para o proprio veterinario e o Admin, e as acoes de cadastro so para o Admin.
+    /// </remarks>
     [HttpGet]
     [ProducesResponseType(typeof(IEnumerable<VeterinarioDto>), StatusCodes.Status200OK)]
+    [RespostaHal(typeof(List<Recurso<VeterinarioDto>>))]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> ObterTodos() =>
-        Ok(await _service.ObterTodosAsync());
+        _hateoas.OkColecao(await _service.ObterTodosAsync());
 
     /// <summary>Retorna um veterinario pelo ID.</summary>
     [HttpGet("{id:guid}")]
     [ProducesResponseType(typeof(VeterinarioDto), StatusCodes.Status200OK)]
+    [RespostaHal(typeof(Recurso<VeterinarioDto>))]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> ObterPorId(Guid id) =>
-        Ok(await _service.ObterPorIdAsync(id));
+        _hateoas.Ok(await _service.ObterPorIdAsync(id));
 
     /// <summary>Retorna veterinarios de uma UF (ex: SP, RJ).</summary>
     [HttpGet("regiao/{uf}")]
     [ProducesResponseType(typeof(IEnumerable<VeterinarioDto>), StatusCodes.Status200OK)]
+    [RespostaHal(typeof(List<Recurso<VeterinarioDto>>))]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> ObterPorRegiao(string uf) =>
-        Ok(await _service.ObterPorRegiaoAsync(uf));
+        _hateoas.OkColecao(await _service.ObterPorRegiaoAsync(uf));
 
     /// <summary>Retorna a agenda futura de consultas de um veterinario.</summary>
     [HttpGet("{id:guid}/agenda")]

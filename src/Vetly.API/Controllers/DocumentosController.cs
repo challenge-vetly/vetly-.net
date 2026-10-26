@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Vetly.API.Hateoas;
 using Vetly.Application.DTOs.Documento;
 using Vetly.Application.Interfaces;
 using Vetly.Domain.Enums;
@@ -17,21 +18,37 @@ namespace Vetly.API.Controllers;
 public class DocumentosController : ControllerBase
 {
     private readonly IDocumentoService _service;
+    private readonly RespostaHateoas _hateoas;
 
-    public DocumentosController(IDocumentoService service) => _service = service;
+    public DocumentosController(IDocumentoService service, RespostaHateoas hateoas)
+    {
+        _service = service;
+        _hateoas = hateoas;
+    }
 
     /// <summary>Retorna todos os documentos de uma consulta.</summary>
+    /// <remarks>
+    /// Com HATEOAS, cada documento traz os links do ciclo: assinar e publicar para o
+    /// veterinario (a receita so publica assinada, RN-087), marcar-lido para o
+    /// Responsavel, e o PDF quando ja renderizado.
+    /// </remarks>
     [HttpGet("consulta/{consultaId:guid}")]
     [ProducesResponseType(typeof(IEnumerable<DocumentoDto>), StatusCodes.Status200OK)]
+    [RespostaHal(typeof(List<Recurso<DocumentoDto>>))]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> ObterPorConsulta(Guid consultaId) =>
-        Ok(await _service.ObterPorConsultaAsync(consultaId));
+        _hateoas.OkColecao(await _service.ObterPorConsultaAsync(consultaId));
 
     /// <summary>Retorna um documento pelo ID.</summary>
     [HttpGet("{id:guid}")]
     [ProducesResponseType(typeof(DocumentoDto), StatusCodes.Status200OK)]
+    [RespostaHal(typeof(Recurso<DocumentoDto>))]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> ObterPorId(Guid id) =>
-        Ok(await _service.ObterPorIdAsync(id));
+        _hateoas.Ok(await _service.ObterPorIdAsync(id));
 
     /// <summary>
     /// Gera um documento para uma consulta, selecionando a Factory pelo tipo

@@ -113,6 +113,9 @@ builder.Services.AddScoped<ILinksDoRecurso<Vetly.Application.DTOs.Marketplace.It
 builder.Services.AddScoped<ILinksDoRecurso<Vetly.Application.DTOs.Animal.AvatarDoPetDto>, LinksDoAvatar>();
 builder.Services.AddScoped<ILinksDoRecurso<Vetly.Application.DTOs.Animal.RegistroDiarioDoAvatarDto>, LinksDoRegistroDoAvatar>();
 builder.Services.AddScoped<ILinksDoRecurso<Vetly.Application.DTOs.Carteira.LancamentoDoHistoricoDto>, LinksDoLancamento>();
+builder.Services.AddScoped<ILinksDoRecurso<Vetly.Application.DTOs.Animal.AnimalDto>, LinksDeAnimal>();
+builder.Services.AddScoped<ILinksDoRecurso<Vetly.Application.DTOs.Documento.DocumentoDto>, LinksDeDocumento>();
+builder.Services.AddScoped<ILinksDoRecurso<Vetly.Application.DTOs.Veterinario.VeterinarioDto>, LinksDeVeterinario>();
 
 // ── OpenAPI / Scalar ─────────────────────────────────────────────────────────
 // O transformer documenta a variante hal+json do 200 e o ?hateoas=true das rotas

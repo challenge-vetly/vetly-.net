@@ -36,18 +36,28 @@ public class AnimaisController : ControllerBase
         _hateoas = hateoas;
     }
 
-    /// <summary>Retorna todos os animais ativos.</summary>
+    /// <summary>Retorna os animais no escopo de quem chama (RN-105/RN-106).</summary>
+    /// <remarks>
+    /// Com <c>Accept: application/hal+json</c> ou <c>?hateoas=true</c>, cada animal traz
+    /// os links das telas que partem dele (board, avatar, obrigacoes, documentos...) e
+    /// as acoes do perfil.
+    /// </remarks>
     [HttpGet]
     [ProducesResponseType(typeof(IEnumerable<AnimalDto>), StatusCodes.Status200OK)]
+    [RespostaHal(typeof(List<Recurso<AnimalDto>>))]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> ObterTodos() =>
-        Ok(await _service.ObterTodosAsync());
+        _hateoas.OkColecao(await _service.ObterTodosAsync());
 
     /// <summary>Retorna um animal pelo ID.</summary>
     [HttpGet("{id:guid}")]
     [ProducesResponseType(typeof(AnimalDto), StatusCodes.Status200OK)]
+    [RespostaHal(typeof(Recurso<AnimalDto>))]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> ObterPorId(Guid id) =>
-        Ok(await _service.ObterPorIdAsync(id));
+        _hateoas.Ok(await _service.ObterPorIdAsync(id));
 
     /// <summary>Board do pet: a tela inicial do Responsavel (RN-011/RN-020/RN-090).</summary>
     /// <remarks>
