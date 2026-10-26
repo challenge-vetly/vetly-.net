@@ -69,4 +69,17 @@ public static class CamposDeOrdenacao
         /// <summary>Todos os campos aceitos.</summary>
         public static readonly IReadOnlyCollection<string> Todos = [Data, Saude, Humor];
     }
+
+    /// <summary><c>GET /api/tutores/{id}/carteira/historico</c>. Padrão: <c>momento</c> decrescente.</summary>
+    public static class Carteira
+    {
+        /// <summary>Quando o lançamento aconteceu.</summary>
+        public const string Momento = "momento";
+
+        /// <summary>Valor em reais do lançamento.</summary>
+        public const string Valor = "valor";
+
+        /// <summary>Todos os campos aceitos.</summary>
+        public static readonly IReadOnlyCollection<string> Todos = [Momento, Valor];
+    }
 }

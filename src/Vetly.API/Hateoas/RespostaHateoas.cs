@@ -60,6 +60,7 @@ public sealed class RespostaHateoas
             Pagina = pagina.Pagina,
             Tamanho = pagina.Tamanho,
             TotalDePaginas = pagina.TotalDePaginas,
+            Resumo = (pagina as IPaginaComResumo)?.Resumo,
             Links = _links.DePaginacao(pagina)
         });
     }

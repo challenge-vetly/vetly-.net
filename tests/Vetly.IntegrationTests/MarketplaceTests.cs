@@ -171,6 +171,16 @@ public class MarketplaceTests
         // Assert 3
         Assert.Equal(HttpStatusCode.Conflict, repetida.StatusCode);
         Assert.Equal("MARKETPLACE-001", (await JsonDe(repetida)).GetProperty("codigo").GetString());
+
+        // Act 4 — o cupom aparece no historico da carteira, ja como resgatado
+        var historico = await JsonDe(await EnviarAsync(_client, HttpMethod.Get,
+            $"/api/tutores/{ana.TutorId}/carteira/historico?tipo=Resgate", ana.Token));
+
+        // Assert 4
+        var lancamento = Assert.Single(historico.GetProperty("itens").EnumerateArray());
+        Assert.Equal(cupom.GetProperty("id").GetGuid(), lancamento.GetProperty("cupomId").GetGuid());
+        Assert.Equal("Resgatado", lancamento.GetProperty("status").GetString());
+        Assert.Equal(400, historico.GetProperty("resumo").GetProperty("pontosResgatados").GetInt32());
     }
 
     [Fact]

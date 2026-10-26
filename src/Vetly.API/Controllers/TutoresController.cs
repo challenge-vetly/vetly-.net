@@ -2,6 +2,9 @@ using Vetly.Application.DTOs.Pagamento;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Vetly.API.Filters;
+using Vetly.API.Hateoas;
+using Vetly.Application.DTOs.Carteira;
+using Vetly.Application.DTOs.Comum;
 using Vetly.Application.DTOs.Dispositivo;
 using Vetly.Application.DTOs.Tutor;
 using Vetly.Application.Interfaces;
@@ -17,13 +20,21 @@ public class TutoresController : ControllerBase
     private readonly ITutorService _service;
     private readonly IDispositivoService _dispositivos;
     private readonly IPagamentoService _pagamentos;
+    private readonly ICarteiraService _carteira;
+    private readonly RespostaHateoas _hateoas;
 
     public TutoresController(
-        ITutorService service, IDispositivoService dispositivos, IPagamentoService pagamentos)
+        ITutorService service,
+        IDispositivoService dispositivos,
+        IPagamentoService pagamentos,
+        ICarteiraService carteira,
+        RespostaHateoas hateoas)
     {
         _service = service;
         _dispositivos = dispositivos;
         _pagamentos = pagamentos;
+        _carteira = carteira;
+        _hateoas = hateoas;
     }
 
     /// <summary>
@@ -65,6 +76,34 @@ public class TutoresController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> ObterCarteira(Guid id) =>
         Ok(await _pagamentos.ObterCarteiraAsync(id));
+
+    /// <summary>Historico unificado da carteira: pagamentos, resgates e reembolsos (RN-115).</summary>
+    /// <remarks>
+    /// Uma linha do tempo so, no formato comum <c>LancamentoDoHistorico</c>. Filtros:
+    /// <c>tipo</c> (Pagamento, Resgate, Reembolso), periodo (<c>de</c>/<c>ate</c>) e
+    /// <c>status</c> (o da origem: Confirmado, Estornado, Emitido, Resgatado...).
+    /// Ordenacao: <c>ordenarPor=momento|valor</c> e <c>direcao=asc|desc</c>; padrao
+    /// <c>momento desc</c>.
+    ///
+    /// <c>resumo</c> traz os totais do <b>filtro</b> — nao da pagina: TotalPago,
+    /// TotalEstornado, TotalDeDescontos e PontosResgatados. O Responsavel ve a propria
+    /// carteira; outro Responsavel recebe 403 (RN-106). Com HATEOAS, cada lancamento
+    /// aponta para o pagamento, a consulta, o cupom ou o item de origem.
+    /// </remarks>
+    [HttpGet("{id:guid}/carteira/historico")]
+    [ProducesResponseType(typeof(HistoricoDaCarteiraDto), StatusCodes.Status200OK)]
+    [RespostaHal(typeof(RecursoPaginado<LancamentoDoHistoricoDto>))]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> ObterHistoricoDaCarteira(
+        Guid id,
+        [FromQuery] FiltroHistoricoDaCarteiraDto filtro,
+        [FromQuery] Paginacao paginacao,
+        [FromQuery] Ordenacao ordenacao) =>
+        // Tipo explicito: HistoricoDaCarteiraDto herda de ResultadoPaginado, e sem ele o
+        // compilador escolheria Ok<T>(T) — o envelope de recurso unico, sem paginacao
+        _hateoas.Ok<LancamentoDoHistoricoDto>(await _carteira.ObterHistoricoAsync(id, filtro, paginacao, ordenacao));
 
     /// <summary>Retorna todos os animais cadastrados por um tutor.</summary>
     [HttpGet("{id:guid}/animais")]

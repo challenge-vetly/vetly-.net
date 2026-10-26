@@ -1597,6 +1597,10 @@ namespace Vetly.Infrastructure.Migrations
                         .HasColumnType("CHAR(36)")
                         .HasColumnName("DESTINATARIO_REPASSE_ID");
 
+                    b.Property<DateTime?>("EstornadoEm")
+                        .HasColumnType("TIMESTAMP(7)")
+                        .HasColumnName("ESTORNADO_EM");
+
                     b.Property<int?>("FaixaDoDesconto")
                         .HasColumnType("NUMBER(10)")
                         .HasColumnName("FAIXA_DESCONTO");

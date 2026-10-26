@@ -74,6 +74,14 @@ public sealed class RecursoPaginado<T>
     public int TotalDePaginas { get; init; }
 
     /// <summary>
+    /// Resumo do filtro inteiro, quando a listagem tem um (ex.: os totais da
+    /// carteira). Omitido nas listagens que não têm.
+    /// </summary>
+    [JsonPropertyName("resumo")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public object? Resumo { get; init; }
+
+    /// <summary>
     /// Navegação: <c>self</c>, <c>primeira</c>, <c>anterior</c>, <c>proxima</c> e
     /// <c>ultima</c>. <c>anterior</c> e <c>proxima</c> só aparecem quando existem.
     /// </summary>
