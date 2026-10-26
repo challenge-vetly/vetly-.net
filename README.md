@@ -127,7 +127,7 @@ Nenhuma seta sai do `Domain`. Ele não referencia projeto nem pacote algum — n
 
 | Camada | Conteúdo | Referencia |
 |---|---|---|
-| **Vetly.API** | 24 controllers (152 endpoints), 3 filtros globais, 3 middlewares, 4 health checks, worker hospedado | Application, Infrastructure |
+| **Vetly.API** | 25 controllers (163 endpoints), 3 filtros globais, 3 middlewares, 4 health checks, worker hospedado | Application, Infrastructure |
 | **Vetly.Infrastructure** | EF Core + Oracle, 33 DbSets, 34 migrations, 27 configurations, 24 repositórios, 9 adaptadores | Application, Domain |
 | **Vetly.Application** | 29 serviços, 62 interfaces, 72 arquivos de DTO | Domain + 2 pacotes `*.Abstractions` |
 | **Vetly.Domain** | 31 entidades, 42 enums, 7 value objects | **nada** |
