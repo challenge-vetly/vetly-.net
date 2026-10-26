@@ -258,6 +258,33 @@ public class IsolamentoDeDadosTests
         Assert.Equal(HttpStatusCode.Forbidden, resposta.StatusCode);
     }
 
+    // ── Agenda do veterinario (RN-105) ───────────────────────────────────────
+
+    [Fact]
+    public async Task AgendaDoVeterinario_SoOProprioEOAdminLeem()
+    {
+        var ana = await CriarResponsavelComPetAsync("Ana");
+
+        // A agenda lista animal e Responsavel de cada horario: para quem agenda, a rota
+        // e a de disponibilidade, que nao expoe terceiros
+        var criar = await AtoresDeTeste.EnviarAsync(_client, HttpMethod.Post, "/api/veterinarios",
+            AtoresDeTeste.TokenAdmin(), $$"""
+                {"nome":"Dra. Agenda","crmv":"{{Random.Shared.Next(10000, 99999)}}-SP","ufAtuacao":"SP",
+                 "email":"agenda-{{Guid.NewGuid():N}}@clinica.com","persona":"Autonomo","plano":"Profissional"}
+                """);
+        Assert.Equal(HttpStatusCode.Created, criar.StatusCode);
+        var vetId = (await AtoresDeTeste.JsonDe(criar)).GetProperty("veterinario").GetProperty("id").GetGuid();
+
+        var rota = $"/api/veterinarios/{vetId}/agenda";
+
+        Assert.Equal(HttpStatusCode.Forbidden, (await GetComTokenAsync(rota, ana.Token)).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden,
+            (await GetComTokenAsync(rota, AtoresDeTeste.TokenVeterinario(Guid.NewGuid()))).StatusCode);
+        Assert.Equal(HttpStatusCode.OK,
+            (await GetComTokenAsync(rota, AtoresDeTeste.TokenVeterinario(vetId))).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await GetComTokenAsync(rota, AtoresDeTeste.TokenAdmin())).StatusCode);
+    }
+
     [Fact]
     public async Task ResponsavelDesativandoEmpresa_Retorna403()
     {

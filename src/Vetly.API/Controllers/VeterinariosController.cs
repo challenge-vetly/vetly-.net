@@ -135,8 +135,11 @@ public class VeterinariosController : ControllerBase
         _hateoas.OkColecao(await _service.ObterPorRegiaoAsync(uf));
 
     /// <summary>Retorna a agenda futura de consultas de um veterinario.</summary>
+    /// <remarks>So o proprio veterinario e o Admin (RN-105).</remarks>
     [HttpGet("{id:guid}/agenda")]
     [ProducesResponseType(typeof(IEnumerable<object>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> ObterAgenda(Guid id) =>
         Ok(await _service.ObterAgendaAsync(id));
