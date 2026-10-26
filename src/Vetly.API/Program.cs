@@ -93,6 +93,12 @@ builder.Services
         options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
     });
 
+// O gerador OpenAPI le as opcoes JSON de Http.Json, nao as do MVC. Sem o mesmo
+// conversor aqui, o documento anunciava "persona": integer enquanto a API responde
+// "Autonomo" -- e o Scalar sugeria ao cliente o contrato numerico que a API evita.
+builder.Services.ConfigureHttpJsonOptions(options =>
+    options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
+
 // ── HATEOAS (Sprint 4) ────────────────────────────────────────────────────────
 // Opt-in por Accept: application/hal+json ou ?hateoas=true; sem isso, o corpo de
 // sempre. O formatador hal+json entra primeiro e reusa as opcoes JSON da API (enums
