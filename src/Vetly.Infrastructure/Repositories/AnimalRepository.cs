@@ -27,6 +27,10 @@ public class AnimalRepository : RepositoryBase<Animal>, IAnimalRepository
             .ToListAsync();
 
     /// <inheritdoc/>
+    public async Task AdicionarProntuarioAsync(Prontuario prontuario) =>
+        await _context.Prontuarios.AddAsync(prontuario);
+
+    /// <inheritdoc/>
     public async Task<IEnumerable<Exame>> ObterExamesAsync(Guid animalId) =>
         await _context.Exames
             .Where(e => e.AnimalId == animalId)

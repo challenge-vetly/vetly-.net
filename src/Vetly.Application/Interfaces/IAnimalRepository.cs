@@ -16,6 +16,12 @@ public interface IAnimalRepository : IRepositoryBase<Animal>
     /// </summary>
     Task<IEnumerable<Prontuario>> ObterHistoricoLongitudinalAsync(Guid animalId);
 
+    /// <summary>
+    /// Acrescenta um registro ao histórico longitudinal. Append-only: correção entra
+    /// como outra versão, nunca sobrescreve (RN-088).
+    /// </summary>
+    Task AdicionarProntuarioAsync(Prontuario prontuario);
+
     /// <summary>Retorna todos os exames vinculados a um animal.</summary>
     Task<IEnumerable<Exame>> ObterExamesAsync(Guid animalId);
 

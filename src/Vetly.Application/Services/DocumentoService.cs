@@ -313,7 +313,16 @@ public class DocumentoService : IDocumentoService
             throw new BusinessRuleException("RN-087",
                 "A receita precisa estar assinada antes de ser publicada.");
 
+        var primeiraPublicacao = doc.PublicadoEm is null;
         doc.Publicar(DateTime.UtcNow);
+
+        // O prontuario publicado alimenta o historico longitudinal do animal — e o que
+        // GET /animais/{id}/prontuarios le, e o que a colmeia abre a outro profissional.
+        // Na publicacao, e nao na geracao: o historico e o que o Responsavel enxerga no
+        // board (RN-068), e um rascunho ainda nao liberado pelo veterinario nao entra.
+        if (primeiraPublicacao && consulta is not null && doc.TipoDocumento == TipoDocumento.Prontuario)
+            await RegistrarNoHistoricoAsync(doc, consulta);
+
         _repo.Atualizar(doc);
         await _repo.SalvarAsync();
 
@@ -336,6 +345,24 @@ public class DocumentoService : IDocumentoService
         }
 
         return MapearParaDto(doc);
+    }
+
+    /// <summary>
+    /// Leva o prontuario publicado ao historico do animal. A primeira publicacao da
+    /// consulta cria o registro; a de uma versao corrigida entra como correcao dele,
+    /// com o original preservado (RN-088).
+    /// </summary>
+    private async Task RegistrarNoHistoricoAsync(Documento doc, Consulta consulta)
+    {
+        var anterior = (await _animalRepo.ObterHistoricoLongitudinalAsync(consulta.AnimalId))
+            .FirstOrDefault(p => p.ConsultaId == consulta.Id); // mais recente primeiro
+
+        var registro = anterior is null
+            ? new Prontuario(consulta.Id, consulta.AnimalId, doc.Conteudo!)
+            : anterior.CriarCorrecao(doc.Conteudo!, justificativa: null,
+                doc.CrmvSolicitanteCorrecao ?? doc.CrmvSignatario);
+
+        await _animalRepo.AdicionarProntuarioAsync(registro);
     }
 
     /// <inheritdoc/>
