@@ -94,6 +94,23 @@ public class IdempotenciaTests
     }
 
     [Fact]
+    public async Task MesmaChave_DevolveOCorpoIdenticoAoDaPrimeira()
+    {
+        var (token, tutorId) = await ResponsavelAsync();
+        var chave = Guid.NewGuid().ToString();
+
+        var primeira = await (await CriarCobrancaAsync(token, tutorId, 200m, chave)).Content.ReadAsStringAsync();
+        var segunda = await (await CriarCobrancaAsync(token, tutorId, 200m, chave)).Content.ReadAsStringAsync();
+
+        // O reenvio serializava com opcoes proprias e perdia o conversor de enum:
+        // "statusPagamento" voltava 1 em vez de "Pendente". Mesma resposta e mesmo
+        // contrato, byte a byte.
+        Assert.Equal(primeira, segunda);
+        Assert.Equal("Pendente",
+            JsonDocument.Parse(segunda).RootElement.GetProperty("statusPagamento").GetString());
+    }
+
+    [Fact]
     public async Task ChavesDiferentes_CriamCobrancasDiferentes()
     {
         var (token, tutorId) = await ResponsavelAsync();

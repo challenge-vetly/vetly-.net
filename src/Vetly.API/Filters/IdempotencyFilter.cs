@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Vetly.Application.Interfaces;
 using Vetly.Domain.Entities;
 using Vetly.Infrastructure.Data;
@@ -31,17 +32,24 @@ public class IdempotencyFilter : IAsyncActionFilter
     /// <summary>Header que carrega a chave de idempotência.</summary>
     public const string Header = "Idempotency-Key";
 
-    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
-
     private readonly VetlyDbContext _context;
     private readonly IUsuarioAtual _usuario;
     private readonly ILogger<IdempotencyFilter> _logger;
 
-    public IdempotencyFilter(VetlyDbContext context, IUsuarioAtual usuario, ILogger<IdempotencyFilter> logger)
+    // As mesmas opcoes que o MVC usa para escrever a resposta. Com opcoes proprias, o
+    // reenvio perdia o conversor de enum e devolvia "statusPagamento": 1 onde a
+    // primeira execucao tinha devolvido "Pendente" -- a "mesma resposta" com outro
+    // contrato.
+    private readonly JsonSerializerOptions _json;
+
+    public IdempotencyFilter(
+        VetlyDbContext context, IUsuarioAtual usuario, ILogger<IdempotencyFilter> logger,
+        IOptions<JsonOptions> json)
     {
         _context = context;
         _usuario = usuario;
         _logger = logger;
+        _json = json.Value.JsonSerializerOptions;
     }
 
     /// <inheritdoc/>
@@ -126,10 +134,10 @@ public class IdempotencyFilter : IAsyncActionFilter
     private static bool RotaIdempotente(ActionExecutingContext context) =>
         context.ActionDescriptor.EndpointMetadata.OfType<IdempotenteAttribute>().Any();
 
-    private static (int Status, string? Corpo) ExtrairResposta(IActionResult? resultado) => resultado switch
+    private (int Status, string? Corpo) ExtrairResposta(IActionResult? resultado) => resultado switch
     {
         ObjectResult objeto => (objeto.StatusCode ?? StatusCodes.Status200OK,
-                                objeto.Value is null ? null : JsonSerializer.Serialize(objeto.Value, Json)),
+                                objeto.Value is null ? null : JsonSerializer.Serialize(objeto.Value, _json)),
         StatusCodeResult semCorpo => (semCorpo.StatusCode, null),
         _ => (StatusCodes.Status200OK, null)
     };
