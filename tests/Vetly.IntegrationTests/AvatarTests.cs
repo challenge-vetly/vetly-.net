@@ -127,4 +127,59 @@ public class AvatarTests
         // Assert
         Assert.Equal(HttpStatusCode.Forbidden, resposta.StatusCode);
     }
+
+    // ── Historico diario (RN-114) ────────────────────────────────────────────
+
+    [Fact]
+    public async Task LerOAvatar_GravaODiaNoHistorico_UmRegistroPorDia()
+    {
+        // Arrange
+        var ana = await CriarResponsavelAsync(_client, "Ana");
+        var pet = await CriarPetAsync(_client, ana);
+
+        // Act — duas leituras no mesmo dia
+        await EnviarAsync(_client, HttpMethod.Get, $"/api/animais/{pet}/avatar", ana.Token);
+        await EnviarAsync(_client, HttpMethod.Get, $"/api/animais/{pet}/avatar", ana.Token);
+        var historico = await JsonDe(await EnviarAsync(_client, HttpMethod.Get,
+            $"/api/animais/{pet}/avatar/historico", ana.Token));
+
+        // Assert
+        Assert.Equal(1, historico.GetProperty("total").GetInt32());
+        var dia = historico.GetProperty("itens")[0];
+        Assert.Equal(DateTime.UtcNow.ToString("yyyy-MM-dd"), dia.GetProperty("data").GetString());
+        Assert.Equal(90, dia.GetProperty("saude").GetInt32());
+    }
+
+    [Fact]
+    public async Task HistoricoComHalJson_TrazNavegacaoELinkParaOAvatar()
+    {
+        // Arrange
+        var ana = await CriarResponsavelAsync(_client, "Ana");
+        var pet = await CriarPetAsync(_client, ana);
+        await EnviarAsync(_client, HttpMethod.Get, $"/api/animais/{pet}/avatar", ana.Token);
+
+        // Act
+        var corpo = await JsonDe(await EnviarAsync(_client, HttpMethod.Get,
+            $"/api/animais/{pet}/avatar/historico?ordenarPor=saude&direcao=asc", ana.Token, accept: Hal));
+
+        // Assert
+        Assert.Contains("self", Rels(corpo.GetProperty("_links")));
+        Assert.Contains("ordenarPor=saude", corpo.GetProperty("_links")[0].GetProperty("href").GetString());
+        Assert.Equal(["avatar"], Rels(corpo.GetProperty("itens")[0].GetProperty("_links")));
+    }
+
+    [Fact]
+    public async Task HistoricoDoPetDeOutroResponsavel_Retorna403()
+    {
+        // Arrange
+        var ana = await CriarResponsavelAsync(_client, "Ana");
+        var bruno = await CriarResponsavelAsync(_client, "Bruno");
+        var petDoBruno = await CriarPetAsync(_client, bruno, "Rex");
+
+        // Act
+        var resposta = await EnviarAsync(_client, HttpMethod.Get, $"/api/animais/{petDoBruno}/avatar/historico", ana.Token);
+
+        // Assert
+        Assert.Equal(HttpStatusCode.Forbidden, resposta.StatusCode);
+    }
 }

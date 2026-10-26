@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Provisiona uma VM no Azure e sobe a Vetly inteira nela: API, Ollama e proxy HTTPS.
+    Provisiona uma VM no Azure e sobe a Vetly inteira nela: API, Ollama, MongoDB e proxy HTTPS.
 
 .DESCRIPTION
     Tudo numa maquina so. A escolha nao e de arquitetura, e de restricao: o Ollama
@@ -57,6 +57,12 @@ param(
     [string]$AzureSpeechKey,
     [string]$AzureSpeechRegion = 'canadacentral',
 
+    # Senha do MongoDB do historico do avatar. Sem ela, o script reaproveita a do .env
+    # que ja esta na VM e, so na primeira vez, gera uma nova: o Mongo grava a senha no
+    # volume na primeira subida, e uma senha nova a cada deploy deixaria a API sem
+    # acesso ao proprio banco.
+    [string]$MongoSenha,
+
     [switch]$SomenteAplicacao
 )
 
@@ -103,6 +109,19 @@ function New-Segredo {
     $b = New-Object byte[] $Bytes
     [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($b)
     return [Convert]::ToBase64String($b)
+}
+
+<#
+.SYNOPSIS
+    Segredo so com [0-9a-f]. Vai dentro da URI de conexao do Mongo, onde '+', '/' e
+    '=' do base64 precisariam de escape — e um escape esquecido vira falha de
+    autenticacao sem mensagem clara.
+#>
+function New-SegredoHex {
+    param([int]$Bytes = 24)
+    $b = New-Object byte[] $Bytes
+    [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($b)
+    return ([BitConverter]::ToString($b) -replace '-', '').ToLowerInvariant()
 }
 
 <#
@@ -247,6 +266,20 @@ if ($LASTEXITCODE -ne 0) { throw 'scp do pacote falhou.' }
 
 Remove-Item $pacote -Force
 
+# Antes de apagar o codigo antigo: a senha do Mongo ja gravada no volume esta no .env
+# que vai junto. Atribuicao direta captura o stdout do ssh; sem .env, sai vazio.
+if (-not $MongoSenha) {
+    $MongoSenha = (ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR `
+        "$usuario@$fqdn" "grep -s '^MONGO_SENHA=' /opt/vetly/app/deploy/vm/.env | cut -d= -f2-")
+    if ($MongoSenha) { $MongoSenha = "$MongoSenha".Trim() }
+}
+if (-not $MongoSenha) {
+    $MongoSenha = New-SegredoHex
+    Ok 'MongoDB: senha nova gerada (primeira subida do volume).'
+} else {
+    Ok 'MongoDB: senha existente reaproveitada.'
+}
+
 Invoke-Ssh 'rm -rf /opt/vetly/app && mkdir -p /opt/vetly/app && tar -xf /tmp/vetly.tar -C /opt/vetly/app && rm /tmp/vetly.tar'
 Ok 'Codigo extraido em /opt/vetly/app.'
 
@@ -268,8 +301,17 @@ Servicos__CallbackBaseUrl=$url
 Storage__PublicBaseUrl=$url
 Ollama__Model=$ModeloDeIa
 Adaptadores__Stt=$stt
+MONGO_USUARIO=vetly
+MONGO_SENHA=$MongoSenha
+Adaptadores__DocumentoNoSql=Mongo
+MongoDb__ConnectionString=mongodb://vetly:$MongoSenha@mongo:27017/?authSource=admin
+MongoDb__Database=vetly
+
 "@
 
+# A linha em branco antes do "@ nao e enfeite: o here-string nao inclui a quebra de
+# linha final, e sem ela a chave abaixo colava na ultima linha do bloco — o .env saia
+# com uma variavel corrompida, e a API nao subia num redeploy com Azure Speech.
 if ($AzureSpeechKey) {
     $env_ += "AZURE_SPEECH_KEY=$AzureSpeechKey`nAZURE_SPEECH_REGION=$AzureSpeechRegion`n"
 }
@@ -279,7 +321,7 @@ if ($AzureSpeechKey) {
 $b64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($env_))
 
 Invoke-Ssh "echo '$b64' | base64 -d > /opt/vetly/app/deploy/vm/.env && chmod 600 /opt/vetly/app/deploy/vm/.env"
-Ok "STT: $stt | Modelo de IA: $ModeloDeIa"
+Ok "STT: $stt | Modelo de IA: $ModeloDeIa | Historico do avatar: MongoDB"
 
 # ── 7. Build e subida ─────────────────────────────────────────────────────────
 Passo '7. Build da imagem e subida dos containers'

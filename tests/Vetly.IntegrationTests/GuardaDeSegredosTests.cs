@@ -139,4 +139,68 @@ public class GuardaDeSegredosTests
         // a ir procurar no codigo.
         Assert.Contains("Jwt__Key", erro.Message);
     }
+
+    // ── MongoDB (Sprint 4): so conferido com Adaptadores:DocumentoNoSql=Mongo ─
+
+    private const string MongoDeExemplo = "mongodb://USUARIO:SENHA@localhost:27017";
+
+    private static IConfiguration ComMongo(string adaptador, string? conexaoMongo) =>
+        new ConfigurationBuilder()
+            .AddConfiguration(Configuracao())
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Adaptadores:DocumentoNoSql"] = adaptador,
+                ["MongoDb:ConnectionString"] = conexaoMongo
+            })
+            .Build();
+
+    [Theory]
+    [InlineData(MongoDeExemplo)]
+    [InlineData("mongodb://vetly:troque-por-uma-senha-hex@mongo:27017/?authSource=admin")]
+    public void EmProducao_MongoComStringDeExemplo_Recusa(string exemplo)
+    {
+        // Arrange — o do appsettings.json e o do deploy/vm/.env.example
+        var configuracao = ComMongo("Mongo", exemplo);
+
+        // Act
+        var erro = Assert.Throws<InvalidOperationException>(
+            () => GuardaDeSegredos.Conferir(configuracao, Producao()));
+
+        // Assert
+        Assert.Contains("MongoDb:ConnectionString", erro.Message);
+    }
+
+    [Fact]
+    public void EmProducao_MongoSemString_Recusa()
+    {
+        // Arrange
+        var configuracao = ComMongo("Mongo", null);
+
+        // Act
+        var erro = Assert.Throws<InvalidOperationException>(
+            () => GuardaDeSegredos.Conferir(configuracao, Producao()));
+
+        // Assert
+        Assert.Contains("MongoDb:ConnectionString nao configurada", erro.Message);
+    }
+
+    [Fact]
+    public void EmProducao_MongoComStringReal_Sobe()
+    {
+        // Arrange
+        var configuracao = ComMongo("Mongo", "mongodb://vetly:segredo@mongo:27017");
+
+        // Act / Assert — nao lanca
+        GuardaDeSegredos.Conferir(configuracao, Producao());
+    }
+
+    [Fact]
+    public void EmProducao_AdaptadorEmMemoria_IgnoraOPlaceholderDoMongo()
+    {
+        // Arrange — com o historico em memoria a string nem e lida
+        var configuracao = ComMongo("Memoria", MongoDeExemplo);
+
+        // Act / Assert — nao lanca
+        GuardaDeSegredos.Conferir(configuracao, Producao());
+    }
 }

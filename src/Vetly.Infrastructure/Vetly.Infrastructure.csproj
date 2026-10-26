@@ -14,6 +14,7 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
+    <PackageReference Include="MongoDB.Driver" Version="3.13.0" />
     <PackageReference Include="Oracle.EntityFrameworkCore" Version="10.23.26200" />
     <!-- IHttpClientFactory: o handler do Azure Speech precisa de DOIS clientes — um com
          a chave de assinatura, para o motor, e um limpo, para baixar o audio do proprio

@@ -1,4 +1,7 @@
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
+using Vetly.Application.DTOs.Animal;
+using Vetly.Application.DTOs.Comum;
 using Vetly.Application.Exceptions;
 using Vetly.Application.Interfaces;
 using Vetly.Application.Services;
@@ -18,6 +21,7 @@ public class AvatarServiceTests
     private readonly Mock<IUsuarioAtual> _usuario = new();
     private readonly Mock<IObrigacaoRepository> _obrigacoes = new();
     private readonly Mock<IConsultaRepository> _consultas = new();
+    private readonly Mock<IHistoricoDoAvatarRepository> _historico = new();
 
     private readonly Guid _tutorId = Guid.NewGuid();
     private readonly Animal _animal;
@@ -34,7 +38,8 @@ public class AvatarServiceTests
 
     private AvatarService CriarServico() =>
         new(_animais.Object, _colmeia.Object, _usuario.Object,
-            new CalculadoraDoAvatar(_obrigacoes.Object, _consultas.Object));
+            new CalculadoraDoAvatar(_obrigacoes.Object, _consultas.Object),
+            _historico.Object, NullLogger<AvatarService>.Instance);
 
     private void ComoResponsavel(Guid tutorId)
     {
@@ -165,5 +170,76 @@ public class AvatarServiceTests
         Assert.Equal(EstadoDoAvatar.VacinaAtrasada, avatar.Estado);
         Assert.Equal([MotivoDoAvatar.VacinaVencida], avatar.Motivos);
         Assert.Single(avatar.Falas);
+    }
+
+    // ── Historico diario (RN-114) ────────────────────────────────────────────
+
+    [Fact]
+    public async Task Obter_GravaACondicaoDoDiaNoHistorico()
+    {
+        // Arrange
+        ComoResponsavel(_tutorId);
+
+        // Act
+        var avatar = await CriarServico().ObterAsync(_animal.Id);
+
+        // Assert
+        _historico.Verify(h => h.RegistrarAsync(It.Is<RegistroDiarioDoAvatarDto>(r =>
+            r.AnimalId == _animal.Id
+            && r.Saude == avatar.Saude
+            && r.Data == DateOnly.FromDateTime(avatar.CalculadoEm)), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Obter_HistoricoIndisponivel_AindaDevolveOAvatar()
+    {
+        // Arrange — o Mongo fora do ar nao pode tirar o avatar da tela
+        ComoResponsavel(_tutorId);
+        _historico.Setup(h => h.RegistrarAsync(It.IsAny<RegistroDiarioDoAvatarDto>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new TimeoutException("sem servidor"));
+
+        // Act
+        var avatar = await CriarServico().ObterAsync(_animal.Id);
+
+        // Assert
+        Assert.Equal(_animal.Id, avatar.AnimalId);
+    }
+
+    [Theory]
+    [InlineData(null, null, "data", true)]
+    [InlineData("saude", "asc", "saude", false)]
+    [InlineData("HUMOR", null, "humor", true)]
+    [InlineData("estado", "asc", "data", false)]
+    public async Task ObterHistorico_ResolveAOrdenacaoNaWhitelist(
+        string? ordenarPor, string? direcao, string campo, bool descendente)
+    {
+        // Arrange
+        ComoResponsavel(_tutorId);
+        var paginacao = new Paginacao();
+        _historico.Setup(h => h.ObterPaginadoAsync(_animal.Id, paginacao, It.IsAny<CriterioDeOrdenacao>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ResultadoPaginado<RegistroDiarioDoAvatarDto>([], 0, paginacao));
+
+        // Act
+        await CriarServico().ObterHistoricoAsync(_animal.Id, paginacao, new Ordenacao { OrdenarPor = ordenarPor, Direcao = direcao });
+
+        // Assert
+        _historico.Verify(h => h.ObterPaginadoAsync(_animal.Id, paginacao,
+            It.Is<CriterioDeOrdenacao>(c => c.Campo == campo && c.Descendente == descendente),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task ObterHistorico_DeOutroResponsavel_LancaAcessoNegadoSemLerOHistorico()
+    {
+        // Arrange
+        ComoResponsavel(Guid.NewGuid());
+
+        // Act
+        await Assert.ThrowsAsync<AcessoNegadoException>(
+            () => CriarServico().ObterHistoricoAsync(_animal.Id, new Paginacao()));
+
+        // Assert
+        _historico.Verify(h => h.ObterPaginadoAsync(It.IsAny<Guid>(), It.IsAny<Paginacao>(),
+            It.IsAny<CriterioDeOrdenacao>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 }

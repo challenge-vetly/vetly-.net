@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Vetly.API.Hateoas;
 using Vetly.Application.DTOs.Animal;
+using Vetly.Application.DTOs.Comum;
 using Vetly.Application.DTOs.Prontuario;
 using Vetly.Application.Interfaces;
 
@@ -79,8 +80,9 @@ public class AnimaisController : ControllerBase
     /// tabela de pesos da RN-112. Mesma regra de acesso do board. Nao ha push quando o
     /// avatar piora (RN-114): a obrigacao vencida ja aciona a regua de lembretes.
     ///
-    /// <c>spriteDisponivel</c> so e verdadeiro para cachorro (RN-096). Com
-    /// <c>Accept: application/hal+json</c>, traz links para o board e as obrigacoes.
+    /// <c>spriteDisponivel</c> so e verdadeiro para cachorro (RN-096). Cada leitura
+    /// grava a condicao do dia no historico. Com <c>Accept: application/hal+json</c>,
+    /// traz links para o board, as obrigacoes e o historico.
     /// </remarks>
     [HttpGet("{id:guid}/avatar")]
     [ProducesResponseType(typeof(AvatarDoPetDto), StatusCodes.Status200OK)]
@@ -90,6 +92,25 @@ public class AnimaisController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> ObterAvatar(Guid id) =>
         _hateoas.Ok(await _avatar.ObterAsync(id));
+
+    /// <summary>Historico diario do avatar, paginado (RN-114).</summary>
+    /// <remarks>
+    /// Um registro por dia: a rotina diaria grava todos os avatares e cada
+    /// <c>GET /avatar</c> atualiza o dia corrente (upsert). Guardado no banco de
+    /// documentos (<c>Adaptadores:DocumentoNoSql</c>: Memoria ou Mongo).
+    ///
+    /// Ordenacao: <c>ordenarPor=data|saude|humor</c> e <c>direcao=asc|desc</c>; padrao
+    /// <c>data desc</c>. Com HATEOAS, a pagina traz self/primeira/anterior/proxima/ultima.
+    /// </remarks>
+    [HttpGet("{id:guid}/avatar/historico")]
+    [ProducesResponseType(typeof(ResultadoPaginado<RegistroDiarioDoAvatarDto>), StatusCodes.Status200OK)]
+    [RespostaHal(typeof(RecursoPaginado<RegistroDiarioDoAvatarDto>))]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ObterHistoricoDoAvatar(
+        Guid id, [FromQuery] Paginacao paginacao, [FromQuery] Ordenacao ordenacao) =>
+        _hateoas.Ok(await _avatar.ObterHistoricoAsync(id, paginacao, ordenacao));
 
     /// <summary>Calendario de obrigacoes do animal (RN-045/RN-046).</summary>
     /// <remarks>

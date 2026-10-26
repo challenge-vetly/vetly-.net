@@ -53,4 +53,20 @@ public static class CamposDeOrdenacao
         /// <summary>Todos os campos aceitos.</summary>
         public static readonly IReadOnlyCollection<string> Todos = [Nome, CustoEmPontos, CriadoEm];
     }
+
+    /// <summary><c>GET /api/animais/{id}/avatar/historico</c>. Padrão: <c>data</c> decrescente.</summary>
+    public static class HistoricoDoAvatar
+    {
+        /// <summary>Dia do registro.</summary>
+        public const string Data = "data";
+
+        /// <summary>Saúde do dia — "piores dias" primeiro com <c>asc</c>.</summary>
+        public const string Saude = "saude";
+
+        /// <summary>Humor do dia.</summary>
+        public const string Humor = "humor";
+
+        /// <summary>Todos os campos aceitos.</summary>
+        public static readonly IReadOnlyCollection<string> Todos = [Data, Saude, Humor];
+    }
 }

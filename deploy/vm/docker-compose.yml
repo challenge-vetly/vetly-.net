@@ -1,9 +1,9 @@
-# Vetly em uma VM: API, Ollama e proxy com HTTPS automatico.
+# Vetly em uma VM: API, Ollama, MongoDB e proxy com HTTPS automatico.
 #
-# Tres containers numa rede interna. So o Caddy publica portas — a API e o Ollama nao
-# sao alcancaveis de fora da VM, e e assim que tem de ser: o Ollama nao tem
+# Quatro containers numa rede interna. So o Caddy publica portas — a API, o Ollama e o
+# Mongo nao sao alcancaveis de fora da VM, e e assim que tem de ser: o Ollama nao tem
 # autenticacao nenhuma, e expor a 11434 na internet e entregar um LLM aberto a quem
-# passar.
+# passar; um Mongo exposto e o alvo classico de varredura automatica.
 #
 # O contexto de build e a raiz do repositorio (../..), porque e la que o Dockerfile
 # espera encontrar o Vetly.slnx e a pasta src/.
@@ -58,6 +58,11 @@ services:
     depends_on:
       ollama:
         condition: service_started
+      # O historico do avatar mora no Mongo, mas a API sobe sem ele: o avatar segue
+      # servido e o health check fica Degraded. service_started, e nao healthy, pelo
+      # mesmo motivo do Ollama.
+      mongo:
+        condition: service_started
     networks:
       - vetly
 
@@ -80,8 +85,32 @@ services:
           cpus: '3.0'
           memory: 10G
 
+  # ── MongoDB ────────────────────────────────────────────────────────────────
+  # Historico diario do avatar (RN-114). Sem portas publicadas: so a API fala com ele,
+  # pela rede interna. Usuario e senha vem do .env (interpolacao do compose), e so
+  # estas duas variaveis — o container nao recebe o .env inteiro, que tem a string do
+  # Oracle e a chave do JWT.
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USUARIO:-vetly}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_SENHA:?defina MONGO_SENHA no .env}
+    volumes:
+      # A senha acima so vale na PRIMEIRA subida, quando o volume esta vazio. Trocar a
+      # senha depois exige trocar no banco tambem — o script de deploy reaproveita a
+      # que ja existe no .env da VM por isso.
+      - mongo-dados:/data/db
+    networks:
+      - vetly
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+
 volumes:
   vetly-storage:
+  mongo-dados:
   ollama-modelos:
   caddy-dados:
   caddy-config:

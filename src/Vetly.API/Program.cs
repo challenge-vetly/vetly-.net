@@ -13,6 +13,8 @@ using Vetly.Application.Strategies.Split;
 using Vetly.Infrastructure.Adapters;
 using Vetly.Infrastructure.Data;
 using Vetly.Infrastructure.Jobs;
+using Vetly.Infrastructure.NoSql;
+using MongoDB.Driver;
 using Vetly.Infrastructure.Repositories;
 using Vetly.Infrastructure.Security;
 using Vetly.API.Middlewares;
@@ -109,6 +111,7 @@ builder.Services.AddScoped<ILinksDoRecurso<Vetly.Application.DTOs.Pagamento.Paga
 builder.Services.AddScoped<ILinksDoRecurso<Vetly.Application.DTOs.Marketplace.ItemMarketplaceDto>, LinksDeItemMarketplace>();
 builder.Services.AddScoped<ILinksDoRecurso<Vetly.Application.DTOs.Marketplace.ItemMarketplaceDetalheDto>, LinksDeItemMarketplace>();
 builder.Services.AddScoped<ILinksDoRecurso<Vetly.Application.DTOs.Animal.AvatarDoPetDto>, LinksDoAvatar>();
+builder.Services.AddScoped<ILinksDoRecurso<Vetly.Application.DTOs.Animal.RegistroDiarioDoAvatarDto>, LinksDoRegistroDoAvatar>();
 
 // ── OpenAPI / Scalar ─────────────────────────────────────────────────────────
 // O transformer documenta a variante hal+json do 200 e o ?hateoas=true das rotas
@@ -344,6 +347,47 @@ switch (adaptadorGeo)
             $"Adaptador de geocodificacao '{adaptadorGeo}' nao reconhecido. Valores validos: Simulado.");
 }
 
+// Banco de documentos (Sprint 4): historico diario do avatar. Memoria e o padrao —
+// a API e a suite inteira rodam sem Mongo de pe —, e Mongo e o caminho de producao.
+// O catalogo do marketplace NAO mora aqui: participa da transacao que debita pontos
+// e emite o cupom, e por isso ficou no Oracle.
+var adaptadorDocumento = builder.Configuration["Adaptadores:DocumentoNoSql"] ?? "Memoria";
+switch (adaptadorDocumento)
+{
+    case "Memoria":
+        // Singleton: o historico em memoria precisa sobreviver entre requisicoes
+        builder.Services.AddSingleton<IHistoricoDoAvatarRepository, HistoricoDoAvatarRepositoryEmMemoria>();
+        break;
+
+    case "Mongo":
+        // Resolvida no arranque: string ausente derruba a subida, em vez de virar
+        // historico que nunca grava
+        var mongo = new ConfiguracaoDoMongo(builder.Configuration);
+        builder.Services.AddSingleton(mongo);
+
+        // MongoClient e thread-safe e mantem o pool de conexoes: um por processo
+        builder.Services.AddSingleton<IMongoClient>(_ =>
+        {
+            var configuracao = MongoClientSettings.FromConnectionString(mongo.ConnectionString);
+            configuracao.ServerSelectionTimeout = ConfiguracaoDoMongo.TempoParaAcharServidor;
+            configuracao.ConnectTimeout = ConfiguracaoDoMongo.TempoParaAcharServidor;
+            return new MongoClient(configuracao);
+        });
+        builder.Services.AddSingleton(sp => sp.GetRequiredService<IMongoClient>().GetDatabase(mongo.Banco));
+        builder.Services.AddSingleton<IHistoricoDoAvatarRepository, HistoricoDoAvatarRepositoryMongo>();
+
+        builder.Services.AddHealthChecks()
+            .AddCheck<MongoDbHealthCheck>(
+                name: "mongodb",
+                failureStatus: HealthStatus.Degraded,
+                tags: ["ready", "external"]);
+        break;
+
+    default:
+        throw new InvalidOperationException(
+            $"Adaptador de documento '{adaptadorDocumento}' nao reconhecido. Valores validos: Memoria, Mongo.");
+}
+
 // ── Serviços de Aplicação ────────────────────────────────────────────────────
 builder.Services.AddScoped<IVeterinarioService, VeterinarioService>();
 builder.Services.AddScoped<IAnimalService, AnimalService>();
@@ -428,6 +472,10 @@ builder.Services.AddScoped<IRotinaPeriodica, AvisarObrigacoesVencendo>();
 // RN-094/RN-095: sem esta rotina a regua nascia e parava — o alerta a clinica, que
 // depende de tres tentativas sem resposta, nunca chegava a disparar.
 builder.Services.AddScoped<IRotinaPeriodica, AgendarTentativasDaRegua>();
+
+// Historico diario do avatar (RN-114): o GET /avatar tambem grava, mas sem a rotina
+// o grafico teria buraco justamente nos dias em que ninguem abriu o app
+builder.Services.AddScoped<IRotinaPeriodica, RegistrarCondicaoDosAvatares>();
 
 builder.Services.AddHostedService<VetlyBackgroundService>();
 
