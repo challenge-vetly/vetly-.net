@@ -59,31 +59,87 @@ public class MovimentoDePontosDto
     public DateTime OcorridoEm { get; set; }
 }
 
-/// <summary>Pedido de simulação ou de resgate de pontos (RN-017/RN-018).</summary>
-public class SimularResgateDto
+/// <summary>
+/// Pedido de simulação ou de resgate de pontos (RN-017/RN-018).
+///
+/// <para>
+/// <b>Forma atual:</b> só <see cref="ItemId"/>. O servidor busca o item no catálogo e
+/// deriva nome, categoria e pontos (RN-108) — os demais campos, se vierem, são
+/// ignorados.
+/// </para>
+/// <para>
+/// <b>Forma legada</b> (<see cref="ItemRef"/>, <see cref="ItemNome"/>,
+/// <see cref="Categoria"/>, <see cref="Pontos"/>): continua aceita para não quebrar o
+/// app publicado antes da Sprint 4, que ainda não conhece o catálogo. Está
+/// <b>depreciada</b> — nela é o cliente quem diz quantos pontos debitar, e cada uso
+/// fica registrado em log de aviso para medir quando ela pode sair.
+/// </para>
+/// </summary>
+public class SimularResgateDto : IValidatableObject
 {
     /// <summary>
-    /// Referência do item no catálogo do front. Viaja como texto porque o marketplace
-    /// é mockado no MVP (RN-098) — a taxonomia fica preservada para depois.
+    /// Item do catálogo (<c>GET /api/marketplace/itens</c>). Quando informado, é a única
+    /// fonte do resgate (RN-108).
     /// </summary>
-    [Required(ErrorMessage = "O item é obrigatório.")]
+    public Guid? ItemId { get; set; }
+
+    /// <summary>
+    /// <b>Depreciado</b> — use <see cref="ItemId"/>. Referência do item no catálogo
+    /// que o front mantinha (RN-098). Obrigatório só na forma legada.
+    /// </summary>
     [MaxLength(120)]
     public string ItemRef { get; set; } = string.Empty;
 
+    /// <summary><b>Depreciado</b> — use <see cref="ItemId"/>. Nome do item na forma legada.</summary>
     [MaxLength(200)]
     public string? ItemNome { get; set; }
 
-    [Required(ErrorMessage = "A categoria é obrigatória.")]
+    /// <summary><b>Depreciado</b> — use <see cref="ItemId"/>. Categoria na forma legada.</summary>
     public CategoriaItem Categoria { get; set; }
 
-    [Range(1, int.MaxValue, ErrorMessage = "O resgate deve debitar pontos.")]
+    /// <summary>
+    /// <b>Depreciado</b> — use <see cref="ItemId"/>. Pontos a debitar, escolhidos pelo
+    /// cliente na forma legada.
+    /// </summary>
     public int Pontos { get; set; }
+
+    /// <summary>
+    /// As regras da forma legada só valem quando não há <see cref="ItemId"/>. Como
+    /// atributos, elas recusariam o pedido novo — que manda só o id — com 400.
+    /// </summary>
+    public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
+    {
+        if (ItemId is { } id)
+        {
+            if (id == Guid.Empty)
+                yield return new ValidationResult("Informe o item.", [nameof(ItemId)]);
+
+            yield break;
+        }
+
+        // Mensagens da forma legada mantidas como eram: o app publicado pode exibi-las
+        if (string.IsNullOrWhiteSpace(ItemRef))
+            yield return new ValidationResult("O item é obrigatório.", [nameof(ItemRef)]);
+
+        if (!Enum.IsDefined(Categoria))
+            yield return new ValidationResult("A categoria é obrigatória.", [nameof(Categoria)]);
+
+        if (Pontos < 1)
+            yield return new ValidationResult("O resgate deve debitar pontos.", [nameof(Pontos)]);
+    }
 }
 
 /// <summary>Resultado da simulação, exibido antes de confirmar (RN-017/RN-051).</summary>
 public class SimulacaoDeResgateDto
 {
+    /// <summary>Item do catálogo simulado; nulo na forma legada do pedido.</summary>
+    public Guid? ItemId { get; set; }
+
     public string ItemRef { get; set; } = string.Empty;
+
+    /// <summary>Nome do item, como sairá no cupom.</summary>
+    public string? ItemNome { get; set; }
+
     public CategoriaItem Categoria { get; set; }
 
     public int PontosADebitar { get; set; }
@@ -122,6 +178,10 @@ public class CupomDto
     public string CodigoQr { get; set; } = string.Empty;
 
     public string ItemRef { get; set; } = string.Empty;
+
+    /// <summary>Item do catálogo resgatado; nulo nos cupons anteriores ao catálogo.</summary>
+    public Guid? ItemMarketplaceId { get; set; }
+
     public string? ItemNome { get; set; }
     public CategoriaItem Categoria { get; set; }
 

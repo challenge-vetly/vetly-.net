@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Vetly.Application.DTOs.Fidelidade;
 using Vetly.Application.DTOs.Notificacao;
@@ -24,6 +25,7 @@ public class FidelidadeTests
     private readonly Mock<IPagamentoRepository> _pagamentoRepo = new();
     private readonly Mock<INotificacaoService> _notificacoes = new();
     private readonly Mock<IUsuarioAtual> _usuario = new();
+    private readonly Mock<IItemMarketplaceRepository> _itens = new();
 
     private readonly Guid _tutorId = Guid.NewGuid();
     private readonly List<MovimentoDePontos> _extrato = [];
@@ -53,7 +55,8 @@ public class FidelidadeTests
 
     private FidelidadeService CriarServico() =>
         new(_repo.Object, _consultaRepo.Object, _pagamentoRepo.Object,
-            _notificacoes.Object, _usuario.Object);
+            _notificacoes.Object, _usuario.Object, _itens.Object,
+            NullLogger<FidelidadeService>.Instance);
 
     /// <summary>Coloca um crédito direto no extrato, sem passar pelo serviço.</summary>
     private MovimentoDePontos Credito(decimal valorPago, TierFidelidade tier = TierFidelidade.Bronze)
@@ -550,5 +553,148 @@ public class FidelidadeTests
             () => CriarServico().ObterSaldoAsync(Guid.NewGuid()));
 
         Assert.Equal("RN-106", ex.Codigo);
+    }
+
+    // ── Resgate pelo catalogo do marketplace (Sprint 4, RN-108/RN-109) ──────
+
+    private ItemMarketplace ItemDoCatalogo(int custo, int? estoque, bool ativo = true)
+    {
+        var item = new ItemMarketplace("Banho e tosa", null, CategoriaItem.Higiene,
+            "Rede parceira", custo, 80m, null, estoque);
+        if (!ativo)
+            item.Desativar();
+
+        _itens.Setup(r => r.ObterPorIdAsync(item.Id)).ReturnsAsync(item);
+        return item;
+    }
+
+    [Fact]
+    public async Task ResgatarComItemId_DerivaPontosECategoriaDoCatalogoEIgnoraOCliente()
+    {
+        // Arrange — o cliente tenta debitar 1 ponto num item de 600
+        Credito(1000m);
+        var item = ItemDoCatalogo(custo: 600, estoque: 5);
+        var pedido = new SimularResgateDto
+        {
+            ItemId = item.Id, ItemRef = "adulterado", Categoria = CategoriaItem.Alimentacao, Pontos = 1
+        };
+
+        // Act
+        var cupom = await CriarServico().ResgatarAsync(_tutorId, pedido);
+
+        // Assert
+        Assert.Equal(600, cupom.PontosDebitados);
+        Assert.Equal(CategoriaItem.Higiene, cupom.Categoria);
+        Assert.Equal(item.Id.ToString(), cupom.ItemRef);
+        Assert.Equal(item.Id, cupom.ItemMarketplaceId);
+        Assert.Equal("Banho e tosa", cupom.ItemNome);
+    }
+
+    [Fact]
+    public async Task ResgatarComItemId_ReservaUmaUnidadeDoEstoque()
+    {
+        // Arrange
+        Credito(1000m);
+        var item = ItemDoCatalogo(custo: 300, estoque: 2);
+
+        // Act
+        await CriarServico().ResgatarAsync(_tutorId, new SimularResgateDto { ItemId = item.Id });
+
+        // Assert
+        Assert.Equal(1, item.Estoque);
+        _itens.Verify(r => r.Atualizar(item), Times.Once);
+    }
+
+    [Fact]
+    public async Task ResgatarItemDesativado_LancaRN108()
+    {
+        // Arrange
+        Credito(1000m);
+        var item = ItemDoCatalogo(custo: 300, estoque: null, ativo: false);
+
+        // Act
+        var erro = await Assert.ThrowsAsync<BusinessRuleException>(
+            () => CriarServico().ResgatarAsync(_tutorId, new SimularResgateDto { ItemId = item.Id }));
+
+        // Assert
+        Assert.Equal("RN-108", erro.Codigo);
+    }
+
+    [Fact]
+    public async Task ResgatarItemSemEstoque_LancaRN108ENaoGravaNada()
+    {
+        // Arrange
+        Credito(1000m);
+        var item = ItemDoCatalogo(custo: 300, estoque: 0);
+
+        // Act
+        var erro = await Assert.ThrowsAsync<BusinessRuleException>(
+            () => CriarServico().ResgatarAsync(_tutorId, new SimularResgateDto { ItemId = item.Id }));
+
+        // Assert
+        Assert.Equal("RN-108", erro.Codigo);
+        Assert.Empty(_cupons);
+        _repo.Verify(r => r.SalvarAsync(), Times.Never);
+    }
+
+    [Fact]
+    public async Task ResgatarItemInexistente_LancaNotFound()
+    {
+        // Arrange
+        Credito(1000m);
+        _itens.Setup(r => r.ObterPorIdAsync(It.IsAny<Guid>())).ReturnsAsync((ItemMarketplace?)null);
+
+        // Act / Assert
+        await Assert.ThrowsAsync<NotFoundException>(
+            () => CriarServico().ResgatarAsync(_tutorId, new SimularResgateDto { ItemId = Guid.NewGuid() }));
+    }
+
+    [Fact]
+    public async Task SimularComItemId_UsaOCustoDoCatalogo()
+    {
+        // Arrange
+        Credito(1000m);
+        var item = ItemDoCatalogo(custo: 400, estoque: null);
+
+        // Act
+        var simulacao = await CriarServico().SimularResgateAsync(_tutorId, new SimularResgateDto { ItemId = item.Id });
+
+        // Assert — 400 pontos = R$ 12,00 (RN-049), faixa ate R$ 30 (RN-051)
+        Assert.Equal(item.Id, simulacao.ItemId);
+        Assert.Equal(400, simulacao.PontosADebitar);
+        Assert.Equal(12.00m, simulacao.Desconto);
+        Assert.Equal(600, simulacao.SaldoApos);
+    }
+
+    [Fact]
+    public async Task ExpirarCupomDeItemDoCatalogo_DevolveAUnidadeAoEstoque()
+    {
+        // Arrange — cupom do catalogo ja vencido
+        var item = ItemDoCatalogo(custo: 300, estoque: 4);
+        var cupom = new CupomResgate(_tutorId, item.Id.ToString(), item.Nome, item.Categoria, 300, 9m, item.Id);
+        _repo.Setup(r => r.ObterCuponsVencidosAsync(It.IsAny<DateTime>())).ReturnsAsync([cupom]);
+
+        // Act
+        await CriarServico().ExpirarVencidosAsync();
+
+        // Assert — a unidade volta; os pontos nao (RN-053)
+        Assert.Equal(StatusCupom.Expirado, cupom.Status);
+        Assert.Equal(5, item.Estoque);
+        _itens.Verify(r => r.Atualizar(item), Times.Once);
+    }
+
+    [Fact]
+    public async Task ExpirarCupomLegado_NaoProcuraItemNoCatalogo()
+    {
+        // Arrange — cupom anterior ao catalogo, sem ItemMarketplaceId
+        var cupom = new CupomResgate(_tutorId, "mock-legado", null, CategoriaItem.Alimentacao, 100, 3m);
+        _repo.Setup(r => r.ObterCuponsVencidosAsync(It.IsAny<DateTime>())).ReturnsAsync([cupom]);
+
+        // Act
+        await CriarServico().ExpirarVencidosAsync();
+
+        // Assert
+        Assert.Equal(StatusCupom.Expirado, cupom.Status);
+        _itens.Verify(r => r.ObterPorIdAsync(It.IsAny<Guid>()), Times.Never);
     }
 }

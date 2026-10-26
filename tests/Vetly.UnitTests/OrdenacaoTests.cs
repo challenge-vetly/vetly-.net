@@ -122,5 +122,6 @@ public class OrdenacaoTests
         // Arrange / Act / Assert — um padrao fora da lista nunca seria resolvido
         Assert.Contains(CamposDeOrdenacao.Consultas.DataHora, CamposDeOrdenacao.Consultas.Todos);
         Assert.Contains(CamposDeOrdenacao.Pagamentos.Momento, CamposDeOrdenacao.Pagamentos.Todos);
+        Assert.Contains(CamposDeOrdenacao.Marketplace.Nome, CamposDeOrdenacao.Marketplace.Todos);
     }
 }

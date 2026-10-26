@@ -216,6 +216,16 @@ public static class VetlyTelemetry
         description: "Notificacoes entregues por canal e resultado (RN-092).");
 
     /// <summary>
+    /// Resgates de itens do catálogo do marketplace, com a tag <c>categoria</c>
+    /// (RN-108). Mede que categoria puxa o uso dos pontos — a base para calibrar a
+    /// taxa de listagem (RN-111).
+    /// </summary>
+    public static readonly Counter<long> ResgatesNoMarketplace = Medidor.CreateCounter<long>(
+        "vetly.marketplace.resgates",
+        unit: "{resgate}",
+        description: "Resgates de itens do catalogo do marketplace por categoria (RN-108).");
+
+    /// <summary>
     /// Abre um span de negocio.
     /// </summary>
     /// <param name="nome">

@@ -104,6 +104,12 @@ public interface IFidelidadeRepository
     void Atualizar(MovimentoDePontos movimento);
 
     Task<CupomResgate?> ObterCupomAsync(Guid cupomId);
+
+    /// <summary>
+    /// Cupom pelo código apresentado no estabelecimento (RN-110). O índice único de
+    /// <c>CODIGO_QR</c> garante que a busca não é ambígua.
+    /// </summary>
+    Task<CupomResgate?> ObterCupomPorCodigoAsync(string codigoQr);
     Task<IEnumerable<CupomResgate>> ObterCuponsDoTutorAsync(Guid tutorId);
 
     /// <summary>Cupons emitidos que passaram da validade (RN-053).</summary>

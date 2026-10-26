@@ -77,6 +77,9 @@ public class VetlyDbContext : DbContext
     /// <summary>Cupons emitidos no resgate de pontos (RN-053/RN-054).</summary>
     public DbSet<CupomResgate> CuponsDeResgate => Set<CupomResgate>();
 
+    /// <summary>Catálogo do marketplace, trocável por pontos (RN-108 a RN-111).</summary>
+    public DbSet<ItemMarketplace> ItensDoMarketplace => Set<ItemMarketplace>();
+
     /// <summary>Obrigações recorrentes de cuidado do animal (RN-045/RN-046).</summary>
     public DbSet<ObrigacaoPet> ObrigacoesDoPet => Set<ObrigacaoPet>();
 

@@ -37,4 +37,20 @@ public static class CamposDeOrdenacao
         /// <summary>Todos os campos aceitos.</summary>
         public static readonly IReadOnlyCollection<string> Todos = [Momento, Valor, Status];
     }
+
+    /// <summary><c>GET /api/marketplace/itens</c>. Padrão: <c>nome</c> crescente.</summary>
+    public static class Marketplace
+    {
+        /// <summary>Nome do item, em ordem alfabética.</summary>
+        public const string Nome = "nome";
+
+        /// <summary>Custo em pontos.</summary>
+        public const string CustoEmPontos = "custoempontos";
+
+        /// <summary>Momento do cadastro — "novidades" primeiro com <c>desc</c>.</summary>
+        public const string CriadoEm = "criadoem";
+
+        /// <summary>Todos os campos aceitos.</summary>
+        public static readonly IReadOnlyCollection<string> Todos = [Nome, CustoEmPontos, CriadoEm];
+    }
 }

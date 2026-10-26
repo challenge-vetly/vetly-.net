@@ -106,6 +106,8 @@ builder.Services.AddScoped<ConstrutorDeLinks>();
 builder.Services.AddScoped<RespostaHateoas>();
 builder.Services.AddScoped<ILinksDoRecurso<Vetly.Application.DTOs.Consulta.ConsultaDto>, LinksDeConsulta>();
 builder.Services.AddScoped<ILinksDoRecurso<Vetly.Application.DTOs.Pagamento.PagamentoDto>, LinksDePagamento>();
+builder.Services.AddScoped<ILinksDoRecurso<Vetly.Application.DTOs.Marketplace.ItemMarketplaceDto>, LinksDeItemMarketplace>();
+builder.Services.AddScoped<ILinksDoRecurso<Vetly.Application.DTOs.Marketplace.ItemMarketplaceDetalheDto>, LinksDeItemMarketplace>();
 
 // ── OpenAPI / Scalar ─────────────────────────────────────────────────────────
 // O transformer documenta a variante hal+json do 200 e o ?hateoas=true das rotas
@@ -195,6 +197,7 @@ builder.Services.AddScoped<IAuditoriaIaRepository, AuditoriaIaRepository>();
 builder.Services.AddScoped<IColmeiaRepository, ColmeiaRepository>();
 builder.Services.AddScoped<IObrigacaoRepository, ObrigacaoRepository>();
 builder.Services.AddScoped<IFidelidadeRepository, FidelidadeRepository>();
+builder.Services.AddScoped<IItemMarketplaceRepository, ItemMarketplaceRepository>();
 builder.Services.AddScoped<IAvaliacaoRepository, AvaliacaoRepository>();
 builder.Services.AddScoped<INotificacaoRepository, NotificacaoRepository>();
 builder.Services.AddSingleton<IGeradorDePdf, GeradorDePdfSimples>();
@@ -362,6 +365,7 @@ builder.Services.AddScoped<IProntuarioService, ProntuarioService>();
 builder.Services.AddScoped<IColmeiaService, ColmeiaService>();
 builder.Services.AddScoped<IObrigacaoService, ObrigacaoService>();
 builder.Services.AddScoped<IFidelidadeService, FidelidadeService>();
+builder.Services.AddScoped<IMarketplaceService, MarketplaceService>();
 builder.Services.AddScoped<IAvaliacaoService, AvaliacaoService>();
 builder.Services.AddScoped<INotificacaoService, NotificacaoService>();
 builder.Services.AddScoped<IDashboardService, DashboardService>();

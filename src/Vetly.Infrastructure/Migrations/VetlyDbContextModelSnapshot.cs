@@ -477,6 +477,10 @@ namespace Vetly.Infrastructure.Migrations
                         .HasColumnType("NUMBER(10)")
                         .HasColumnName("FAIXA");
 
+                    b.Property<string>("ItemMarketplaceId")
+                        .HasColumnType("CHAR(36)")
+                        .HasColumnName("ITEM_MARKETPLACE_ID");
+
                     b.Property<string>("ItemNome")
                         .HasMaxLength(200)
                         .HasColumnType("VARCHAR2(200)")
@@ -857,6 +861,188 @@ namespace Vetly.Infrastructure.Migrations
                         .HasDatabaseName("IX_LISTA_ESPERA_FILA");
 
                     b.ToTable("TB_LISTA_ESPERA", (string)null);
+                });
+
+            modelBuilder.Entity("Vetly.Domain.Entities.ItemMarketplace", b =>
+                {
+                    b.Property<string>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("CHAR(36)")
+                        .HasColumnName("ID");
+
+                    b.Property<bool>("Ativo")
+                        .HasColumnType("NUMBER(1)")
+                        .HasColumnName("ATIVO");
+
+                    b.Property<DateTime?>("AtualizadoEm")
+                        .HasColumnType("TIMESTAMP(7)")
+                        .HasColumnName("ATUALIZADO_EM");
+
+                    b.Property<int>("Categoria")
+                        .HasColumnType("NUMBER(10)")
+                        .HasColumnName("CATEGORIA");
+
+                    b.Property<DateTime>("CriadoEm")
+                        .HasColumnType("TIMESTAMP(7)")
+                        .HasColumnName("CRIADO_EM");
+
+                    b.Property<int>("CustoEmPontos")
+                        .HasColumnType("NUMBER(10)")
+                        .HasColumnName("CUSTO_EM_PONTOS");
+
+                    b.Property<string>("Descricao")
+                        .HasMaxLength(1000)
+                        .HasColumnType("VARCHAR2(1000)")
+                        .HasColumnName("DESCRICAO");
+
+                    b.Property<int?>("Estoque")
+                        .IsConcurrencyToken()
+                        .HasColumnType("NUMBER(10)")
+                        .HasColumnName("ESTOQUE");
+
+                    b.Property<string>("Fornecedor")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("VARCHAR2(120)")
+                        .HasColumnName("FORNECEDOR");
+
+                    b.Property<string>("ImagemMidiaId")
+                        .HasColumnType("CHAR(36)")
+                        .HasColumnName("IMAGEM_MIDIA_ID");
+
+                    b.Property<string>("Nome")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("VARCHAR2(120)")
+                        .HasColumnName("NOME");
+
+                    b.Property<decimal>("ValorDeReferencia")
+                        .HasColumnType("NUMBER(12,2)")
+                        .HasColumnName("VALOR_DE_REFERENCIA");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Ativo", "Categoria")
+                        .HasDatabaseName("IX_ITEM_MKT_ATIVO_CATEGORIA");
+
+                    b.ToTable("TB_ITEM_MARKETPLACE", (string)null);
+
+                    b.HasData(
+                        new
+                        {
+                            Id = "6f1c2a10-0001-4c3e-9a51-000000000001",
+                            Ativo = true,
+                            Categoria = 1,
+                            CriadoEm = new DateTime(2026, 10, 25, 0, 0, 0, 0, DateTimeKind.Utc),
+                            CustoEmPontos = 1000,
+                            Descricao = "Cupom de desconto na ração seca premium para cães adultos de porte médio.",
+                            Estoque = 40,
+                            Fornecedor = "Rede de pet shops parceira",
+                            Nome = "Ração premium para cães adultos 10 kg",
+                            ValorDeReferencia = 289.90m
+                        },
+                        new
+                        {
+                            Id = "6f1c2a10-0001-4c3e-9a51-000000000002",
+                            Ativo = true,
+                            Categoria = 1,
+                            CriadoEm = new DateTime(2026, 10, 25, 0, 0, 0, 0, DateTimeKind.Utc),
+                            CustoEmPontos = 500,
+                            Descricao = "Cupom de desconto na ração seca para gatos castrados.",
+                            Estoque = 60,
+                            Fornecedor = "Rede de pet shops parceira",
+                            Nome = "Ração para gatos castrados 3 kg",
+                            ValorDeReferencia = 119.90m
+                        },
+                        new
+                        {
+                            Id = "6f1c2a10-0001-4c3e-9a51-000000000003",
+                            Ativo = true,
+                            Categoria = 1,
+                            CriadoEm = new DateTime(2026, 10, 25, 0, 0, 0, 0, DateTimeKind.Utc),
+                            CustoEmPontos = 300,
+                            Descricao = "Cupom de desconto no petisco desidratado, sem conservantes.",
+                            Fornecedor = "Rede de pet shops parceira",
+                            Nome = "Petisco natural de frango 200 g",
+                            ValorDeReferencia = 34.90m
+                        },
+                        new
+                        {
+                            Id = "6f1c2a10-0002-4c3e-9a51-000000000001",
+                            Ativo = true,
+                            Categoria = 2,
+                            CriadoEm = new DateTime(2026, 10, 25, 0, 0, 0, 0, DateTimeKind.Utc),
+                            CustoEmPontos = 800,
+                            Descricao = "Cupom de desconto no antiparasitário de uso oral. Uso conforme orientação do veterinário.",
+                            Estoque = 30,
+                            Fornecedor = "Farmácia veterinária parceira",
+                            Nome = "Antipulgas e carrapatos (cães de 10 a 25 kg)",
+                            ValorDeReferencia = 159.90m
+                        },
+                        new
+                        {
+                            Id = "6f1c2a10-0002-4c3e-9a51-000000000002",
+                            Ativo = true,
+                            Categoria = 2,
+                            CriadoEm = new DateTime(2026, 10, 25, 0, 0, 0, 0, DateTimeKind.Utc),
+                            CustoEmPontos = 300,
+                            Descricao = "Cupom de desconto no vermífugo para cães e gatos. Uso conforme orientação do veterinário.",
+                            Estoque = 50,
+                            Fornecedor = "Farmácia veterinária parceira",
+                            Nome = "Vermífugo de amplo espectro",
+                            ValorDeReferencia = 49.90m
+                        },
+                        new
+                        {
+                            Id = "6f1c2a10-0002-4c3e-9a51-000000000003",
+                            Ativo = true,
+                            Categoria = 2,
+                            CriadoEm = new DateTime(2026, 10, 25, 0, 0, 0, 0, DateTimeKind.Utc),
+                            CustoEmPontos = 1200,
+                            Descricao = "Cupom de desconto no suplemento de condroitina e glucosamina.",
+                            Estoque = 20,
+                            Fornecedor = "Farmácia veterinária parceira",
+                            Nome = "Suplemento articular (60 comprimidos)",
+                            ValorDeReferencia = 189.90m
+                        },
+                        new
+                        {
+                            Id = "6f1c2a10-0003-4c3e-9a51-000000000001",
+                            Ativo = true,
+                            Categoria = 3,
+                            CriadoEm = new DateTime(2026, 10, 25, 0, 0, 0, 0, DateTimeKind.Utc),
+                            CustoEmPontos = 600,
+                            Descricao = "Cupom de desconto em um banho com tosa higiênica na rede parceira.",
+                            Fornecedor = "Rede de banho e tosa parceira",
+                            Nome = "Banho e tosa (porte pequeno)",
+                            ValorDeReferencia = 80.00m
+                        },
+                        new
+                        {
+                            Id = "6f1c2a10-0003-4c3e-9a51-000000000002",
+                            Ativo = true,
+                            Categoria = 3,
+                            CriadoEm = new DateTime(2026, 10, 25, 0, 0, 0, 0, DateTimeKind.Utc),
+                            CustoEmPontos = 300,
+                            Descricao = "Cupom de desconto no shampoo para peles sensíveis.",
+                            Estoque = 45,
+                            Fornecedor = "Rede de pet shops parceira",
+                            Nome = "Shampoo hipoalergênico 500 ml",
+                            ValorDeReferencia = 59.90m
+                        },
+                        new
+                        {
+                            Id = "6f1c2a10-0003-4c3e-9a51-000000000003",
+                            Ativo = true,
+                            Categoria = 3,
+                            CriadoEm = new DateTime(2026, 10, 25, 0, 0, 0, 0, DateTimeKind.Utc),
+                            CustoEmPontos = 400,
+                            Descricao = "Cupom de desconto no kit de higiene bucal para cães e gatos.",
+                            Estoque = 35,
+                            Fornecedor = "Rede de pet shops parceira",
+                            Nome = "Kit escova e creme dental",
+                            ValorDeReferencia = 39.90m
+                        });
                 });
 
             modelBuilder.Entity("Vetly.Domain.Entities.Job", b =>

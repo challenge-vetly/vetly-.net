@@ -91,7 +91,14 @@ public class FidelidadeController : ControllerBase
     /// e o que evita passivo perpetuo e resgate especulativo, e por isso a validade
     /// vai na resposta e o Responsavel e avisado antes do vencimento.
     ///
-    /// A validacao fisica do cupom no estabelecimento nao existe no MVP (RN-019).
+    /// Corpo atual: <c>{ "itemId": "..." }</c> — nome, categoria e pontos saem do
+    /// catalogo (<c>GET /api/marketplace/itens</c>, RN-108) e os demais campos, se
+    /// vierem, sao ignorados. A forma antiga (<c>itemRef</c>, <c>itemNome</c>,
+    /// <c>categoria</c>, <c>pontos</c>) segue aceita para o app publicado, mas esta
+    /// <b>depreciada</b>: nela o cliente escolhe quantos pontos debitar.
+    ///
+    /// O cupom e validado no estabelecimento por
+    /// <c>POST /api/marketplace/cupons/validar</c> (RN-110).
     /// </remarks>
     [HttpPost("resgates")]
     [Idempotente]

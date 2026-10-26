@@ -1,7 +1,9 @@
+using Microsoft.Extensions.Logging;
 using Vetly.Application.DTOs.Fidelidade;
 using Vetly.Application.DTOs.Notificacao;
 using Vetly.Application.Exceptions;
 using Vetly.Application.Interfaces;
+using Vetly.Application.Observability;
 using Vetly.Domain.Entities;
 using Vetly.Domain.Enums;
 using Vetly.Domain.ValueObjects;
@@ -23,19 +25,25 @@ public class FidelidadeService : IFidelidadeService
     private readonly IPagamentoRepository _pagamentoRepo;
     private readonly INotificacaoService _notificacoes;
     private readonly IUsuarioAtual _usuario;
+    private readonly IItemMarketplaceRepository _itens;
+    private readonly ILogger<FidelidadeService> _logger;
 
     public FidelidadeService(
         IFidelidadeRepository repo,
         IConsultaRepository consultaRepo,
         IPagamentoRepository pagamentoRepo,
         INotificacaoService notificacoes,
-        IUsuarioAtual usuario)
+        IUsuarioAtual usuario,
+        IItemMarketplaceRepository itens,
+        ILogger<FidelidadeService> logger)
     {
         _repo = repo;
         _consultaRepo = consultaRepo;
         _pagamentoRepo = pagamentoRepo;
         _notificacoes = notificacoes;
         _usuario = usuario;
+        _itens = itens;
+        _logger = logger;
     }
 
     /// <inheritdoc/>
@@ -181,24 +189,34 @@ public class FidelidadeService : IFidelidadeService
     {
         GarantirEscopo(tutorId);
 
-        if (dto.Pontos <= 0)
-            throw new ValidationException("pontos", "O resgate deve debitar pontos.");
+        var item = await ResolverItemAsync(dto);
 
+        return await SimularAsync(tutorId, item);
+    }
+
+    /// <summary>
+    /// Calcula o resgate de um item já resolvido: saldo, desconto e divisão
+    /// (RN-049/RN-050/RN-051).
+    /// </summary>
+    private async Task<SimulacaoDeResgateDto> SimularAsync(Guid tutorId, ItemDoResgate item)
+    {
         var movimentos = (await _repo.ObterDoTutorAsync(tutorId)).ToList();
         var saldo = movimentos.Sum(m => m.Pontos);
 
-        if (dto.Pontos > saldo)
+        if (item.Pontos > saldo)
             throw new BusinessRuleException("RN-050",
                 $"Saldo insuficiente: {saldo} ponto(s) disponivel(is).");
 
-        var desconto = RegrasDeFidelidade.EmReais(dto.Pontos);
+        var desconto = RegrasDeFidelidade.EmReais(item.Pontos);
         var (vetly, prestador, faixa) = RegrasDeFidelidade.Dividir(desconto);
 
         return new SimulacaoDeResgateDto
         {
-            ItemRef = dto.ItemRef,
-            Categoria = dto.Categoria,
-            PontosADebitar = dto.Pontos,
+            ItemId = item.Catalogo?.Id,
+            ItemRef = item.ItemRef,
+            ItemNome = item.ItemNome,
+            Categoria = item.Categoria,
+            PontosADebitar = item.Pontos,
             Desconto = desconto,
             Faixa = faixa,
             PercentualVetly = RegrasDeFidelidade.PercentualVetlyDe(faixa),
@@ -206,7 +224,7 @@ public class FidelidadeService : IFidelidadeService
             ValorVetly = vetly,
             ValorPrestador = prestador,
             ValidadeDias = (int)RegrasDeFidelidade.ValidadeDoCupom.TotalDays,
-            SaldoApos = saldo - dto.Pontos,
+            SaldoApos = saldo - item.Pontos,
 
             // RN-051: no MVP a divisão é calculada, gravada e exibida, sem abatimento
             // financeiro real. Dizer isso na resposta evita que o app prometa desconto
@@ -218,23 +236,77 @@ public class FidelidadeService : IFidelidadeService
     /// <inheritdoc/>
     public async Task<CupomDto> ResgatarAsync(Guid tutorId, SimularResgateDto dto)
     {
-        var simulacao = await SimularResgateAsync(tutorId, dto);
+        GarantirEscopo(tutorId);
+
+        var item = await ResolverItemAsync(dto);
+        var simulacao = await SimularAsync(tutorId, item);
+
+        // RN-109: a unidade e reservada no mesmo SaveChanges que debita os pontos e
+        // emite o cupom. Se o saldo nao fecha, nada e gravado — nem a reserva. E o
+        // ESTOQUE e token de concorrencia: dois resgates da ultima unidade nao saem.
+        if (item.Catalogo is { } catalogo)
+        {
+            catalogo.ReservarUnidade();
+            _itens.Atualizar(catalogo);
+        }
 
         var cupom = new CupomResgate(
-            tutorId, dto.ItemRef, dto.ItemNome, dto.Categoria, dto.Pontos, simulacao.Desconto);
+            tutorId, item.ItemRef, item.ItemNome, item.Categoria, item.Pontos, simulacao.Desconto,
+            item.Catalogo?.Id);
 
         // RN-050: o débito consome os lotes em FIFO — o ponto mais antigo primeiro,
         // que é o que está mais perto de vencer. Consumir o mais novo deixaria o
         // Responsável perder pontos que ele acabou de usar para pagar.
-        await ConsumirFifoAsync(tutorId, dto.Pontos);
+        await ConsumirFifoAsync(tutorId, item.Pontos);
 
         await _repo.AdicionarCupomAsync(cupom);
         await _repo.AdicionarAsync(MovimentoDePontos.PorResgate(
-            tutorId, dto.Pontos, simulacao.Desconto, cupom.Id));
+            tutorId, item.Pontos, simulacao.Desconto, cupom.Id));
 
         await _repo.SalvarAsync();
 
+        if (item.Catalogo is not null)
+            VetlyTelemetry.ResgatesNoMarketplace.Add(1,
+                new KeyValuePair<string, object?>("categoria", item.Categoria.ToString()));
+
         return Mapear(cupom);
+    }
+
+    /// <summary>O que está sendo resgatado, já decidido pelo servidor ou pela forma legada.</summary>
+    /// <param name="Catalogo">Item do catálogo; nulo na forma legada.</param>
+    private sealed record ItemDoResgate(
+        ItemMarketplace? Catalogo, string ItemRef, string? ItemNome, CategoriaItem Categoria, int Pontos);
+
+    /// <summary>
+    /// Resolve o item do pedido. Com <c>itemId</c>, tudo vem do catálogo e os demais
+    /// campos do pedido são ignorados (RN-108). Sem ele, vale a forma legada — o
+    /// cliente dizendo quantos pontos debitar —, aceita para não quebrar o app antigo
+    /// e registrada em log para medir quando pode sair.
+    /// </summary>
+    private async Task<ItemDoResgate> ResolverItemAsync(SimularResgateDto dto)
+    {
+        if (dto.ItemId is { } itemId)
+        {
+            var item = await _itens.ObterPorIdAsync(itemId)
+                ?? throw new NotFoundException("ItemMarketplace", itemId);
+
+            if (!item.Ativo)
+                throw new BusinessRuleException("RN-108", "Este item saiu do catalogo e nao pode ser resgatado.");
+
+            if (!item.Disponivel)
+                throw new BusinessRuleException("RN-108", "Este item esta sem estoque no momento.");
+
+            return new ItemDoResgate(item, item.Id.ToString(), item.Nome, item.Categoria, item.CustoEmPontos);
+        }
+
+        if (dto.Pontos <= 0)
+            throw new ValidationException("pontos", "O resgate deve debitar pontos.");
+
+        _logger.LogWarning(
+            "Resgate na forma legada (sem itemId): itemRef {ItemRef}, {Pontos} pontos informados pelo cliente",
+            dto.ItemRef, dto.Pontos);
+
+        return new ItemDoResgate(null, dto.ItemRef, dto.ItemNome, dto.Categoria, dto.Pontos);
     }
 
     /// <inheritdoc/>
@@ -347,7 +419,15 @@ public class FidelidadeService : IFidelidadeService
         // cupom precisa parar de aparecer como utilizável no app.
         foreach (var cupom in await _repo.ObterCuponsVencidosAsync(agora))
         {
-            cupom.Expirar();
+            // RN-109: a unidade do catalogo volta ao estoque, so na transicao — a
+            // validacao do QR pode ter expirado este mesmo cupom antes
+            if (cupom.Expirar() && cupom.ItemMarketplaceId is { } itemId
+                && await _itens.ObterPorIdAsync(itemId) is { } item)
+            {
+                item.DevolverUnidade();
+                _itens.Atualizar(item);
+            }
+
             _repo.AtualizarCupom(cupom);
         }
 
@@ -441,11 +521,16 @@ public class FidelidadeService : IFidelidadeService
         OcorridoEm = m.OcorridoEm
     };
 
-    private static CupomDto Mapear(CupomResgate c) => new()
+    /// <summary>
+    /// Cupom para DTO. Interno ao assembly porque a validação do QR
+    /// (<see cref="MarketplaceService"/>) devolve o mesmo formato.
+    /// </summary>
+    internal static CupomDto Mapear(CupomResgate c) => new()
     {
         Id = c.Id,
         CodigoQr = c.CodigoQr,
         ItemRef = c.ItemRef,
+        ItemMarketplaceId = c.ItemMarketplaceId,
         ItemNome = c.ItemNome,
         Categoria = c.Categoria,
         PontosDebitados = c.PontosDebitados,

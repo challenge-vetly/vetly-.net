@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Vetly.Infrastructure.Data;
 
 namespace Vetly.IntegrationTests;
@@ -62,5 +63,21 @@ public class VetlyWebApplicationFactory : WebApplicationFactory<Program>
                     .UseInternalServiceProvider(InMemoryServiceProvider)
                     .UseInMemoryDatabase(DatabaseName));
         });
+    }
+
+    /// <summary>
+    /// Aplica a carga de <c>HasData</c> (o catálogo inicial do marketplace) no banco
+    /// InMemory. No Oracle ela vem pelo script da migration; aqui, sem migration, só o
+    /// <c>EnsureCreated</c> a insere — e é o que deixa os testes enxergarem o mesmo
+    /// catálogo que o deploy enxerga.
+    /// </summary>
+    protected override IHost CreateHost(IHostBuilder builder)
+    {
+        var host = base.CreateHost(builder);
+
+        using var escopo = host.Services.CreateScope();
+        escopo.ServiceProvider.GetRequiredService<VetlyDbContext>().Database.EnsureCreated();
+
+        return host;
     }
 }

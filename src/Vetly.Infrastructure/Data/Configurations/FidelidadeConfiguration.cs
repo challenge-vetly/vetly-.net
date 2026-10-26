@@ -93,10 +93,15 @@ public class CupomResgateConfiguration : IEntityTypeConfiguration<CupomResgate>
         builder.Property(c => c.CodigoQr)
             .HasColumnType("VARCHAR2(40)").HasColumnName("CODIGO_QR").IsRequired();
 
-        // O item viaja como texto porque o marketplace e mockado no MVP (RN-098); a
-        // taxonomia da RN-099 fica preservada para quando a tabela real existir
+        // Foto do item no momento do resgate: o catalogo pode mudar depois, e os cupons
+        // anteriores ao catalogo so tem este texto (RN-098)
         builder.Property(c => c.ItemRef)
             .HasColumnType("VARCHAR2(120)").HasColumnName("ITEM_REF").IsRequired();
+
+        // Sem FK de proposito: o item nunca e apagado (so desativado), e uma FK
+        // obrigaria a ordem de carga entre as tabelas sem proteger nada a mais
+        builder.Property(c => c.ItemMarketplaceId)
+            .HasColumnType("CHAR(36)").HasColumnName("ITEM_MARKETPLACE_ID");
 
         builder.Property(c => c.ItemNome)
             .HasColumnType("VARCHAR2(200)").HasColumnName("ITEM_NOME");
