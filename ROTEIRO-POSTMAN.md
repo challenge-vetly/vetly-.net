@@ -762,7 +762,7 @@ Sem autenticação.
 
 ---
 
-O caminho principal da API é exercitado contra um ambiente real por [deploy/validar-endpoints.py](deploy/validar-endpoints.py). O documento OpenAPI lista 163 operações.
+Este roteiro, os cenários do fluxo 7 e as demais rotas — as 163 operações do OpenAPI — são exercitados contra um ambiente real por [deploy/validar-endpoints.py](deploy/validar-endpoints.py).
 
 Documentação interativa: **`https://localhost:7262/scalar/v1`**.
 Regras de negócio por código: [REGRAS-DE-NEGOCIO.md](REGRAS-DE-NEGOCIO.md).
