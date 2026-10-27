@@ -60,6 +60,14 @@ public class Documento
     [MaxLength(15)]
     public string? CrmvSolicitanteCorrecao { get; private set; }
 
+    /// <summary>
+    /// Por que o documento foi corrigido. Obrigatória após 24h da geração (RN-089) —
+    /// e só vale se ficar registrada: a regra existia, mas o texto era conferido e
+    /// descartado, e a correção tardia não deixava rastro do motivo.
+    /// </summary>
+    [MaxLength(1000)]
+    public string? JustificativaCorrecao { get; private set; }
+
     // ── Conteúdo, assinatura e publicação (RN-083, RN-087, RN-090) ───────────
 
     /// <summary>
@@ -192,12 +200,19 @@ public class Documento
 
     /// <summary>
     /// Marca este documento como versão corrigida de outro (RN-088).
-    /// Vincula ao documento original e registra o responsável pela correção.
+    /// Vincula ao documento original, numera a versão seguinte à dele e registra o
+    /// responsável e o motivo da correção (RN-089).
     /// </summary>
-    public void Corrigir(Guid versaoOriginalId, DateTime dataCorrecao, string crmvSolicitante)
+    public void Corrigir(Documento original, DateTime dataCorrecao, string crmvSolicitante, string? justificativa)
     {
-        VersaoOriginalId = versaoOriginalId;
+        VersaoOriginalId = original.Id;
+
+        // Sem isto a correção nascia com a versão 1, igual à original, e o board
+        // mostrava duas "versão 1" do mesmo documento.
+        Versao = original.Versao + 1;
+
         DataCorrecao = dataCorrecao;
         CrmvSolicitanteCorrecao = crmvSolicitante;
+        JustificativaCorrecao = string.IsNullOrWhiteSpace(justificativa) ? null : justificativa.Trim();
     }
 }

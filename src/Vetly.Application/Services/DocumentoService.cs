@@ -280,7 +280,7 @@ public class DocumentoService : IDocumentoService
         var crmvDoAutor = signatario.Crmv.Valor;
 
         var corrigido = new Documento(doc.TipoDocumento, crmvDoAutor, doc.ConsultaId, doc.InternacaoId);
-        corrigido.Corrigir(doc.Id, DateTime.UtcNow, crmvDoAutor);
+        corrigido.Corrigir(doc, DateTime.UtcNow, crmvDoAutor, justificativa);
 
         // O documento original permanece intacto (RN-088): a correção é outra versão,
         // e o conteúdo novo entra aqui em vez de sobrescrever o que já foi publicado.
@@ -359,7 +359,7 @@ public class DocumentoService : IDocumentoService
 
         var registro = anterior is null
             ? new Prontuario(consulta.Id, consulta.AnimalId, doc.Conteudo!)
-            : anterior.CriarCorrecao(doc.Conteudo!, justificativa: null,
+            : anterior.CriarCorrecao(doc.Conteudo!, doc.JustificativaCorrecao,
                 doc.CrmvSolicitanteCorrecao ?? doc.CrmvSignatario);
 
         await _animalRepo.AdicionarProntuarioAsync(registro);
@@ -537,6 +537,7 @@ public class DocumentoService : IDocumentoService
         VersaoOriginalId = d.VersaoOriginalId,
         DataCorrecao = d.DataCorrecao,
         CrmvSolicitanteCorrecao = d.CrmvSolicitanteCorrecao,
+        JustificativaCorrecao = d.JustificativaCorrecao,
         Conteudo = d.Conteudo,
         PdfMidiaId = d.PdfMidiaId,
         Subtipo = d.Subtipo,

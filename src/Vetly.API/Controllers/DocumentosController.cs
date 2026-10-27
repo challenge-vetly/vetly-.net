@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Vetly.API.Hateoas;
@@ -188,5 +189,6 @@ public sealed class CorrecaoDocumentoRequest
     public string NovosDados { get; set; } = string.Empty;
 
     /// <summary>Obrigatória para correções após 24 horas (RN-089).</summary>
+    [MaxLength(1000, ErrorMessage = "A justificativa deve ter no maximo 1000 caracteres.")]
     public string? Justificativa { get; set; }
 }

@@ -63,6 +63,10 @@ public class DocumentoConfiguration : IEntityTypeConfiguration<Documento>
             .HasColumnType("VARCHAR2(15)")
             .HasColumnName("CRMV_SOLICITANTE_CORRECAO");
 
+        builder.Property(d => d.JustificativaCorrecao)
+            .HasColumnType("VARCHAR2(1000)")
+            .HasColumnName("JUSTIFICATIVA_CORRECAO");
+
         // ── Conteúdo, assinatura e publicação (RN-083/087/090) ───────────────
 
         // CLOB: o conteúdo do documento não cabe em VARCHAR2(4000)

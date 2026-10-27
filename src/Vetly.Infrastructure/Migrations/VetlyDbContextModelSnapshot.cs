@@ -626,6 +626,11 @@ namespace Vetly.Infrastructure.Migrations
                         .HasColumnType("CHAR(36)")
                         .HasColumnName("INTERNACAO_ID");
 
+                    b.Property<string>("JustificativaCorrecao")
+                        .HasMaxLength(1000)
+                        .HasColumnType("VARCHAR2(1000)")
+                        .HasColumnName("JUSTIFICATIVA_CORRECAO");
+
                     b.Property<DateTime?>("LidoEm")
                         .HasColumnType("TIMESTAMP(7)")
                         .HasColumnName("LIDO_EM");
