@@ -1,4 +1,5 @@
 using Vetly.Application.DTOs.Comum;
+using Vetly.Application.DTOs.Pagamento;
 using Vetly.Domain.Entities;
 
 namespace Vetly.Application.Interfaces;
@@ -14,7 +15,18 @@ public interface IPagamentoRepository : IRepositoryBase<Pagamento>
     /// <paramref name="tutorId"/> restringe ao escopo do Responsável (RN-106);
     /// nulo devolve todos, e só o Admin chega assim.
     /// </summary>
-    Task<ResultadoPaginado<Pagamento>> ObterPaginadoAsync(Paginacao paginacao, Guid? tutorId = null);
+    /// <param name="paginacao">Página pedida.</param>
+    /// <param name="tutorId">Escopo do Responsável; nulo só para o Admin.</param>
+    /// <param name="filtro">Status, tipo e período. Nulo não filtra.</param>
+    /// <param name="ordenacao">
+    /// Critério já resolvido contra <see cref="CamposDeOrdenacao.Pagamentos"/>. Nulo
+    /// mantém o comportamento anterior: momento decrescente.
+    /// </param>
+    Task<ResultadoPaginado<Pagamento>> ObterPaginadoAsync(
+        Paginacao paginacao,
+        Guid? tutorId = null,
+        FiltroPagamentoDto? filtro = null,
+        CriterioDeOrdenacao? ordenacao = null);
 
     /// <summary>
     /// Busca pela referência do provedor. É por ela que o webhook encontra o pagamento.

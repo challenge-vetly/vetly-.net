@@ -6,14 +6,27 @@ namespace Vetly.Application.Interfaces;
 /// <summary>Contrato do serviço de pagamentos.</summary>
 public interface IPagamentoService
 {
-    /// <summary>Lista pagamentos paginados (§2.3).</summary>
-    Task<ResultadoPaginado<PagamentoDto>> ObterTodosAsync(Paginacao paginacao);
+    /// <summary>
+    /// Lista pagamentos paginados (§2.3), no escopo do token (RN-106), com filtros de
+    /// status, tipo e período e a ordenação da whitelist
+    /// <see cref="CamposDeOrdenacao.Pagamentos"/>.
+    /// </summary>
+    Task<ResultadoPaginado<PagamentoDto>> ObterTodosAsync(
+        Paginacao paginacao, FiltroPagamentoDto? filtro = null, Ordenacao? ordenacao = null);
     Task<PagamentoDto> ObterPorIdAsync(Guid id);
     /// <summary>
-    /// Cria a cobrança com o split já apurado. O pagamento fica pendente: quem
-    /// confirma é o webhook (RN-006, vetly-tech §7.5).
+    /// Cria a cobrança de uma consulta com o split já apurado. O pagamento fica
+    /// pendente: quem confirma é o webhook (RN-006, vetly-tech §7.5). É a entrada da
+    /// rota pública: exige consulta, e o preço sai do catálogo (RN-032).
     /// </summary>
     Task<CobrancaCriadaRespostaDto> CriarCobrancaAsync(CriarPagamentoDto dto);
+
+    /// <summary>
+    /// Cria a cobrança de uma internação — caução na abertura, saldo na alta — com o
+    /// valor que o serviço de internação apurou pelos procedimentos (RN-100/RN-101).
+    /// Não tem rota: por fora, o cliente escolheria o valor.
+    /// </summary>
+    Task<CobrancaCriadaRespostaDto> CriarCobrancaDeInternacaoAsync(CriarPagamentoDto dto);
 
     /// <summary>Status da cobrança e da consulta, para o polling do app (RN-006).</summary>
     Task<StatusDaCobrancaDto> ObterStatusAsync(Guid pagamentoId);

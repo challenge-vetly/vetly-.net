@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Vetly.API.Filters;
+using Vetly.API.Hateoas;
 using Vetly.Application.DTOs.Cancelamento;
 using Vetly.Application.DTOs.Captura;
 using Vetly.Application.DTOs.Redistribuicao;
@@ -25,19 +26,22 @@ public class ConsultasController : ControllerBase
     private readonly IRascunhoService _rascunhos;
     private readonly IProntuarioService _prontuarios;
     private readonly IRedistribuicaoService _redistribuicao;
+    private readonly RespostaHateoas _hateoas;
 
     public ConsultasController(
         IConsultaService service,
         ICapturaService captura,
         IRascunhoService rascunhos,
         IProntuarioService prontuarios,
-        IRedistribuicaoService redistribuicao)
+        IRedistribuicaoService redistribuicao,
+        RespostaHateoas hateoas)
     {
         _service = service;
         _captura = captura;
         _rascunhos = rascunhos;
         _prontuarios = prontuarios;
         _redistribuicao = redistribuicao;
+        _hateoas = hateoas;
     }
 
     /// <summary>
@@ -45,13 +49,23 @@ public class ConsultasController : ControllerBase
     /// A resposta e o envelope { itens, total, pagina, tamanho }; sem paginacao
     /// informada valem pagina 1 e 20 itens, com teto de 100 por pagina.
     /// </summary>
+    /// <remarks>
+    /// Filtros: <c>status</c>, periodo (<c>dataInicio</c>/<c>dataFim</c>) e
+    /// <c>animalId</c>. Ordenacao: <c>ordenarPor=dataHora|status</c> e
+    /// <c>direcao=asc|desc</c>; padrao <c>dataHora desc</c>, e campo desconhecido cai no
+    /// padrao. Com <c>Accept: application/hal+json</c> ou <c>?hateoas=true</c>, cada
+    /// consulta vem com os links das acoes possiveis e a pagina com a navegacao.
+    /// </remarks>
     [HttpGet]
     [ProducesResponseType(typeof(ResultadoPaginado<ConsultaDto>), StatusCodes.Status200OK)]
+    [RespostaHal(typeof(RecursoPaginado<ConsultaDto>))]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> ObterTodas(
         [FromQuery] FiltroConsultaDto filtro,
-        [FromQuery] Paginacao paginacao) =>
-        Ok(await _service.ObterTodosAsync(filtro, paginacao));
+        [FromQuery] Paginacao paginacao,
+        [FromQuery] Ordenacao ordenacao) =>
+        _hateoas.Ok(await _service.ObterTodosAsync(filtro, paginacao, ordenacao));
 
     /// <summary>
     /// Trava o horario por 10 minutos e cria a consulta em EmCheckout (RN-003/RN-035).
@@ -79,11 +93,19 @@ public class ConsultasController : ControllerBase
     }
 
     /// <summary>Retorna uma consulta pelo ID.</summary>
+    /// <remarks>
+    /// Com HATEOAS, os links dependem do estado e do perfil: <c>Confirmada</c> oferece
+    /// cancelar, simular-cancelamento e remarcar; <c>Realizada</c>, documentos e — so
+    /// para o Responsavel — avaliar; <c>Cancelada</c>, nenhuma acao.
+    /// </remarks>
     [HttpGet("{id:guid}")]
     [ProducesResponseType(typeof(ConsultaDto), StatusCodes.Status200OK)]
+    [RespostaHal(typeof(Recurso<ConsultaDto>))]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> ObterPorId(Guid id) =>
-        Ok(await _service.ObterPorIdAsync(id));
+        _hateoas.Ok(await _service.ObterPorIdAsync(id));
 
     /// <summary>Retorna todas as consultas de um veterinario, opcionalmente filtradas por data.</summary>
     [HttpGet("veterinario/{veterinarioId:guid}")]

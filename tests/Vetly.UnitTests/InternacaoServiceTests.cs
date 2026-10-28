@@ -184,7 +184,7 @@ public class InternacaoServiceTests
         _repoMock.Setup(r => r.ObterAtivaDoAnimalAsync(animal.Id)).ReturnsAsync((Internacao?)null);
         _repoMock.Setup(r => r.AdicionarAsync(It.IsAny<Internacao>())).Returns(Task.CompletedTask);
         _repoMock.Setup(r => r.SalvarAsync()).ReturnsAsync(1);
-        _pagamentosMock.Setup(p => p.CriarCobrancaAsync(It.IsAny<CriarPagamentoDto>()))
+        _pagamentosMock.Setup(p => p.CriarCobrancaDeInternacaoAsync(It.IsAny<CriarPagamentoDto>()))
             .ReturnsAsync(new CobrancaCriadaRespostaDto { Id = Guid.NewGuid(), StatusPagamento = StatusPagamento.Pendente });
 
         var resultado = await CriarServico().AbrirAsync(new CriarInternacaoDto
@@ -199,7 +199,7 @@ public class InternacaoServiceTests
 
         // Registrar a caucao so na entidade deixaria dinheiro fora do consolidado
         // financeiro: ela passa pelo mesmo adaptador das consultas (RN-101)
-        _pagamentosMock.Verify(p => p.CriarCobrancaAsync(It.Is<CriarPagamentoDto>(
+        _pagamentosMock.Verify(p => p.CriarCobrancaDeInternacaoAsync(It.Is<CriarPagamentoDto>(
             d => d.TutorId == tutorId && d.Valor == 400m && d.InternacaoId != null)), Times.Once);
     }
 
@@ -221,7 +221,7 @@ public class InternacaoServiceTests
         });
 
         // Cobranca de zero reais so poluiria o extrato do Responsavel
-        _pagamentosMock.Verify(p => p.CriarCobrancaAsync(It.IsAny<CriarPagamentoDto>()), Times.Never);
+        _pagamentosMock.Verify(p => p.CriarCobrancaDeInternacaoAsync(It.IsAny<CriarPagamentoDto>()), Times.Never);
     }
 
     [Fact]
@@ -238,7 +238,7 @@ public class InternacaoServiceTests
         _repoMock.Setup(r => r.Atualizar(It.IsAny<Internacao>()));
         _repoMock.Setup(r => r.SalvarAsync()).ReturnsAsync(1);
         _animalRepoMock.Setup(r => r.ObterPorIdAsync(animal.Id)).ReturnsAsync(animal);
-        _pagamentosMock.Setup(p => p.CriarCobrancaAsync(It.IsAny<CriarPagamentoDto>()))
+        _pagamentosMock.Setup(p => p.CriarCobrancaDeInternacaoAsync(It.IsAny<CriarPagamentoDto>()))
             .ReturnsAsync(new CobrancaCriadaRespostaDto { Id = cobrancaId, StatusPagamento = StatusPagamento.Pendente });
 
         var resultado = await CriarServico().DarAltaAsync(internacao.Id);
@@ -246,7 +246,7 @@ public class InternacaoServiceTests
         // RN-101/RN-102: o saldo apurado alem da caucao vira cobranca propria
         Assert.Equal(200m, resultado.SaldoRestante);
         Assert.Equal(cobrancaId, resultado.PagamentoDoSaldoId);
-        _pagamentosMock.Verify(p => p.CriarCobrancaAsync(It.Is<CriarPagamentoDto>(
+        _pagamentosMock.Verify(p => p.CriarCobrancaDeInternacaoAsync(It.Is<CriarPagamentoDto>(
             d => d.TutorId == tutorId && d.Valor == 200m && d.InternacaoId == internacao.Id)), Times.Once);
     }
 
@@ -267,7 +267,7 @@ public class InternacaoServiceTests
         // Devolucao nao se cobra: fica registrada para o acerto (RN-102)
         Assert.Equal(-200m, resultado.SaldoRestante);
         Assert.Null(resultado.PagamentoDoSaldoId);
-        _pagamentosMock.Verify(p => p.CriarCobrancaAsync(It.IsAny<CriarPagamentoDto>()), Times.Never);
+        _pagamentosMock.Verify(p => p.CriarCobrancaDeInternacaoAsync(It.IsAny<CriarPagamentoDto>()), Times.Never);
     }
 
     // ── RN-100: o Responsavel acompanha o dia do animal ─────────────────────
@@ -306,7 +306,7 @@ public class InternacaoServiceTests
         _repoMock.Setup(r => r.Atualizar(It.IsAny<Internacao>()));
         _repoMock.Setup(r => r.SalvarAsync()).ReturnsAsync(1);
         _animalRepoMock.Setup(r => r.ObterPorIdAsync(animal.Id)).ReturnsAsync(animal);
-        _pagamentosMock.Setup(p => p.CriarCobrancaAsync(It.IsAny<CriarPagamentoDto>()))
+        _pagamentosMock.Setup(p => p.CriarCobrancaDeInternacaoAsync(It.IsAny<CriarPagamentoDto>()))
             .ReturnsAsync(new CobrancaCriadaRespostaDto { Id = Guid.NewGuid() });
 
         await CriarServico().DarAltaAsync(internacao.Id);

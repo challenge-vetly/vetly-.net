@@ -15,11 +15,12 @@ namespace Vetly.Application.Services;
 public class AnimalService : IAnimalService
 {
     private readonly IAnimalRepository _repo;
-    private readonly IColmeiaService _colmeia;
     private readonly IObrigacaoService _obrigacoes;
     private readonly IDocumentoRepository _documentos;
     private readonly IVeterinarioRepository _vetRepo;
     private readonly IUsuarioAtual _usuario;
+    private readonly CalculadoraDoAvatar _avatar;
+    private readonly GuardaDeLeituraDoAnimal _guarda;
 
     public AnimalService(
         IAnimalRepository repo,
@@ -27,14 +28,16 @@ public class AnimalService : IAnimalService
         IObrigacaoService obrigacoes,
         IDocumentoRepository documentos,
         IVeterinarioRepository vetRepo,
-        IUsuarioAtual usuario)
+        IUsuarioAtual usuario,
+        CalculadoraDoAvatar avatar)
     {
         _repo = repo;
-        _colmeia = colmeia;
         _obrigacoes = obrigacoes;
         _documentos = documentos;
         _vetRepo = vetRepo;
         _usuario = usuario;
+        _avatar = avatar;
+        _guarda = new GuardaDeLeituraDoAnimal(repo, colmeia, usuario, nameof(AnimalService));
     }
 
     /// <summary>
@@ -78,33 +81,7 @@ public class AnimalService : IAnimalService
     /// Recusa o acesso a animal fora do escopo (RN-105). O Responsável só alcança os
     /// seus; o veterinário, os que atendeu ou tem agendados.
     /// </summary>
-    private async Task GarantirAcessoAoAnimalAsync(Animal animal)
-    {
-        if (_usuario.EhAdmin)
-            return;
-
-        if (_usuario.EhTutor && _usuario.TutorId == animal.TutorId)
-            return;
-
-        if (_usuario.EhVeterinario && _usuario.VeterinarioId is { } vetId)
-        {
-            if (await _repo.VeterinarioAtendeAnimalAsync(vetId, animal.Id))
-                return;
-
-            // Colmeia: o veterinario de fora alcanca o historico se o Responsavel
-            // autorizou, e o acesso — permitido ou negado — fica registrado (RN-090).
-            var autorizado = await _colmeia.PodeAcessarAsync(
-                vetId, animal.Id, EscopoAcessoColmeia.HistoricoCompleto);
-
-            await _colmeia.RegistrarAcessoAsync(
-                animal.Id, EscopoAcessoColmeia.HistoricoCompleto, autorizado, "AnimalService");
-
-            if (autorizado)
-                return;
-        }
-
-        throw new AcessoNegadoException("RN-105", "Este animal nao pertence ao seu escopo de acesso.");
-    }
+    private Task GarantirAcessoAoAnimalAsync(Animal animal) => _guarda.GarantirAsync(animal);
 
     /// <inheritdoc/>
     public async Task<BoardDoPetDto> ObterBoardAsync(Guid animalId)
@@ -117,6 +94,7 @@ public class AnimalService : IAnimalService
         var agora = DateTime.UtcNow;
 
         var board = await _obrigacoes.ObterBoardAsync(animalId);
+        var avatar = await _avatar.CalcularAsync(animal, agora);
         var consultas = await _repo.ObterConsultasFuturasAsync(animalId, agora);
         var documentos = await _documentos.ObterPublicadosPorAnimalAsync(animalId);
 
@@ -146,7 +124,8 @@ public class AnimalService : IAnimalService
             IdadeAnos = Math.Max(0, (int)((agora - animal.DataNascimento).TotalDays / 365.25)),
             PesoKg = animal.PesoKg,
             FotoMidiaId = animal.FotoMidiaId,
-            AvatarEstado = DeduzirAvatar(board),
+            Avatar = avatar,
+            AvatarEstado = EstadoLegado(avatar.Estado),
             Obrigacoes = board.Obrigacoes,
             TemPendencia = board.TemPendencia,
             ProximosAgendamentos = proximos,
@@ -173,29 +152,23 @@ public class AnimalService : IAnimalService
     }
 
     /// <summary>
-    /// Deriva o estado do avatar das obrigacoes vencidas (RN-020/RN-096/RN-097).
+    /// Projeta o estado do avatar nos tres valores que o <c>avatarEstado</c> sempre
+    /// teve (RN-113).
     ///
-    /// Vacina tem precedencia sobre higiene: antirrabica atrasada e questao sanitaria,
-    /// banho atrasado e desconforto. Quando as duas estao vencidas, o avatar mostra a
-    /// que importa mais.
+    /// <c>Abatido</c> e <c>Feliz</c> nasceram na Sprint 4. Mandar esses textos no campo
+    /// antigo faria o app publicado receber um valor que ele nao conhece; o estado
+    /// completo vai em <c>avatar.estado</c>.
     ///
-    /// E o unico dado do avatar que a API produz — o sprite e a animacao sao assets do
-    /// app (C3).
+    /// Isto tambem desfaz o atalho anterior, em que qualquer obrigacao vencida que nao
+    /// fosse vacina virava <c>HigieneAtrasada</c>: antipulgas atrasado deixava o pet
+    /// "de pelo longo". Agora so a higienizacao produz esse estado.
     /// </summary>
-    private static EstadoDoAvatar DeduzirAvatar(BoardDeObrigacoesDto board)
+    private static EstadoDoAvatar EstadoLegado(EstadoDoAvatar estado) => estado switch
     {
-        var vencidas = board.Obrigacoes
-            .Where(o => o.Situacao == SituacaoObrigacao.Vencida)
-            .ToList();
-
-        if (vencidas.Any(o => o.Tipo == TipoObrigacaoPet.Vacina))
-            return EstadoDoAvatar.VacinaAtrasada;
-
-        if (vencidas.Count > 0)
-            return EstadoDoAvatar.HigieneAtrasada;
-
-        return EstadoDoAvatar.Saudavel;
-    }
+        EstadoDoAvatar.VacinaAtrasada => EstadoDoAvatar.VacinaAtrasada,
+        EstadoDoAvatar.HigieneAtrasada => EstadoDoAvatar.HigieneAtrasada,
+        _ => EstadoDoAvatar.Saudavel
+    };
 
     /// <summary>
     /// Quem <b>altera</b> o cadastro de um animal e o dono, ou o Admin (RN-105).

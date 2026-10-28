@@ -18,6 +18,7 @@ public class PagamentoService : IPagamentoService
     private readonly IPagamentoRepository _repo;
     private readonly IVeterinarioRepository _vetRepo;
     private readonly IConsultaRepository _consultaRepo;
+    private readonly IInternacaoRepository _internacaoRepo;
     private readonly IEmpresaRepository _empresaRepo;
     private readonly IPagamentoAdapter _adaptador;
     private readonly IAgendaRepository _agendaRepo;
@@ -33,6 +34,7 @@ public class PagamentoService : IPagamentoService
         IPagamentoRepository repo,
         IVeterinarioRepository vetRepo,
         IConsultaRepository consultaRepo,
+        IInternacaoRepository internacaoRepo,
         IEmpresaRepository empresaRepo,
         IPagamentoAdapter adaptador,
         IAgendaRepository agendaRepo,
@@ -47,6 +49,7 @@ public class PagamentoService : IPagamentoService
         _repo = repo;
         _vetRepo = vetRepo;
         _consultaRepo = consultaRepo;
+        _internacaoRepo = internacaoRepo;
         _empresaRepo = empresaRepo;
         _adaptador = adaptador;
         _agendaRepo = agendaRepo;
@@ -63,12 +66,17 @@ public class PagamentoService : IPagamentoService
     /// Lista pagamentos no escopo de quem chama: o Responsável vê a própria carteira,
     /// o Admin vê o consolidado (RN-106).
     /// </summary>
-    public async Task<ResultadoPaginado<PagamentoDto>> ObterTodosAsync(Paginacao paginacao)
+    public async Task<ResultadoPaginado<PagamentoDto>> ObterTodosAsync(
+        Paginacao paginacao, FiltroPagamentoDto? filtro = null, Ordenacao? ordenacao = null)
     {
         // Escopo do token, nunca parametro do cliente. Sem escopo reconhecido, nada.
         Guid? tutorId = _usuario.EhAdmin ? null : (_usuario.TutorId ?? Guid.Empty);
 
-        var pagina = await _repo.ObterPaginadoAsync(paginacao, tutorId);
+        // Campo fora da whitelist cai no padrao: momento decrescente
+        var criterio = (ordenacao ?? new Ordenacao()).Resolver(
+            CamposDeOrdenacao.Pagamentos.Todos, CamposDeOrdenacao.Pagamentos.Momento, descendentePadrao: true);
+
+        var pagina = await _repo.ObterPaginadoAsync(paginacao, tutorId, filtro, criterio);
         return pagina.Mapear(MapearParaDto);
     }
 
@@ -83,6 +91,27 @@ public class PagamentoService : IPagamentoService
         return MapearParaDto(pagamento);
     }
 
+    /// <inheritdoc/>
+    public async Task<CobrancaCriadaRespostaDto> CriarCobrancaAsync(CriarPagamentoDto dto)
+    {
+        // A cobranca de internacao nasce da propria internacao, com o valor apurado
+        // pelos procedimentos. Aceita-la por aqui deixaria o cliente escolher o valor.
+        if (dto.InternacaoId is not null)
+            throw new BusinessRuleException("RN-006",
+                "A cobranca de internacao e gerada pela propria internacao, na abertura e na alta.");
+
+        return await CriarAsync(dto);
+    }
+
+    /// <inheritdoc/>
+    public async Task<CobrancaCriadaRespostaDto> CriarCobrancaDeInternacaoAsync(CriarPagamentoDto dto)
+    {
+        if (dto.InternacaoId is null)
+            throw new ArgumentException("A cobranca de internacao precisa da internacao.", nameof(dto));
+
+        return await CriarAsync(dto);
+    }
+
     /// <summary>
     /// Cria a cobranca: apura o split na Vetly (RN-070), registra a cobranca no
     /// adaptador e devolve as instrucoes de pagamento.
@@ -90,7 +119,7 @@ public class PagamentoService : IPagamentoService
     /// O pagamento NAO nasce confirmado. Quem confirma e o webhook, nunca a resposta
     /// sincrona — e o que mantem o fluxo pronto para um gateway real (vetly-tech §7.5).
     /// </summary>
-    public async Task<CobrancaCriadaRespostaDto> CriarCobrancaAsync(CriarPagamentoDto dto)
+    private async Task<CobrancaCriadaRespostaDto> CriarAsync(CriarPagamentoDto dto)
     {
         var (tutorId, valor) = await ValidarPedidoDeCobrancaAsync(dto);
 
@@ -106,8 +135,7 @@ public class PagamentoService : IPagamentoService
         if (dto.CupomId is { } cupomId)
         {
             // RN-051: a fidelidade e da consulta. Internacao tem caucao e saldo
-            // apurados por procedimento, e nao passa pelo split que financia o
-            // desconto — aplicar cupom ali abateria de uma comissao que nao existe.
+            // apurados por procedimento, e o programa de pontos nao os financia.
             if (dto.InternacaoId is not null)
                 throw new BusinessRuleException("RN-051",
                     "Cupom de fidelidade nao se aplica a internacao.");
@@ -188,8 +216,10 @@ public class PagamentoService : IPagamentoService
         if (dto.InternacaoId is not null)
             return (tutorId, dto.Valor);
 
+        // Sem consulta, o valor seria o do corpo e o dinheiro nao teria destino: nem
+        // comissao nem repasse, e o consolidado deixava de fechar (RN-032/RN-070).
         if (dto.ConsultaId is not { } consultaId)
-            return (tutorId, dto.Valor);
+            throw new BusinessRuleException("RN-006", "A cobranca precisa de uma consulta.");
 
         var consulta = await _consultaRepo.ObterPorIdAsync(consultaId)
             ?? throw new NotFoundException("Consulta", consultaId);
@@ -601,16 +631,13 @@ public class PagamentoService : IPagamentoService
         return split with { Comissao = comissao, Repasse = repasse };
     }
 
-    /// <summary>Apura e grava o split do pagamento, quando ele tem consulta vinculada.</summary>
+    /// <summary>Apura e grava o split do pagamento de consulta ou de internacao.</summary>
     private async Task<ResultadoDoSplit> ApurarSplitAsync(Pagamento pagamento)
     {
-        if (pagamento.ConsultaId is not { } consultaId)
+        if (await ObterPrestadorAsync(pagamento) is not { } veterinarioId)
             return default;
 
-        var consulta = await _consultaRepo.ObterPorIdAsync(consultaId);
-        if (consulta is null) return default;
-
-        var vet = await _vetRepo.ObterPorIdAsync(consulta.VeterinarioId);
+        var vet = await _vetRepo.ObterPorIdAsync(veterinarioId);
         if (vet is null) return default;
 
         var (plano, destinatarioId) = await ResolverPlanoEDestinatarioAsync(vet);
@@ -636,15 +663,12 @@ public class PagamentoService : IPagamentoService
         var pagamento = await _repo.ObterPorIdAsync(id)
             ?? throw new NotFoundException("Pagamento", id);
 
-        // Recupera o veterinario via consulta vinculada
-        if (pagamento.ConsultaId is null)
-            throw new BusinessRuleException("PAGAMENTO-001", "Split so pode ser processado para pagamentos vinculados a consultas.");
+        var veterinarioId = await ObterPrestadorAsync(pagamento)
+            ?? throw new BusinessRuleException("PAGAMENTO-001",
+                "Split so pode ser processado para pagamentos vinculados a consulta ou internacao.");
 
-        var consulta = await _consultaRepo.ObterPorIdAsync(pagamento.ConsultaId.Value)
-            ?? throw new NotFoundException("Consulta", pagamento.ConsultaId.Value);
-
-        var vet = await _vetRepo.ObterPorIdAsync(consulta.VeterinarioId)
-            ?? throw new NotFoundException("Veterinario", consulta.VeterinarioId);
+        var vet = await _vetRepo.ObterPorIdAsync(veterinarioId)
+            ?? throw new NotFoundException("Veterinario", veterinarioId);
 
         var (plano, destinatarioId) = await ResolverPlanoEDestinatarioAsync(vet);
 
@@ -665,6 +689,24 @@ public class PagamentoService : IPagamentoService
         _repo.Atualizar(pagamento);
         await _repo.SalvarAsync();
         return MapearParaDto(pagamento);
+    }
+
+    /// <summary>
+    /// Quem prestou o servico cobrado: o veterinario da consulta ou o da internacao.
+    ///
+    /// A internacao tambem passa pelo split (§5.4/§9). Sem isso a caucao e o saldo da
+    /// alta entravam no bruto sem comissao nem repasse: o consolidado deixava de fechar
+    /// e o profissional nunca recebia pela internacao.
+    /// </summary>
+    private async Task<Guid?> ObterPrestadorAsync(Pagamento pagamento)
+    {
+        if (pagamento.ConsultaId is { } consultaId)
+            return (await _consultaRepo.ObterPorIdAsync(consultaId))?.VeterinarioId;
+
+        if (pagamento.InternacaoId is { } internacaoId)
+            return (await _internacaoRepo.ObterPorIdAsync(internacaoId))?.VeterinarioId;
+
+        return null;
     }
 
     /// <summary>
@@ -692,7 +734,7 @@ public class PagamentoService : IPagamentoService
         Id = p.Id, TutorId = p.TutorId, ConsultaId = p.ConsultaId, InternacaoId = p.InternacaoId,
         Valor = p.Valor, MeioPagamento = p.MeioPagamento, Momento = p.Momento,
         StatusPagamento = p.StatusPagamento, PercentualSplit = p.PercentualSplit,
-        ValorEstornado = p.ValorEstornado,
+        ValorEstornado = p.ValorEstornado, Tipo = p.Tipo,
         PlanoAplicado = p.PlanoAplicado, TakeRate = p.TakeRate,
         Comissao = p.Comissao, Repasse = p.Repasse,
         DestinatarioRepasseId = p.DestinatarioRepasseId

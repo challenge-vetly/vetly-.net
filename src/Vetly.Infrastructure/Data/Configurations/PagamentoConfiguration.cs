@@ -61,6 +61,10 @@ public class PagamentoConfiguration : IEntityTypeConfiguration<Pagamento>
             .HasColumnType("NUMBER(18,2)")
             .HasColumnName("VALOR_ESTORNADO");
 
+        // Data propria do reembolso no historico da carteira (RN-115)
+        builder.Property(p => p.EstornadoEm)
+            .HasColumnName("ESTORNADO_EM");
+
         builder.HasIndex(p => p.TutorId).HasDatabaseName("IX_PAGAMENTO_TUTOR");
         // ── Cobranca (RN-006/RN-071, §5.1) ───────────────────────────────────
         builder.Property(p => p.Tipo)

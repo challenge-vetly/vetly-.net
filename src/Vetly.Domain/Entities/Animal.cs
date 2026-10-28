@@ -42,6 +42,13 @@ public class Animal
     /// </summary>
     public decimal? PesoKg { get; private set; }
 
+    /// <summary>
+    /// Quando o peso foi registrado pela última vez (UTC). Peso de seis meses atrás
+    /// não serve para dose (RN-081) e pesa no avatar (RN-112). Nulo em animais
+    /// cadastrados antes da Sprint 4, que passam a contar como peso desatualizado.
+    /// </summary>
+    public DateTime? PesoRegistradoEm { get; private set; }
+
     /// <summary>Sexo do animal. Nulo em cadastros anteriores à migration.</summary>
     public SexoAnimal? Sexo { get; private set; }
 
@@ -126,6 +133,7 @@ public class Animal
             throw new ArgumentOutOfRangeException(nameof(pesoKg), "O peso deve ser maior que zero.");
 
         PesoKg = pesoKg;
+        PesoRegistradoEm = DateTime.UtcNow;
     }
 
     /// <summary>

@@ -80,6 +80,10 @@ public class FidelidadeRepository : IFidelidadeRepository
         await _context.CuponsDeResgate.FirstOrDefaultAsync(c => c.Id == cupomId);
 
     /// <inheritdoc/>
+    public async Task<CupomResgate?> ObterCupomPorCodigoAsync(string codigoQr) =>
+        await _context.CuponsDeResgate.FirstOrDefaultAsync(c => c.CodigoQr == codigoQr);
+
+    /// <inheritdoc/>
     public async Task<IEnumerable<CupomResgate>> ObterCuponsDoTutorAsync(Guid tutorId) =>
         await _context.CuponsDeResgate
             .AsNoTracking()

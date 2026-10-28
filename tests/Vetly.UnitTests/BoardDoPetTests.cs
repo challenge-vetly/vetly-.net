@@ -22,6 +22,9 @@ public class BoardDoPetTests
     private readonly Mock<IDocumentoRepository> _documentos = new();
     private readonly Mock<IVeterinarioRepository> _vetRepo = new();
     private readonly Mock<IUsuarioAtual> _usuario = new();
+    private readonly Mock<IObrigacaoRepository> _obrigacaoRepo = new();
+    private readonly Mock<IConsultaRepository> _consultaRepo = new();
+    private readonly List<ObrigacaoPet> _obrigacoesDoAnimal = [];
 
     private readonly Guid _tutorId = Guid.NewGuid();
     private readonly Animal _animal;
@@ -43,12 +46,22 @@ public class BoardDoPetTests
         _documentos.Setup(r => r.ObterPublicadosPorAnimalAsync(_animal.Id)).ReturnsAsync([]);
         _vetRepo.Setup(r => r.ObterPorIdAsync(_vet.Id)).ReturnsAsync(_vet);
 
+        // O avatar le as obrigacoes como entidades e a ultima consulta realizada
+        _obrigacaoRepo.Setup(r => r.ObterDoAnimalAsync(_animal.Id, true)).ReturnsAsync(() => _obrigacoesDoAnimal);
+        _consultaRepo.Setup(r => r.ObterDataDaUltimaRealizadaAsync(_animal.Id))
+            .ReturnsAsync(DateTime.UtcNow.AddMonths(-2));
+
         SemObrigacoes();
     }
 
     private AnimalService CriarServico() =>
         new(_animalRepo.Object, _colmeia.Object, _obrigacoes.Object,
-            _documentos.Object, _vetRepo.Object, _usuario.Object);
+            _documentos.Object, _vetRepo.Object, _usuario.Object,
+            new CalculadoraDoAvatar(_obrigacaoRepo.Object, _consultaRepo.Object));
+
+    private void ObrigacaoVencida(TipoObrigacaoPet tipo, int diasDeAtraso = 5) =>
+        _obrigacoesDoAnimal.Add(new ObrigacaoPet(
+            _animal.Id, _tutorId, tipo, tipo.ToString(), DateTime.UtcNow.AddDays(-diasDeAtraso), 30));
 
     private void SemObrigacoes() =>
         _obrigacoes.Setup(o => o.ObterBoardAsync(_animal.Id, It.IsAny<bool>()))
@@ -72,48 +85,77 @@ public class BoardDoPetTests
         ProximoVencimento = DateTime.UtcNow.AddDays(-5)
     };
 
-    // ── Avatar (RN-020/RN-096/RN-097) ────────────────────────────────────────
+    // ── Avatar (RN-020/RN-096/RN-097, RN-112/RN-113) ─────────────────────────
 
     [Fact]
-    public async Task Avatar_SemObrigacaoVencida_EstaSaudavel()
+    public async Task Avatar_TudoEmDia_FicaFelizMasOCampoLegadoDizSaudavel()
     {
+        // Arrange — peso recente (construtor), consulta ha 2 meses, nada vencido
+
+        // Act
         var board = await CriarServico().ObterBoardAsync(_animal.Id);
 
+        // Assert — "Feliz" nasceu na Sprint 4; o app antigo so conhece os tres originais
+        Assert.Equal(EstadoDoAvatar.Feliz, board.Avatar.Estado);
         Assert.Equal(EstadoDoAvatar.Saudavel, board.AvatarEstado);
+        Assert.Equal(100, board.Avatar.Saude);
     }
 
     [Fact]
-    public async Task Avatar_ComVacinaVencida_FicaAdoentado()
+    public async Task Avatar_ComVacinaVencida_FicaAdoentadoNosDoisCampos()
     {
-        ComObrigacoes(true, Vencida(TipoObrigacaoPet.Vacina, "Antirrabica"));
+        // Arrange
+        ObrigacaoVencida(TipoObrigacaoPet.Vacina);
 
+        // Act
         var board = await CriarServico().ObterBoardAsync(_animal.Id);
 
+        // Assert
+        Assert.Equal(EstadoDoAvatar.VacinaAtrasada, board.Avatar.Estado);
         Assert.Equal(EstadoDoAvatar.VacinaAtrasada, board.AvatarEstado);
     }
 
     [Fact]
     public async Task Avatar_VacinaTemPrecedenciaSobreHigiene()
     {
-        ComObrigacoes(true,
-            Vencida(TipoObrigacaoPet.Antiparasitario, "Antipulgas"),
-            Vencida(TipoObrigacaoPet.Vacina, "V10"));
+        // Arrange
+        ObrigacaoVencida(TipoObrigacaoPet.Higienizacao);
+        ObrigacaoVencida(TipoObrigacaoPet.Vacina);
 
+        // Act
         var board = await CriarServico().ObterBoardAsync(_animal.Id);
 
-        // Antirrabica atrasada e questao sanitaria; banho atrasado e desconforto.
-        // Com as duas vencidas, o avatar mostra a que importa mais.
+        // Assert — antirrabica atrasada e questao sanitaria; banho atrasado e desconforto
         Assert.Equal(EstadoDoAvatar.VacinaAtrasada, board.AvatarEstado);
     }
 
     [Fact]
-    public async Task Avatar_ComOutraObrigacaoVencida_FicaComHigieneAtrasada()
+    public async Task Avatar_AntiparasitarioVencido_NaoViraMaisHigieneAtrasada()
     {
-        ComObrigacoes(true, Vencida(TipoObrigacaoPet.Antiparasitario, "Antipulgas"));
+        // Arrange — o atalho antigo transformava qualquer vencida em "pelo longo"
+        ObrigacaoVencida(TipoObrigacaoPet.Antiparasitario);
 
+        // Act
         var board = await CriarServico().ObterBoardAsync(_animal.Id);
 
+        // Assert — saude 80, humor 90: nem abatido, nem feliz
+        Assert.Equal(EstadoDoAvatar.Saudavel, board.Avatar.Estado);
+        Assert.Equal(EstadoDoAvatar.Saudavel, board.AvatarEstado);
+        Assert.Contains(MotivoDoAvatar.VermifugoVencido, board.Avatar.Motivos);
+    }
+
+    [Fact]
+    public async Task Avatar_HigienizacaoVencida_FicaComHigieneAtrasada()
+    {
+        // Arrange
+        ObrigacaoVencida(TipoObrigacaoPet.Higienizacao, diasDeAtraso: 20);
+
+        // Act
+        var board = await CriarServico().ObterBoardAsync(_animal.Id);
+
+        // Assert
         Assert.Equal(EstadoDoAvatar.HigieneAtrasada, board.AvatarEstado);
+        Assert.Equal(2, board.Avatar.NivelDoPelo);
     }
 
     // ── Conteúdo do board (RN-011/RN-068/RN-090) ─────────────────────────────
@@ -202,7 +244,7 @@ public class CarteiraTests
     }
 
     private PagamentoService CriarServico() =>
-        new(_repo.Object, Mock.Of<IVeterinarioRepository>(), Mock.Of<IConsultaRepository>(),
+        new(_repo.Object, Mock.Of<IVeterinarioRepository>(), Mock.Of<IConsultaRepository>(), Mock.Of<IInternacaoRepository>(),
             Mock.Of<IEmpresaRepository>(), Mock.Of<IPagamentoAdapter>(), Mock.Of<IAgendaRepository>(),
             Mock.Of<IFilaDeJobs>(), [], Mock.Of<IFidelidadeService>(), _usuario.Object,
             Mock.Of<IColmeiaService>(), Mock.Of<INotificacaoService>(),

@@ -27,7 +27,14 @@ public enum TipoObrigacaoPet
     MedicacaoContinua = 6,
 
     /// <summary>Exame de acompanhamento com repetição prevista.</summary>
-    Exame = 7
+    Exame = 7,
+
+    /// <summary>
+    /// Banho e tosa (Sprint 4). Recorrente de 30 dias quando a periodicidade não é
+    /// informada, e cumprida pelo próprio Responsável — não exige consulta. É o que
+    /// alimenta o pelo do avatar (RN-097/RN-113).
+    /// </summary>
+    Higienizacao = 8
 }
 
 /// <summary>

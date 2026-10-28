@@ -7,8 +7,12 @@ namespace Vetly.Application.Interfaces;
 /// <summary>Contrato do serviço de consultas.</summary>
 public interface IConsultaService
 {
-    /// <summary>Lista consultas paginadas, aplicando os filtros informados (§2.3, §3.5).</summary>
-    Task<ResultadoPaginado<ConsultaDto>> ObterTodosAsync(FiltroConsultaDto filtro, Paginacao paginacao);
+    /// <summary>
+    /// Lista consultas paginadas, aplicando os filtros informados (§2.3, §3.5) e a
+    /// ordenação pedida, dentro da whitelist <see cref="CamposDeOrdenacao.Consultas"/>.
+    /// </summary>
+    Task<ResultadoPaginado<ConsultaDto>> ObterTodosAsync(
+        FiltroConsultaDto filtro, Paginacao paginacao, Ordenacao? ordenacao = null);
     Task<ConsultaDto> ObterPorIdAsync(Guid id);
     Task<IEnumerable<ConsultaDto>> ObterPorVeterinarioAsync(Guid veterinarioId);
     Task<IEnumerable<ConsultaDto>> ObterPorAnimalAsync(Guid animalId);

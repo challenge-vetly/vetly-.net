@@ -51,7 +51,8 @@ public class ColmeiaAcessoTests
 
         return (new AnimalService(
             animalRepo.Object, colmeia, Mock.Of<IObrigacaoService>(),
-            Mock.Of<IDocumentoRepository>(), Mock.Of<IVeterinarioRepository>(), usuario.Object),
+            Mock.Of<IDocumentoRepository>(), Mock.Of<IVeterinarioRepository>(), usuario.Object,
+            new CalculadoraDoAvatar(Mock.Of<IObrigacaoRepository>(), Mock.Of<IConsultaRepository>())),
             contexto, colmeiaRepo);
     }
 

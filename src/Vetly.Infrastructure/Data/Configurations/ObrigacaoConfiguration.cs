@@ -44,6 +44,12 @@ public class ObrigacaoPetConfiguration : IEntityTypeConfiguration<ObrigacaoPet>
         builder.Property(o => o.Arquivada)
             .HasColumnType("NUMBER(1)").HasColumnName("ARQUIVADA").IsRequired();
 
+        // Linhas anteriores a coluna entram como 0: sem o prazo original guardado, nao
+        // ha como afirmar que foram no prazo, e o bonus de humor so vale dali em diante
+        builder.Property(o => o.UltimoCumprimentoNoPrazo)
+            .HasColumnType("NUMBER(1)").HasColumnName("ULTIMO_CUMPRIMENTO_NO_PRAZO")
+            .IsRequired();
+
         builder.Property(o => o.CriadaEm).HasColumnName("CRIADA_EM").IsRequired();
 
         // O board carrega por animal; a rotina de lembretes varre por vencimento

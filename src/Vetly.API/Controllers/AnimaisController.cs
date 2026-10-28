@@ -2,7 +2,9 @@ using Vetly.Application.DTOs.Obrigacao;
 using Vetly.Application.DTOs.Colmeia;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Vetly.API.Hateoas;
 using Vetly.Application.DTOs.Animal;
+using Vetly.Application.DTOs.Comum;
 using Vetly.Application.DTOs.Prontuario;
 using Vetly.Application.Interfaces;
 
@@ -17,27 +19,45 @@ public class AnimaisController : ControllerBase
     private readonly IAnimalService _service;
     private readonly IObrigacaoService _obrigacoes;
     private readonly IColmeiaService _colmeia;
+    private readonly IAvatarService _avatar;
+    private readonly RespostaHateoas _hateoas;
 
     public AnimaisController(
-        IAnimalService service, IObrigacaoService obrigacoes, IColmeiaService colmeia)
+        IAnimalService service,
+        IObrigacaoService obrigacoes,
+        IColmeiaService colmeia,
+        IAvatarService avatar,
+        RespostaHateoas hateoas)
     {
         _service = service;
         _obrigacoes = obrigacoes;
         _colmeia = colmeia;
+        _avatar = avatar;
+        _hateoas = hateoas;
     }
 
-    /// <summary>Retorna todos os animais ativos.</summary>
+    /// <summary>Retorna os animais no escopo de quem chama (RN-105/RN-106).</summary>
+    /// <remarks>
+    /// Com <c>Accept: application/hal+json</c> ou <c>?hateoas=true</c>, cada animal traz
+    /// os links das telas que partem dele (board, avatar, obrigacoes, documentos...) e
+    /// as acoes do perfil.
+    /// </remarks>
     [HttpGet]
     [ProducesResponseType(typeof(IEnumerable<AnimalDto>), StatusCodes.Status200OK)]
+    [RespostaHal(typeof(List<Recurso<AnimalDto>>))]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> ObterTodos() =>
-        Ok(await _service.ObterTodosAsync());
+        _hateoas.OkColecao(await _service.ObterTodosAsync());
 
     /// <summary>Retorna um animal pelo ID.</summary>
     [HttpGet("{id:guid}")]
     [ProducesResponseType(typeof(AnimalDto), StatusCodes.Status200OK)]
+    [RespostaHal(typeof(Recurso<AnimalDto>))]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> ObterPorId(Guid id) =>
-        Ok(await _service.ObterPorIdAsync(id));
+        _hateoas.Ok(await _service.ObterPorIdAsync(id));
 
     /// <summary>Board do pet: a tela inicial do Responsavel (RN-011/RN-020/RN-090).</summary>
     /// <remarks>
@@ -46,9 +66,12 @@ public class AnimaisController : ControllerBase
     /// proxima consulta?", "saiu algum documento?" — e uma tela que respondesse so uma
     /// delas obrigaria a navegar para descobrir o resto.
     ///
-    /// <c>avatarEstado</c> e o <b>unico</b> dado do avatar que a API produz (RN-096):
-    /// o sprite, a animacao e a "reclamacao" sao assets no bundle do app. Nao existe
-    /// TB_AVATAR nem rota /avatar, e criar uma seria regressao de escopo.
+    /// <c>avatar</c> traz a condicao completa calculada no servidor (RN-112 a
+    /// RN-114), a mesma de <c>GET /api/animais/{id}/avatar</c>. Ate a Sprint 3 a API
+    /// produzia so o estado e a rota /avatar era tida como regressao de escopo; a
+    /// decisao foi revertida quando o app passou a simular saude, humor e pelo com
+    /// valores fixos. <c>avatarEstado</c> continua, so com os tres valores originais,
+    /// para o app publicado.
     ///
     /// <c>alertasDeSeguranca</c> vem sempre: alergia e interacao nunca sao ocultaveis
     /// (RN-068).
@@ -60,6 +83,44 @@ public class AnimaisController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> ObterBoard(Guid id) =>
         Ok(await _service.ObterBoardAsync(id));
+
+    /// <summary>Avatar do pet: saude, humor, estado, pelo, motivos e falas (RN-112 a RN-114).</summary>
+    /// <remarks>
+    /// Calculado das obrigacoes, da ultima consulta realizada e da data do peso, pela
+    /// tabela de pesos da RN-112. Mesma regra de acesso do board. Nao ha push quando o
+    /// avatar piora (RN-114): a obrigacao vencida ja aciona a regua de lembretes.
+    ///
+    /// <c>spriteDisponivel</c> so e verdadeiro para cachorro (RN-096). Cada leitura
+    /// grava a condicao do dia no historico. Com <c>Accept: application/hal+json</c>,
+    /// traz links para o board, as obrigacoes e o historico.
+    /// </remarks>
+    [HttpGet("{id:guid}/avatar")]
+    [ProducesResponseType(typeof(AvatarDoPetDto), StatusCodes.Status200OK)]
+    [RespostaHal(typeof(Recurso<AvatarDoPetDto>))]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ObterAvatar(Guid id) =>
+        _hateoas.Ok(await _avatar.ObterAsync(id));
+
+    /// <summary>Historico diario do avatar, paginado (RN-114).</summary>
+    /// <remarks>
+    /// Um registro por dia: a rotina diaria grava todos os avatares e cada
+    /// <c>GET /avatar</c> atualiza o dia corrente (upsert). Guardado no banco de
+    /// documentos (<c>Adaptadores:DocumentoNoSql</c>: Memoria ou Mongo).
+    ///
+    /// Ordenacao: <c>ordenarPor=data|saude|humor</c> e <c>direcao=asc|desc</c>; padrao
+    /// <c>data desc</c>. Com HATEOAS, a pagina traz self/primeira/anterior/proxima/ultima.
+    /// </remarks>
+    [HttpGet("{id:guid}/avatar/historico")]
+    [ProducesResponseType(typeof(ResultadoPaginado<RegistroDiarioDoAvatarDto>), StatusCodes.Status200OK)]
+    [RespostaHal(typeof(RecursoPaginado<RegistroDiarioDoAvatarDto>))]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ObterHistoricoDoAvatar(
+        Guid id, [FromQuery] Paginacao paginacao, [FromQuery] Ordenacao ordenacao) =>
+        _hateoas.Ok(await _avatar.ObterHistoricoAsync(id, paginacao, ordenacao));
 
     /// <summary>Calendario de obrigacoes do animal (RN-045/RN-046).</summary>
     /// <remarks>

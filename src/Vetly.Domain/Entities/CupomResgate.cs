@@ -7,12 +7,16 @@ namespace Vetly.Domain.Entities;
 /// <summary>
 /// Cupom emitido na troca de pontos por um item do marketplace (RN-053/RN-054).
 ///
-/// O cupom é <b>real</b> mesmo com o marketplace mockado: os pontos saem do saldo de
-/// verdade, a divisão do custo entre Vetly e prestador é gravada de verdade, e o
-/// código QR existe. O que é mock é a validação no estabelecimento (RN-019) — por
-/// isso o item viaja como texto (<see cref="ItemRef"/>, <see cref="ItemNome"/>,
-/// <see cref="Categoria"/>) e não como chave estrangeira: a taxonomia da RN-099 fica
-/// preservada para quando `TB_ITEM_MARKETPLACE` existir.
+/// Os pontos saem do saldo de verdade, a divisão do custo entre Vetly e prestador é
+/// gravada de verdade, e o código QR é validado no estabelecimento por
+/// <c>POST /api/marketplace/cupons/validar</c> (RN-110).
+///
+/// Desde a Sprint 4 o item vem do catálogo (<see cref="ItemMarketplace"/>) e o cupom
+/// guarda <see cref="ItemMarketplaceId"/>. Os campos de texto (<see cref="ItemRef"/>,
+/// <see cref="ItemNome"/>, <see cref="Categoria"/>) continuam gravados: são a foto do
+/// item no momento do resgate — se o catálogo mudar o nome depois, o cupom continua
+/// dizendo o que o Responsável trocou — e é o que existe nos cupons anteriores ao
+/// catálogo, emitidos com o item escolhido pelo front.
 ///
 /// Vencido o prazo, os pontos <b>não</b> voltam ao saldo (RN-053). É o que evita
 /// passivo perpétuo e resgate especulativo — e por isso o Responsável é avisado da
@@ -32,10 +36,21 @@ public class CupomResgate
     [MaxLength(40)]
     public string CodigoQr { get; private set; }
 
-    /// <summary>Referência do item no catálogo mockado do front (RN-098).</summary>
+    /// <summary>
+    /// Referência do item. No resgate pelo catálogo é o id do
+    /// <see cref="ItemMarketplace"/>; nos cupons anteriores, o texto que o front
+    /// mandava (RN-098).
+    /// </summary>
     [Required]
     [MaxLength(120)]
     public string ItemRef { get; private set; }
+
+    /// <summary>
+    /// Item do catálogo resgatado (RN-108). Nulo nos cupons emitidos antes do
+    /// catálogo existir. É por ele que um cupom vencido devolve a unidade ao estoque
+    /// (RN-109).
+    /// </summary>
+    public Guid? ItemMarketplaceId { get; private set; }
 
     [MaxLength(200)]
     public string? ItemNome { get; private set; }
@@ -75,13 +90,21 @@ public class CupomResgate
     }
 
     /// <summary>Emite o cupom a partir de um resgate (RN-053).</summary>
+    /// <param name="tutorId">Responsável dono do cupom.</param>
+    /// <param name="itemRef">Referência do item (o id, no resgate pelo catálogo).</param>
+    /// <param name="itemNome">Nome do item no momento do resgate.</param>
+    /// <param name="categoria">Categoria do item (RN-099).</param>
+    /// <param name="pontosDebitados">Pontos que saíram do saldo.</param>
+    /// <param name="desconto">Valor dos pontos em reais (RN-049).</param>
+    /// <param name="itemMarketplaceId">Item do catálogo; nulo no resgate legado.</param>
     public CupomResgate(
         Guid tutorId,
         string itemRef,
         string? itemNome,
         CategoriaItem categoria,
         int pontosDebitados,
-        decimal desconto)
+        decimal desconto,
+        Guid? itemMarketplaceId = null)
     {
         if (string.IsNullOrWhiteSpace(itemRef))
             throw new ArgumentException("O item do resgate é obrigatório.", nameof(itemRef));
@@ -96,6 +119,7 @@ public class CupomResgate
         TutorId = tutorId;
         CodigoQr = GerarCodigo();
         ItemRef = itemRef.Trim();
+        ItemMarketplaceId = itemMarketplaceId;
         ItemNome = itemNome?.Trim();
         Categoria = categoria;
         PontosDebitados = pontosDebitados;
@@ -112,9 +136,8 @@ public class CupomResgate
     public bool Vigente(DateTime agora) => Status == StatusCupom.Emitido && ExpiraEm > agora;
 
     /// <summary>
-    /// Marca o cupom como usado. No MVP não há leitor no app do vet (RN-019, C3): a
-    /// transição existe para que a validação real seja só ligar a tela, sem mexer no
-    /// domínio.
+    /// Marca o cupom como usado: é a validação do QR no estabelecimento (RN-110) e o
+    /// consumo do cupom aplicado a uma cobrança (RN-054).
     /// </summary>
     public void Resgatar(DateTime agora)
     {
@@ -146,10 +169,18 @@ public class CupomResgate
     /// <summary>
     /// Marca o cupom como vencido. Os pontos <b>não</b> voltam ao saldo (RN-053).
     /// </summary>
-    public void Expirar()
+    /// <returns>
+    /// Verdadeiro só na transição. É o que garante que a unidade do catálogo volte ao
+    /// estoque uma única vez (RN-109), mesmo que a rotina e a validação do QR
+    /// encontrem o mesmo cupom vencido.
+    /// </returns>
+    public bool Expirar()
     {
-        if (Status == StatusCupom.Emitido)
-            Status = StatusCupom.Expirado;
+        if (Status != StatusCupom.Emitido)
+            return false;
+
+        Status = StatusCupom.Expirado;
+        return true;
     }
 
     /// <summary>

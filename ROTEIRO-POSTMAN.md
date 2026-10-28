@@ -28,14 +28,16 @@ Crie um *Environment* no Postman com estas variáveis. Só `baseUrl` e `tokenInt
 |---|---|
 | `Content-Type: application/json` | todo `POST`, `PUT` e `PATCH` com corpo |
 | `Authorization: Bearer {{tokenTutor}}` | conforme o perfil indicado em cada passo |
-| `Idempotency-Key: {{$guid}}` | **obrigatório** nas 6 rotas marcadas com 🔑 |
+| `Idempotency-Key: {{$guid}}` | **obrigatório** nas 8 rotas marcadas com 🔑 |
 | `X-Vetly-Service-Token: {{tokenInterno}}` | apenas nas rotas `/api/internos/*` |
 
 `{{$guid}}` é uma variável dinâmica do Postman: gera um GUID novo a cada envio, que é exatamente o comportamento esperado da chave de idempotência.
 
-**As 6 rotas que exigem `Idempotency-Key`:**
+**As 8 rotas que exigem `Idempotency-Key`:**
 
-`POST /api/consultas/checkout` · `DELETE /api/consultas/{id}` · `POST /api/consultas/{id}/remarcar` · `POST /api/consultas/{id}/retorno` · `POST /api/pagamentos` · `POST /api/fidelidade/resgates`
+`POST /api/consultas/checkout` · `DELETE /api/consultas/{id}` · `POST /api/consultas/{id}/remarcar` · `POST /api/consultas/{id}/retorno` · `POST /api/pagamentos` · `POST /api/fidelidade/resgates` · `POST /api/marketplace/itens/{id}/resgatar` · `POST /api/marketplace/cupons/validar`
+
+A validação do cupom entra na lista porque muda o estado dele para `Resgatado`: sem a chave, o caixa que reenvia por rede instável receberia 409 de um cupom que ele mesmo acabou de validar.
 
 ### Enums viajam como texto
 
@@ -697,7 +699,7 @@ Depois do caminho feliz, estes são os que mostram as regras funcionando.
 | 7.5 | `POST /api/pagamentos` 🔑 **repetindo o mesmo `Idempotency-Key`** | Devolve a **mesma resposta**, sem criar uma segunda cobrança |
 | 7.6 | `GET /api/consultas/{{consultaId}}` com o token de **outro** Responsável | **403** com `"codigo": "RN-105"`. O escopo vem do token, nunca de parâmetro |
 | 7.7 | Qualquer rota de negócio **sem o consentimento do passo 2.2** | **422** com `"codigo": "RN-060"` |
-| 7.8 | `POST /api/consultas/checkout` **sem** `Idempotency-Key` | **400** — o cabeçalho é exigido nas 6 rotas marcadas |
+| 7.8 | `POST /api/consultas/checkout` **sem** `Idempotency-Key` | **400** — o cabeçalho é exigido nas 8 rotas marcadas |
 | 7.9 | `POST /api/documentos/consulta/{id}?tipo=ReceitaVeterinaria` seguido de `publicar` **sem assinar** | Recusa a publicação: no board a receita pareceria válida sem ser |
 | 7.10 | `GET /api/financeiro/consolidado` *(Admin)* | O campo `fecha` confirma `bruto = comissão + repasse + desconto` |
 | 7.11 | `POST /api/colmeia` *(Tutor)* | Autoriza um vet de fora a alcançar o histórico, com escopo e prazo |
@@ -760,7 +762,7 @@ Sem autenticação.
 
 ---
 
-Todos os 152 endpoints são exercitados contra um ambiente real por [deploy/validar-endpoints.py](deploy/validar-endpoints.py).
+Este roteiro, os cenários do fluxo 7 e as demais rotas — as 163 operações do OpenAPI — são exercitados contra um ambiente real por [deploy/validar-endpoints.py](deploy/validar-endpoints.py).
 
 Documentação interativa: **`https://localhost:7262/scalar/v1`**.
 Regras de negócio por código: [REGRAS-DE-NEGOCIO.md](REGRAS-DE-NEGOCIO.md).

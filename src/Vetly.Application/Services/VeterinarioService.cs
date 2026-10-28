@@ -217,6 +217,15 @@ public class VeterinarioService : IVeterinarioService
     /// <inheritdoc/>
     public async Task<IEnumerable<ConsultaDto>> ObterAgendaAsync(Guid veterinarioId)
     {
+        _ = await _repo.ObterPorIdAsync(veterinarioId)
+            ?? throw new NotFoundException("Veterinario", veterinarioId);
+
+        // RN-105: a agenda e a lista de quem o profissional vai atender, com animal e
+        // Responsavel de cada horario. So ele e o Admin a leem; para o Responsavel, o
+        // que interessa e a disponibilidade, que nao expoe terceiros.
+        if (!_usuario.EhAdmin && _usuario.VeterinarioId != veterinarioId)
+            throw new AcessoNegadoException("RN-105", "Esta agenda nao pertence ao seu escopo de acesso.");
+
         var consultas = await _repo.ObterAgendaFuturaAsync(veterinarioId);
         return consultas.Select(MapearConsultaParaDto);
     }

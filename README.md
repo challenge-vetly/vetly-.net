@@ -2,7 +2,7 @@
 
 **Plataforma que conecta responsáveis de pets a clínicas e veterinários autônomos — agendamento, pagamento com split, prontuário assistido por IA e fidelidade em uma única API.**
 
-`.NET 10` · `ASP.NET Core` · `EF Core 10` · `Oracle` · `Docker` · `1.080 testes automatizados`
+`.NET 10` · `ASP.NET Core` · `EF Core 10` · `Oracle` · `Docker` · `1.336 testes automatizados`
 
 O ciclo completo do produto vive aqui: busca por proximidade, agenda com controle de concorrência, cobrança antecipada, captura de áudio da consulta, estruturação do prontuário por LLM, emissão de documentos assinados e programa de pontos.
 
@@ -127,8 +127,8 @@ Nenhuma seta sai do `Domain`. Ele não referencia projeto nem pacote algum — n
 
 | Camada | Conteúdo | Referencia |
 |---|---|---|
-| **Vetly.API** | 24 controllers (152 endpoints), 3 filtros globais, 3 middlewares, 4 health checks, worker hospedado | Application, Infrastructure |
-| **Vetly.Infrastructure** | EF Core + Oracle, 33 DbSets, 34 migrations, 27 configurations, 24 repositórios, 9 adaptadores | Application, Domain |
+| **Vetly.API** | 25 controllers (163 endpoints), 3 filtros globais, 3 middlewares, 4 health checks, worker hospedado | Application, Infrastructure |
+| **Vetly.Infrastructure** | EF Core + Oracle, 34 DbSets, 39 migrations, 28 configurations, 24 repositórios, 9 adaptadores | Application, Domain |
 | **Vetly.Application** | 29 serviços, 62 interfaces, 72 arquivos de DTO | Domain + 2 pacotes `*.Abstractions` |
 | **Vetly.Domain** | 31 entidades, 42 enums, 7 value objects | **nada** |
 
@@ -261,8 +261,8 @@ xUnit com Moq. Asserções nativas, sem biblioteca de fluência.
 
 | Suíte | Arquivos | O que cobre |
 |---|---|---|
-| `Vetly.UnitTests` | 45 | Regras de negócio isoladas, um arquivo por serviço |
-| `Vetly.IntegrationTests` | 31 | API real via `WebApplicationFactory` — pipeline, filtros, auth e worker |
+| `Vetly.UnitTests` | 49 | Regras de negócio isoladas, um arquivo por serviço |
+| `Vetly.IntegrationTests` | 36 | API real via `WebApplicationFactory` — pipeline, filtros, auth e worker |
 
 ```bash
 dotnet test                                              # tudo
@@ -353,14 +353,19 @@ Aplicadas **fora** do host, antes de subir a versão nova. Não há `Database.Mi
 dotnet ef database update --project src/Vetly.Infrastructure --startup-project src/Vetly.API
 ```
 
+Onde o `dotnet ef` não alcança o banco, as migrations mais recentes têm o SQL equivalente em [deploy/sql/](deploy/sql/), um arquivo por migration, já com a linha do `__EFMigrationsHistory`.
+
 ### Validar o ambiente
 
-[validar-endpoints.py](deploy/validar-endpoints.py) percorre a API inteira contra um ambiente de verdade — autentica as três personas, encadeia o ciclo clínico completo e confere o status de cada rota:
+[validar-endpoints.py](deploy/validar-endpoints.py) percorre a API inteira contra um ambiente de verdade, na ordem do [roteiro](ROTEIRO-POSTMAN.md): autentica as três personas, encadeia o ciclo clínico completo, roda os cenários do fluxo 7 e confere status e conteúdo de cada rota. No fim, compara o que exercitou com o `/openapi/v1.json` do próprio servidor — rota nova sem passo no validador aparece no resumo.
 
 ```bash
+export VETLY_TOKEN_INTERNO="<Servicos:TokenInterno do ambiente>"
 python deploy/validar-endpoints.py https://seu-host <senha-do-admin>
-python deploy/validar-endpoints.py https://seu-host <senha> --rapido   # pula as rotas de IA
+python deploy/validar-endpoints.py https://seu-host <senha> --rapido   # sem IA nem captura de audio
 ```
+
+Em Production o Admin é o administrador inicial (`VETLY_ADMIN_EMAIL` troca o e-mail). Em Development o script usa o token de desenvolvimento e a senha pode ser omitida. Cria dados de teste no banco (e-mails `val-*`) e sai com código 1 se algo responder diferente do esperado.
 
 Não substitui a suíte: ela prova regra de negócio isolada, e o validador prova que o conjunto sobe, se autentica e responde pelo caminho que o app percorre. Foi ele que encontrou o `[Required]` inócuo da busca e o truncamento de inteiro do Oracle — defeitos que a suíte não pegava porque roda sobre InMemory.
 

@@ -13,11 +13,14 @@ using Vetly.Application.Strategies.Split;
 using Vetly.Infrastructure.Adapters;
 using Vetly.Infrastructure.Data;
 using Vetly.Infrastructure.Jobs;
+using Vetly.Infrastructure.NoSql;
+using MongoDB.Driver;
 using Vetly.Infrastructure.Repositories;
 using Vetly.Infrastructure.Security;
 using Vetly.API.Middlewares;
 using Vetly.API.HealthChecks;
 using Vetly.API.Filters;
+using Vetly.API.Hateoas;
 using Vetly.API.Jobs;
 using Vetly.API.Security;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
@@ -90,8 +93,40 @@ builder.Services
         options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
     });
 
+// O gerador OpenAPI le as opcoes JSON de Http.Json, nao as do MVC. Sem o mesmo
+// conversor aqui, o documento anunciava "persona": integer enquanto a API responde
+// "Autonomo" -- e o Scalar sugeria ao cliente o contrato numerico que a API evita.
+builder.Services.ConfigureHttpJsonOptions(options =>
+    options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
+
+// ── HATEOAS (Sprint 4) ────────────────────────────────────────────────────────
+// Opt-in por Accept: application/hal+json ou ?hateoas=true; sem isso, o corpo de
+// sempre. O formatador hal+json entra primeiro e reusa as opcoes JSON da API (enums
+// como texto), mas so escreve os envelopes Recurso/RecursoPaginado.
+builder.Services.AddOptions<Microsoft.AspNetCore.Mvc.MvcOptions>()
+    .Configure<Microsoft.Extensions.Options.IOptions<Microsoft.AspNetCore.Mvc.JsonOptions>>((mvc, json) =>
+        mvc.OutputFormatters.Insert(0, new FormatadorHalJson(json.Value.JsonSerializerOptions)));
+// Links em minusculas (/api/consultas, nao /api/Consultas, que e o que o token
+// [controller] produz). O roteamento ja ignora caixa; isto so muda as URLs geradas —
+// links de HATEOAS e o Location do 201 — para baterem com a documentacao.
+builder.Services.Configure<RouteOptions>(o => o.LowercaseUrls = true);
+builder.Services.AddScoped<ConstrutorDeLinks>();
+builder.Services.AddScoped<RespostaHateoas>();
+builder.Services.AddScoped<ILinksDoRecurso<Vetly.Application.DTOs.Consulta.ConsultaDto>, LinksDeConsulta>();
+builder.Services.AddScoped<ILinksDoRecurso<Vetly.Application.DTOs.Pagamento.PagamentoDto>, LinksDePagamento>();
+builder.Services.AddScoped<ILinksDoRecurso<Vetly.Application.DTOs.Marketplace.ItemMarketplaceDto>, LinksDeItemMarketplace>();
+builder.Services.AddScoped<ILinksDoRecurso<Vetly.Application.DTOs.Marketplace.ItemMarketplaceDetalheDto>, LinksDeItemMarketplace>();
+builder.Services.AddScoped<ILinksDoRecurso<Vetly.Application.DTOs.Animal.AvatarDoPetDto>, LinksDoAvatar>();
+builder.Services.AddScoped<ILinksDoRecurso<Vetly.Application.DTOs.Animal.RegistroDiarioDoAvatarDto>, LinksDoRegistroDoAvatar>();
+builder.Services.AddScoped<ILinksDoRecurso<Vetly.Application.DTOs.Carteira.LancamentoDoHistoricoDto>, LinksDoLancamento>();
+builder.Services.AddScoped<ILinksDoRecurso<Vetly.Application.DTOs.Animal.AnimalDto>, LinksDeAnimal>();
+builder.Services.AddScoped<ILinksDoRecurso<Vetly.Application.DTOs.Documento.DocumentoDto>, LinksDeDocumento>();
+builder.Services.AddScoped<ILinksDoRecurso<Vetly.Application.DTOs.Veterinario.VeterinarioDto>, LinksDeVeterinario>();
+
 // ── OpenAPI / Scalar ─────────────────────────────────────────────────────────
-builder.Services.AddOpenApi();
+// O transformer documenta a variante hal+json do 200 e o ?hateoas=true das rotas
+// marcadas com [RespostaHal] — o ApiExplorer so guarda um tipo por status.
+builder.Services.AddOpenApi(options => options.AddOperationTransformer<TransformadorHalOpenApi>());
 
 // ── Cabecalhos de proxy reverso (§ Deploy) ───────────────────────────────────
 // Em container a API fala HTTP com o ingress, e e o ingress que termina o TLS. Sem
@@ -176,6 +211,7 @@ builder.Services.AddScoped<IAuditoriaIaRepository, AuditoriaIaRepository>();
 builder.Services.AddScoped<IColmeiaRepository, ColmeiaRepository>();
 builder.Services.AddScoped<IObrigacaoRepository, ObrigacaoRepository>();
 builder.Services.AddScoped<IFidelidadeRepository, FidelidadeRepository>();
+builder.Services.AddScoped<IItemMarketplaceRepository, ItemMarketplaceRepository>();
 builder.Services.AddScoped<IAvaliacaoRepository, AvaliacaoRepository>();
 builder.Services.AddScoped<INotificacaoRepository, NotificacaoRepository>();
 builder.Services.AddSingleton<IGeradorDePdf, GeradorDePdfSimples>();
@@ -321,6 +357,47 @@ switch (adaptadorGeo)
             $"Adaptador de geocodificacao '{adaptadorGeo}' nao reconhecido. Valores validos: Simulado.");
 }
 
+// Banco de documentos (Sprint 4): historico diario do avatar. Memoria e o padrao —
+// a API e a suite inteira rodam sem Mongo de pe —, e Mongo e o caminho de producao.
+// O catalogo do marketplace NAO mora aqui: participa da transacao que debita pontos
+// e emite o cupom, e por isso ficou no Oracle.
+var adaptadorDocumento = builder.Configuration["Adaptadores:DocumentoNoSql"] ?? "Memoria";
+switch (adaptadorDocumento)
+{
+    case "Memoria":
+        // Singleton: o historico em memoria precisa sobreviver entre requisicoes
+        builder.Services.AddSingleton<IHistoricoDoAvatarRepository, HistoricoDoAvatarRepositoryEmMemoria>();
+        break;
+
+    case "Mongo":
+        // Resolvida no arranque: string ausente derruba a subida, em vez de virar
+        // historico que nunca grava
+        var mongo = new ConfiguracaoDoMongo(builder.Configuration);
+        builder.Services.AddSingleton(mongo);
+
+        // MongoClient e thread-safe e mantem o pool de conexoes: um por processo
+        builder.Services.AddSingleton<IMongoClient>(_ =>
+        {
+            var configuracao = MongoClientSettings.FromConnectionString(mongo.ConnectionString);
+            configuracao.ServerSelectionTimeout = ConfiguracaoDoMongo.TempoParaAcharServidor;
+            configuracao.ConnectTimeout = ConfiguracaoDoMongo.TempoParaAcharServidor;
+            return new MongoClient(configuracao);
+        });
+        builder.Services.AddSingleton(sp => sp.GetRequiredService<IMongoClient>().GetDatabase(mongo.Banco));
+        builder.Services.AddSingleton<IHistoricoDoAvatarRepository, HistoricoDoAvatarRepositoryMongo>();
+
+        builder.Services.AddHealthChecks()
+            .AddCheck<MongoDbHealthCheck>(
+                name: "mongodb",
+                failureStatus: HealthStatus.Degraded,
+                tags: ["ready", "external"]);
+        break;
+
+    default:
+        throw new InvalidOperationException(
+            $"Adaptador de documento '{adaptadorDocumento}' nao reconhecido. Valores validos: Memoria, Mongo.");
+}
+
 // ── Serviços de Aplicação ────────────────────────────────────────────────────
 builder.Services.AddScoped<IVeterinarioService, VeterinarioService>();
 builder.Services.AddScoped<IAnimalService, AnimalService>();
@@ -343,6 +420,10 @@ builder.Services.AddScoped<IProntuarioService, ProntuarioService>();
 builder.Services.AddScoped<IColmeiaService, ColmeiaService>();
 builder.Services.AddScoped<IObrigacaoService, ObrigacaoService>();
 builder.Services.AddScoped<IFidelidadeService, FidelidadeService>();
+builder.Services.AddScoped<IMarketplaceService, MarketplaceService>();
+builder.Services.AddScoped<CalculadoraDoAvatar>();
+builder.Services.AddScoped<IAvatarService, AvatarService>();
+builder.Services.AddScoped<ICarteiraService, CarteiraService>();
 builder.Services.AddScoped<IAvaliacaoService, AvaliacaoService>();
 builder.Services.AddScoped<INotificacaoService, NotificacaoService>();
 builder.Services.AddScoped<IDashboardService, DashboardService>();
@@ -402,6 +483,10 @@ builder.Services.AddScoped<IRotinaPeriodica, AvisarObrigacoesVencendo>();
 // RN-094/RN-095: sem esta rotina a regua nascia e parava — o alerta a clinica, que
 // depende de tres tentativas sem resposta, nunca chegava a disparar.
 builder.Services.AddScoped<IRotinaPeriodica, AgendarTentativasDaRegua>();
+
+// Historico diario do avatar (RN-114): o GET /avatar tambem grava, mas sem a rotina
+// o grafico teria buraco justamente nos dias em que ninguem abriu o app
+builder.Services.AddScoped<IRotinaPeriodica, RegistrarCondicaoDosAvatares>();
 
 builder.Services.AddHostedService<VetlyBackgroundService>();
 

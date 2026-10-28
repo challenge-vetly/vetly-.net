@@ -357,6 +357,8 @@ public class DocumentoServiceTests
         Assert.NotNull(resultado);
         Assert.Equal(doc.Id, resultado.VersaoOriginalId);
         Assert.NotNull(resultado.DataCorrecao);
+        Assert.Null(resultado.JustificativaCorrecao);
+        Assert.Equal(2, resultado.Versao);
     }
 
     [Fact]
@@ -381,10 +383,15 @@ public class DocumentoServiceTests
         _docRepoMock.Setup(r => r.AdicionarAsync(It.IsAny<Documento>())).Returns(Task.CompletedTask);
         _docRepoMock.Setup(r => r.SalvarAsync()).ReturnsAsync(1);
 
-        var resultado = await CriarServico().CorrigirAsync(doc.Id, "novos dados", "Erro de preenchimento");
+        var resultado = await CriarServico().CorrigirAsync(doc.Id, "novos dados", "  Erro de preenchimento ");
 
         Assert.Equal(doc.Id, resultado.VersaoOriginalId);
         Assert.Equal("12345-SP", resultado.CrmvSolicitanteCorrecao);
+
+        // RN-089 so vale se o motivo ficar registrado: antes ele era conferido e
+        // descartado. E a correcao e a versao seguinte, nao outra "versao 1" (RN-088)
+        Assert.Equal("Erro de preenchimento", resultado.JustificativaCorrecao);
+        Assert.Equal(doc.Versao + 1, resultado.Versao);
     }
 
 [Fact]

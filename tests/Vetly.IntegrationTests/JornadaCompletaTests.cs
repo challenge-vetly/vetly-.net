@@ -281,6 +281,19 @@ public class JornadaCompletaTests
 
         Assert.NotEqual(JsonValueKind.Null, publicado.GetProperty("publicadoEm").ValueKind);
 
+        // ── O prontuario publicado entra no historico longitudinal do animal ──
+        // Sem isso a rota de historico respondia lista vazia para sempre, e ocultar um
+        // registro dela (RN-068) devolvia 404: nada alimentava a tabela
+        await LerAsync(await EnviarAsync(HttpMethod.Post,
+            $"/api/documentos/{documentoId}/publicar", prestador.Token, "{}"), HttpStatusCode.OK);
+
+        var historico = await LerAsync(await EnviarAsync(HttpMethod.Get,
+            $"/api/animais/{dono.AnimalId}/prontuarios", dono.Token), HttpStatusCode.OK);
+
+        // Republicar nao duplica o registro
+        var registro = Assert.Single(historico.EnumerateArray());
+        Assert.Equal(consultaId, registro.GetProperty("consultaId").GetGuid());
+
         // ── Fecho documental (RN-087) e fecho do ciclo de captura (§7.3) ──
         var finalizada = await LerAsync(await EnviarAsync(HttpMethod.Post,
             $"/api/consultas/{consultaId}/finalizar", prestador.Token), HttpStatusCode.OK);

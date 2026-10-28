@@ -47,7 +47,11 @@ public static class GuardaDeSegredos
     [
         "SUA_JWT_SECRET_KEY_COM_MINIMO_32_CARACTERES",
         "DEFINA_UM_TOKEN_DE_SERVICO_LOCALMENTE",
-        "User Id=SEU_USUARIO;Password=SUA_SENHA;Data Source=oracle.fiap.com.br:1521/orcl"
+        "User Id=SEU_USUARIO;Password=SUA_SENHA;Data Source=oracle.fiap.com.br:1521/orcl",
+        "mongodb://USUARIO:SENHA@localhost:27017",
+
+        // O do deploy/vm/.env.example: copiado sem trocar, subiria um Mongo com senha publicada
+        "mongodb://vetly:troque-por-uma-senha-hex@mongo:27017/?authSource=admin"
     ];
 
     /// <summary>
@@ -92,6 +96,18 @@ public static class GuardaDeSegredos
         else if (EhPlaceholder(conexao))
             problemas.Add("ConnectionStrings:OracleConnection ainda e a de exemplo.");
 
+        // So importa com o Mongo ligado: com o adaptador em memoria a string nem e lida,
+        // e recusar o placeholder ali impediria subir sem um banco que nao se usa
+        if (string.Equals(configuracao["Adaptadores:DocumentoNoSql"], "Mongo", StringComparison.OrdinalIgnoreCase))
+        {
+            var mongo = configuracao["MongoDb:ConnectionString"];
+
+            if (string.IsNullOrWhiteSpace(mongo))
+                problemas.Add("MongoDb:ConnectionString nao configurada (Adaptadores:DocumentoNoSql=Mongo).");
+            else if (EhPlaceholder(mongo))
+                problemas.Add("MongoDb:ConnectionString ainda e a de exemplo do appsettings.json versionado.");
+        }
+
         if (problemas.Count == 0)
             return;
 
@@ -101,7 +117,8 @@ public static class GuardaDeSegredos
             string.Join(Environment.NewLine, problemas.Select(p => "  - " + p)) +
             Environment.NewLine +
             "Defina os valores por variavel de ambiente (ex.: Jwt__Key, Servicos__TokenInterno, " +
-            "ConnectionStrings__OracleConnection) ou por appsettings.Production.local.json.");
+            "ConnectionStrings__OracleConnection, MongoDb__ConnectionString) ou por " +
+            "appsettings.Production.local.json.");
     }
 
     private static bool EhPlaceholder(string valor) =>

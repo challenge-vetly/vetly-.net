@@ -46,12 +46,56 @@ public class IdempotenciaTests
         return (token, tutorId);
     }
 
+    /// <summary>
+    /// Consultas em checkout do Responsável, cada uma num horário. A cobrança da rota
+    /// pública é sempre de uma consulta (RN-006/RN-032), e uma consulta só aceita uma
+    /// cobrança em aberto — duas cobranças distintas pedem duas consultas.
+    /// </summary>
+    private async Task<List<Guid>> ConsultasEmCheckoutAsync(string token, Guid tutorId, int quantidade = 1)
+    {
+        var animalId = await AtoresDeTeste.CriarPetAsync(_client, new AtoresDeTeste.Responsavel(tutorId, token));
+
+        var criar = await AtoresDeTeste.EnviarAsync(_client, HttpMethod.Post, "/api/veterinarios",
+            AtoresDeTeste.TokenAdmin(), $$"""
+                {"nome":"Dra. Idempotente","crmv":"{{Random.Shared.Next(10000, 99999)}}-SP","ufAtuacao":"SP",
+                 "email":"idem-vet-{{Guid.NewGuid():N}}@clinica.com","persona":"Autonomo","plano":"Profissional"}
+                """);
+        Assert.Equal(HttpStatusCode.Created, criar.StatusCode);
+        var vetId = (await AtoresDeTeste.JsonDe(criar)).GetProperty("veterinario").GetProperty("id").GetGuid();
+        var tokenVet = AtoresDeTeste.TokenVeterinario(vetId);
+
+        await AtoresDeTeste.EnviarAsync(_client, HttpMethod.Put, $"/api/veterinarios/{vetId}/agenda-config", tokenVet,
+            """{"dias":["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"],"horaInicio":"08:00","horaFim":"18:00","duracaoMinutos":30,"intervaloMinutos":0}""");
+        var servicos = await AtoresDeTeste.JsonDe(await AtoresDeTeste.EnviarAsync(_client, HttpMethod.Put,
+            $"/api/veterinarios/{vetId}/servicos", tokenVet,
+            """{"servicos":[{"tipo":"ConsultaRotina","valor":200.00,"duracaoMinutos":30,"aceitaPlanoPet":false}]}"""));
+        var servicoId = servicos.EnumerateArray().First().GetProperty("id").GetGuid();
+
+        var disponibilidade = await AtoresDeTeste.JsonDe(await AtoresDeTeste.EnviarAsync(_client, HttpMethod.Get,
+            $"/api/veterinarios/{vetId}/disponibilidade", token));
+        var slots = disponibilidade.GetProperty("dias").EnumerateArray()
+            .SelectMany(d => d.GetProperty("horarios").EnumerateArray())
+            .Select(h => h.GetProperty("id").GetGuid())
+            .Take(quantidade);
+
+        var consultas = new List<Guid>();
+        foreach (var slotId in slots)
+        {
+            var checkout = await AtoresDeTeste.EnviarAsync(_client, HttpMethod.Post, "/api/consultas/checkout", token,
+                $$"""{"animalId":"{{animalId}}","prestadorId":"{{vetId}}","slotId":"{{slotId}}","servicoId":"{{servicoId}}"}""");
+            Assert.Equal(HttpStatusCode.Created, checkout.StatusCode);
+            consultas.Add((await AtoresDeTeste.JsonDe(checkout)).GetProperty("consultaId").GetGuid());
+        }
+
+        return consultas;
+    }
+
     private async Task<HttpResponseMessage> CriarCobrancaAsync(
-        string token, Guid tutorId, decimal valor, string? chave)
+        string token, Guid tutorId, Guid consultaId, string? chave)
     {
         var requisicao = new HttpRequestMessage(HttpMethod.Post, "/api/pagamentos")
         {
-            Content = Corpo($$"""{"tutorId":"{{tutorId}}","valor":{{valor}},"meioPagamento":"Pix"}""")
+            Content = Corpo($$"""{"tutorId":"{{tutorId}}","consultaId":"{{consultaId}}","valor":200,"meioPagamento":"Pix"}""")
         };
         requisicao.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
 
@@ -66,7 +110,8 @@ public class IdempotenciaTests
     {
         var (token, tutorId) = await ResponsavelAsync();
 
-        var resposta = await CriarCobrancaAsync(token, tutorId, 200m, chave: null);
+        // A chave e conferida antes de tudo: a consulta nem chega a ser procurada
+        var resposta = await CriarCobrancaAsync(token, tutorId, Guid.NewGuid(), chave: null);
 
         Assert.Equal(HttpStatusCode.BadRequest, resposta.StatusCode);
 
@@ -78,10 +123,11 @@ public class IdempotenciaTests
     public async Task MesmaChave_NaoCriaDuasCobrancas()
     {
         var (token, tutorId) = await ResponsavelAsync();
+        var consultaId = (await ConsultasEmCheckoutAsync(token, tutorId)).Single();
         var chave = Guid.NewGuid().ToString();
 
-        var primeira = await CriarCobrancaAsync(token, tutorId, 200m, chave);
-        var segunda = await CriarCobrancaAsync(token, tutorId, 200m, chave);
+        var primeira = await CriarCobrancaAsync(token, tutorId, consultaId, chave);
+        var segunda = await CriarCobrancaAsync(token, tutorId, consultaId, chave);
 
         Assert.Equal(HttpStatusCode.Accepted, primeira.StatusCode);
         Assert.Equal(HttpStatusCode.Accepted, segunda.StatusCode);
@@ -94,12 +140,32 @@ public class IdempotenciaTests
     }
 
     [Fact]
+    public async Task MesmaChave_DevolveOCorpoIdenticoAoDaPrimeira()
+    {
+        var (token, tutorId) = await ResponsavelAsync();
+        var consultaId = (await ConsultasEmCheckoutAsync(token, tutorId)).Single();
+        var chave = Guid.NewGuid().ToString();
+
+        var primeira = await (await CriarCobrancaAsync(token, tutorId, consultaId, chave)).Content.ReadAsStringAsync();
+        var segunda = await (await CriarCobrancaAsync(token, tutorId, consultaId, chave)).Content.ReadAsStringAsync();
+
+        // O reenvio serializava com opcoes proprias e perdia o conversor de enum:
+        // "statusPagamento" voltava 1 em vez de "Pendente". Mesma resposta e mesmo
+        // contrato, byte a byte.
+        Assert.Equal(primeira, segunda);
+        Assert.Equal("Pendente",
+            JsonDocument.Parse(segunda).RootElement.GetProperty("statusPagamento").GetString());
+    }
+
+    [Fact]
     public async Task ChavesDiferentes_CriamCobrancasDiferentes()
     {
         var (token, tutorId) = await ResponsavelAsync();
 
-        var primeira = await CriarCobrancaAsync(token, tutorId, 200m, Guid.NewGuid().ToString());
-        var segunda = await CriarCobrancaAsync(token, tutorId, 200m, Guid.NewGuid().ToString());
+        var consultas = await ConsultasEmCheckoutAsync(token, tutorId, quantidade: 2);
+
+        var primeira = await CriarCobrancaAsync(token, tutorId, consultas[0], Guid.NewGuid().ToString());
+        var segunda = await CriarCobrancaAsync(token, tutorId, consultas[1], Guid.NewGuid().ToString());
 
         var idDaPrimeira = (await primeira.Content.ReadFromJsonAsync<JsonElement>(Json)).GetProperty("id").GetGuid();
         var idDaSegunda = (await segunda.Content.ReadFromJsonAsync<JsonElement>(Json)).GetProperty("id").GetGuid();
@@ -116,8 +182,11 @@ public class IdempotenciaTests
         var (tokenDaAna, tutorDaAna) = await ResponsavelAsync();
         var (tokenDoBruno, tutorDoBruno) = await ResponsavelAsync();
 
-        var daAna = await CriarCobrancaAsync(tokenDaAna, tutorDaAna, 200m, chave);
-        var doBruno = await CriarCobrancaAsync(tokenDoBruno, tutorDoBruno, 200m, chave);
+        var consultaDaAna = (await ConsultasEmCheckoutAsync(tokenDaAna, tutorDaAna)).Single();
+        var consultaDoBruno = (await ConsultasEmCheckoutAsync(tokenDoBruno, tutorDoBruno)).Single();
+
+        var daAna = await CriarCobrancaAsync(tokenDaAna, tutorDaAna, consultaDaAna, chave);
+        var doBruno = await CriarCobrancaAsync(tokenDoBruno, tutorDoBruno, consultaDoBruno, chave);
 
         var idDaAna = (await daAna.Content.ReadFromJsonAsync<JsonElement>(Json)).GetProperty("id").GetGuid();
         var idDoBruno = (await doBruno.Content.ReadFromJsonAsync<JsonElement>(Json)).GetProperty("id").GetGuid();
@@ -146,7 +215,7 @@ public class IdempotenciaTests
     {
         var (token, tutorId) = await ResponsavelAsync();
 
-        var resposta = await CriarCobrancaAsync(token, tutorId, 200m, new string('k', 101));
+        var resposta = await CriarCobrancaAsync(token, tutorId, Guid.NewGuid(), new string('k', 101));
 
         Assert.Equal(HttpStatusCode.BadRequest, resposta.StatusCode);
     }

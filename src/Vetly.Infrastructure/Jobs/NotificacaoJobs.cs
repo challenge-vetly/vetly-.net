@@ -192,8 +192,8 @@ public class AvisarObrigacoesVencendo : IRotinaPeriodica
     ///
     /// <see cref="TipoObrigacaoPet.Antiparasitario"/> cai em
     /// <see cref="TipoLembrete.Vermifugo"/> e <see cref="TipoObrigacaoPet.Exame"/> em
-    /// <see cref="TipoLembrete.CheckUp"/> porque a régua tem cinco assuntos e a
-    /// obrigação tem sete: o mapa aproxima pelo que o Responsável precisa fazer —
+    /// <see cref="TipoLembrete.CheckUp"/> porque a régua tem seis assuntos e a
+    /// obrigação tem oito: o mapa aproxima pelo que o Responsável precisa fazer —
     /// aplicar um antiparasitário é a mesma tarefa doméstica do vermífugo, e um exame
     /// de acompanhamento é a mesma ida à clínica do check-up.
     /// </summary>
@@ -206,6 +206,10 @@ public class AvisarObrigacoesVencendo : IRotinaPeriodica
         TipoObrigacaoPet.MedicacaoContinua => TipoLembrete.Medicacao,
         TipoObrigacaoPet.CheckUp => TipoLembrete.CheckUp,
         TipoObrigacaoPet.Exame => TipoLembrete.CheckUp,
+
+        // Antes da Sprint 4 nao havia assunto de higiene: banho e tosa nao era
+        // obrigacao, e uma higienizacao cairia no default e chegaria como "Check-up"
+        TipoObrigacaoPet.Higienizacao => TipoLembrete.Higiene,
         _ => TipoLembrete.CheckUp
     };
 }

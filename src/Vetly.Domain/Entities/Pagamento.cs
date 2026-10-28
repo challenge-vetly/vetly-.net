@@ -54,6 +54,13 @@ public class Pagamento
     /// <summary>Valor estornado ao tutor em caso de cancelamento. Nulo se não houve estorno.</summary>
     public decimal? ValorEstornado { get; private set; }
 
+    /// <summary>
+    /// Quando o estorno foi registrado (UTC). Sem ele, o reembolso apareceria no
+    /// histórico da carteira na data do pagamento — semanas antes de acontecer.
+    /// Nulo nos estornos anteriores à Sprint 4, que caem na data do pagamento.
+    /// </summary>
+    public DateTime? EstornadoEm { get; private set; }
+
     // ── Cobrança (RN-006/RN-071, §5.1) ───────────────────────────────────────
 
     /// <summary>O que está sendo cobrado (RN-101).</summary>
@@ -286,6 +293,7 @@ public class Pagamento
     public void Estornar(decimal valor)
     {
         ValorEstornado = valor;
+        EstornadoEm = DateTime.UtcNow;
         StatusPagamento = valor >= Valor ? StatusPagamento.Estornado : StatusPagamento.Parcial;
     }
 }

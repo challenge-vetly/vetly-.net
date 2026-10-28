@@ -115,6 +115,49 @@ public class ObrigacaoPetTests
         Assert.Equal(SituacaoObrigacao.EmDia, vencidaHaDoisMeses.SituacaoEm(DateTime.UtcNow));
     }
 
+    [Theory]
+    [InlineData(-1, true)]
+    [InlineData(0, true)]
+    [InlineData(1, false)]
+    public void Cumprir_GuardaSeFoiNoPrazoAntesDeEmpurrarOVencimento(int diasDepoisDoVencimento, bool noPrazo)
+    {
+        // Arrange
+        var vencimento = DateTime.UtcNow.AddDays(5);
+        var obrigacao = new ObrigacaoPet(
+            _animal.Id, _tutorId, TipoObrigacaoPet.Vermifugo, "Vermifugo", vencimento, periodicidadeEmDias: 90);
+
+        // Act
+        obrigacao.Cumprir(vencimento.AddDays(diasDepoisDoVencimento));
+
+        // Assert — depois do Cumprir o vencimento ja mudou; o prazo so sobrevive aqui
+        Assert.Equal(noPrazo, obrigacao.UltimoCumprimentoNoPrazo);
+    }
+
+    [Theory]
+    [InlineData(0, 30)]
+    [InlineData(15, 15)]
+    public void Higienizacao_SemPeriodicidade_AssumeTrintaDias(int informada, int esperada)
+    {
+        // Arrange / Act
+        var banho = new ObrigacaoPet(
+            _animal.Id, _tutorId, TipoObrigacaoPet.Higienizacao, "Banho e tosa",
+            DateTime.UtcNow.AddDays(10), periodicidadeEmDias: informada);
+
+        // Assert — banho de "uma vez so" se arquivaria no primeiro banho
+        Assert.Equal(esperada, banho.PeriodicidadeEmDias);
+    }
+
+    [Fact]
+    public void Retorno_SemPeriodicidade_ContinuaDeUmaVezSo()
+    {
+        // Arrange / Act
+        var retorno = new ObrigacaoPet(
+            _animal.Id, _tutorId, TipoObrigacaoPet.Retorno, "Retorno", DateTime.UtcNow.AddDays(10));
+
+        // Assert — o padrao de 30 dias e so da higienizacao
+        Assert.Equal(0, retorno.PeriodicidadeEmDias);
+    }
+
     [Fact]
     public void Cumprir_ObrigacaoDeUmaVezSo_ArquivaEmVezDeFicarVencida()
     {

@@ -24,11 +24,21 @@ public class BoardDoPetDto
     public Guid? FotoMidiaId { get; set; }
 
     /// <summary>
-    /// Estado visual do avatar, derivado das obrigações (RN-020/RN-096).
+    /// Avatar completo — saúde, humor, estado, pelo, motivos e falas (RN-112 a
+    /// RN-114). O mesmo de <c>GET /api/animais/{id}/avatar</c>.
     ///
-    /// É o <b>único</b> dado do avatar que a API produz: o sprite, a animação e a
-    /// "reclamação" são assets no bundle do app (C3). Não há `TB_AVATAR` nem rota
-    /// `/avatar` — construir uma seria regressão de escopo.
+    /// Até a Sprint 3 a API produzia só o estado, e a documentação chamava a rota
+    /// <c>/avatar</c> de regressão de escopo. A decisão foi revertida porque o app
+    /// passou a simular saúde, humor e pelo com valores fixos: a regra precisava sair
+    /// do front. Sprite e animação continuam assets do app.
+    /// </summary>
+    public AvatarDoPetDto Avatar { get; set; } = new();
+
+    /// <summary>
+    /// <b>Mantido por compatibilidade</b> — use <see cref="Avatar"/>. Só os três
+    /// valores originais (<c>Saudavel</c>, <c>VacinaAtrasada</c>,
+    /// <c>HigieneAtrasada</c>): <c>Abatido</c> e <c>Feliz</c> aparecem aqui como
+    /// <c>Saudavel</c>, para o app publicado não receber um texto que não conhece.
     /// </summary>
     public EstadoDoAvatar AvatarEstado { get; set; }
 

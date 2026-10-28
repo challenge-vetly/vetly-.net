@@ -61,6 +61,7 @@ aponta para o lugar errado é pior do que nenhuma.
 | RN-025 | Consulta de vet indisponível é redistribuída preservando pagamento e animal, com o horário novo travado antes da troca e o antigo liberado; o Responsável é avisado | `Consulta.Redistribuir` + `RedistribuicaoService` |
 | RN-070/RN-072 | O consolidado verifica explicitamente que comissão + repasse + desconto fecha o bruto, e agrupa o repasse por destinatário pela maior pendência | `FinanceiroService.ObterConsolidadoAsync` |
 | RN-071 | A liquidação registra um pagamento feito fora da plataforma, exige referência e ignora o que já estava liquidado; só cobrança confirmada entra | `FinanceiroService.LiquidarAsync` + `Pagamento.Liquidar` |
+| RN-105 | A agenda futura do veterinário (animal e Responsável de cada horário) só é lida pelo próprio profissional e pelo Admin; o Responsável vê a disponibilidade | `VeterinarioService.ObterAgendaAsync` |
 | RN-105 | O painel é sempre do próprio veterinário e destaca só o que trava dinheiro ou documento; avaliação sem resposta não conta como pendência bloqueante | `DashboardService.ObterDoVeterinarioAsync` |
 | RN-105/RN-106 | O painel da unidade traz a agenda de todos os vinculados e os indicadores operacionais, com a empresa derivada do vínculo do próprio Admin — sem id na rota, porque com ele qualquer Admin leria o painel de qualquer clínica | `DashboardService.ObterDaUnidadeAsync` |
 | RN-072 | Conta de repasse do prestador (banco, agência, conta, CPF/CNPJ do titular e chave Pix) embutida no registro, substituída inteira e lida só pelo titular, com conta e chave mascaradas | `DadosDeRepasse` + `VeterinarioService.DefinirDadosDeRepasseAsync` + `EmpresaService` |
@@ -116,8 +117,10 @@ aponta para o lugar errado é pior do que nenhuma.
 | RN-060 | Sem consentimento de atendimento, as rotas de negócio do Responsável devolvem 422 — a base legal precede o tratamento | `ConsentimentoAtendimentoFilter` |
 | RN-061/RN-062 | Consentimento granular por finalidade, com data de concessão e de revogação; revogar não apaga registro clínico já produzido | `Tutor.RegistrarConsentimento` + `TutorService` |
 | RN-006 | A consulta só é confirmada com o pagamento, e a confirmação vem do **webhook**, nunca da resposta síncrona | `PagamentoService.ProcessarWebhookAsync` |
+| RN-006/RN-032 | `POST /api/pagamentos` só cobra consulta: sem ela, ou com `internacaoId`, responde 422. A cobrança de internação nasce da própria internação, com o valor dos procedimentos | `PagamentoService.CriarCobrancaAsync` + `CriarCobrancaDeInternacaoAsync` |
 | RN-070 | Take rate por plano: Básico 15%, Profissional 12%, Enterprise 10% — a maior comissão pertence ao menor plano | `SplitBasicoStrategy`, `SplitProfissionalStrategy`, `SplitEnterpriseStrategy` |
 | RN-072 | Repasse único: ao vet autônomo ou à clínica. Vet vinculado usa o plano da unidade, e a remuneração interna fica fora do escopo | `PagamentoService.ResolverPlanoEDestinatarioAsync` |
+| RN-070/RN-072 (§5.4) | Caução e saldo da internação passam pelo mesmo split da consulta, pelo plano do veterinário da internação | `PagamentoService.ObterPrestadorAsync` |
 | RN-081 | Sugestão de dose exige peso do animal — `POST /api/ia/protocolo` com peso ausente/zero devolve 422, e o cadastro do pet passa a exigir `pesoKg` | `OllamaService.SugerirProtocoloAsync` + `AnimalService` |
 | RN-008 | A consulta tem uma janela explícita: `iniciar` abre, `encerrar` fecha e marca a consulta como `Realizada`; iniciar ou encerrar duas vezes devolve 409 | `SessaoCaptura` + `CapturaService` |
 | RN-009 | Áudio capturado em segmentos sequenciais, transcritos fora da requisição; reenvio da mesma sequência devolve 409, e falha em parte dos trechos gera rascunho parcial em vez de perder a consulta | `SegmentoAudio` + `TranscreverSegmentoHandler` |
@@ -135,11 +138,12 @@ aponta para o lugar errado é pior do que nenhuma.
 | RN-011 | A publicação no board é automática assim que o documento é gerado e assinado: publicar grava `PublicadoEm`, entra no histórico do animal e dispara a notificação `DocumentoPublicado` ao Responsável | `DocumentoService.PublicarAsync` + `TipoNotificacao.DocumentoPublicado` |
 | RN-087 (C-04) | Finalizar exige que todo documento **já emitido** que precise de assinatura esteja assinado — receita e atestado; consulta que não prescreveu nada finaliza normalmente | `Documento.PendenteDeAssinatura` + `ConsultaService.FinalizarAsync` |
 | RN-087 | Assinatura por adaptador: nome digitado conferido contra o registrado, carimbo no corpo do documento dizendo como foi assinado e o que não habilita | `IAssinaturaAdapter` + `AssinaturaAdapterNomeDigitado` |
-| RN-088 | Correção cria nova versão do documento (original preservado com `VersaoOriginalId`) | `DocumentoService.CorrigirAsync` |
+| RN-088 | Correção cria nova versão do documento (original preservado com `VersaoOriginalId`), numerada como a seguinte à do original | `DocumentoService.CorrigirAsync` + `Documento.Corrigir` |
+| RN-088 (§5.5) | O prontuário publicado alimenta o histórico longitudinal do animal; a versão corrigida publicada entra como correção do registro, que nunca é sobrescrito | `DocumentoService.RegistrarNoHistoricoAsync` |
 | RN-088 (§5.8) | O CRMV da correção vem do cadastro de quem está autenticado, nunca do corpo: a §5.8 pede anotação **automática** do profissional, e aceitar o valor do cliente deixaria assinar a correção com o registro de outro | `DocumentoService.CorrigirAsync` + `ObterSignatarioAsync` |
 | RN-006 | Consulta tem token de concorrência otimista: duas transações que a carregam antes de qualquer uma salvar não produzem mais last-write-wins, e a escrita defasada falha com 409 em vez de apagar a confirmação do pagamento | `Consulta.Versao` + `VetlyDbContext.SaveChangesAsync` |
 | RN-006 | Reentrega de webhook com pagamento já resolvido reconcilia a consulta que ficou para trás, em vez de sair calada — sem isso, a divergência era permanente | `PagamentoService.ReconciliarConsultaAsync` |
-| RN-089 | Correção após 24h exige justificativa não vazia | `DocumentoService.CorrigirAsync` |
+| RN-089 | Correção após 24h exige justificativa não vazia, gravada no documento corrigido e levada ao histórico (até 1.000 caracteres) | `DocumentoService.CorrigirAsync` + `Documento.JustificativaCorrecao` |
 | RN-094 | Resposta do tutor encerra a régua de contato | `LembreteService.RegistrarRespostaAsync` |
 | RN-095 | Após 3 tentativas sem resposta, `AlertaEnviadoClinica = true` | `LembreteService.ProcessarTentativaAsync` |
 | RN-100 | Procedimentos acumulam `ValorTotalApurado`; alta retorna `saldo = total − caução` | `InternacaoService.RegistrarProcedimentosAsync` + `DarAltaAsync` |

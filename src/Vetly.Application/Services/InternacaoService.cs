@@ -102,7 +102,7 @@ public class InternacaoService : IInternacaoService
         // Registrá-la só na entidade deixaria dinheiro fora do consolidado financeiro.
         if (dto.ValorCaucao > 0)
         {
-            await _pagamentos.CriarCobrancaAsync(new CriarPagamentoDto
+            await _pagamentos.CriarCobrancaDeInternacaoAsync(new CriarPagamentoDto
             {
                 TutorId = animal.TutorId,
                 InternacaoId = internacao.Id,
@@ -177,7 +177,7 @@ public class InternacaoService : IInternacaoService
         // devolver, e devolução não se cobra — fica registrada para o acerto.
         if (saldo > 0 && animal is not null)
         {
-            var cobranca = await _pagamentos.CriarCobrancaAsync(new CriarPagamentoDto
+            var cobranca = await _pagamentos.CriarCobrancaDeInternacaoAsync(new CriarPagamentoDto
             {
                 TutorId = animal.TutorId,
                 InternacaoId = internacao.Id,

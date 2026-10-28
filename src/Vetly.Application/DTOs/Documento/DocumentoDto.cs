@@ -35,4 +35,7 @@ public class DocumentoDto
     public Guid? VersaoOriginalId { get; set; }
     public DateTime? DataCorrecao { get; set; }
     public string? CrmvSolicitanteCorrecao { get; set; }
+
+    /// <summary>Motivo da correção, quando este documento é uma versão corrigida (RN-089).</summary>
+    public string? JustificativaCorrecao { get; set; }
 }

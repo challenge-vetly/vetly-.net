@@ -64,6 +64,7 @@ public class ReguaDeLembretesTests
     [InlineData(TipoObrigacaoPet.MedicacaoContinua, TipoLembrete.Medicacao)]
     [InlineData(TipoObrigacaoPet.CheckUp, TipoLembrete.CheckUp)]
     [InlineData(TipoObrigacaoPet.Exame, TipoLembrete.CheckUp)]
+    [InlineData(TipoObrigacaoPet.Higienizacao, TipoLembrete.Higiene)]
     public async Task Regua_NasceComOAssuntoDaObrigacaoQueAAbriu(
         TipoObrigacaoPet obrigacao, TipoLembrete esperado)
     {
@@ -295,5 +296,20 @@ public class ReguaDeLembretesTests
         Assert.Equal(0, tentativas);
         Assert.Empty(_criadas);
         _notificacoes.Verify(r => r.SalvarAsync(), Times.Never);
+    }
+
+    [Fact]
+    public async Task Regua_DeHigiene_FalaEmBanhoETosa()
+    {
+        // Arrange — sem o assunto proprio, a higienizacao chegaria como "Cuidado"
+        var lembrete = new LembreteAgendado(_animalId, _tutorId, TipoLembrete.Higiene, DateTime.UtcNow.AddDays(-2));
+        _lembretes.Setup(r => r.ObterAtivosAteAsync(It.IsAny<DateTime>())).ReturnsAsync([lembrete]);
+        _lembretes.Setup(r => r.Atualizar(It.IsAny<LembreteAgendado>()));
+
+        // Act
+        await CriarRotinaDaRegua().ExecutarAsync(CancellationToken.None);
+
+        // Assert
+        Assert.Equal("Banho e tosa em atraso", _criadas[0].Titulo);
     }
 }
