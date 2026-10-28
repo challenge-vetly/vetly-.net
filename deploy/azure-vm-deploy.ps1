@@ -65,6 +65,9 @@ param(
     # acesso ao proprio banco.
     [string]$MongoSenha,
 
+    # Id ou nome da assinatura. Sem ele, vale a padrao do Azure CLI.
+    [string]$Assinatura,
+
     [switch]$SomenteAplicacao
 )
 
@@ -91,6 +94,9 @@ function Ok($t)    { Write-Host "    $t" -ForegroundColor DarkGray }
 
 function Invoke-Az {
     param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Argumentos)
+    # A assinatura vai em cada chamada, e nao por `az account set`: trocar o padrao do
+    # CLI mudaria o alvo de tudo o que o operador rodar depois, fora deste script.
+    if ($Assinatura) { $Argumentos += @('--subscription', $Assinatura) }
     $saida = & $Az @Argumentos
     if ($LASTEXITCODE -ne 0) { throw "az $($Argumentos -join ' ') falhou com codigo $LASTEXITCODE" }
     return $saida
@@ -154,8 +160,9 @@ function Invoke-Ssh {
 # ── 0. Sessao ─────────────────────────────────────────────────────────────────
 Passo '0. Sessao do Azure CLI'
 
-$conta = & $Az account show --output json 2>$null | ConvertFrom-Json
-if ($null -eq $conta) { throw "Sem sessao ativa. Rode 'az login'." }
+$alvo = if ($Assinatura) { @('--subscription', $Assinatura) } else { @() }
+$conta = & $Az account show @alvo --output json 2>$null | ConvertFrom-Json
+if ($null -eq $conta) { throw "Sem sessao ativa, ou sem acesso a assinatura informada. Rode 'az login'." }
 Ok "Assinatura: $($conta.name)"
 
 
@@ -420,8 +427,8 @@ Write-Host @"
       ssh $usuario@$fqdn 'sudo cat /opt/vetly/app/deploy/vm/.env'
 
     PARA PARAR DE PAGAR quando nao estiver usando (a maior alavanca de custo):
-      az vm deallocate -g $GrupoDeRecursos -n $vm
-      az vm start      -g $GrupoDeRecursos -n $vm
+      az vm deallocate -g $GrupoDeRecursos -n $vm $($alvo -join ' ')
+      az vm start      -g $GrupoDeRecursos -n $vm $($alvo -join ' ')
 
     Desalocada, a VM para de ser cobrada; ficam so o disco e o IP (~US\$ 8/mes).
 

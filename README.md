@@ -317,6 +317,7 @@ Num redeploy, connection string, chave do JWT, token de serviço, senha do Mongo
 | `-TamanhoDaVm` | `Standard_D4as_v4` | 4 vCPU / 16 GB. Ver o dimensionamento abaixo |
 | `-ModeloDeIa` | `llama3.1` | O mesmo do `appsettings.json` |
 | `-AzureSpeechKey` | — | Sem ela, o STT fica em `Simulado` |
+| `-Assinatura` | a padrão do CLI | Id ou nome da assinatura. Vai em cada chamada ao `az`, sem trocar o padrão do CLI |
 
 ### Dimensionamento — por que 16 GB
 
