@@ -681,6 +681,10 @@ chamar("con", "POST", "/api/consultas", token=ADM, esperado=422, corpo={      # 
     "dataHora": (datetime.now(timezone.utc) + timedelta(days=9)).isoformat(), "modalidade": "Presencial",
     "veterinarioId": VET, "animalId": ANI, "tutorId": TID, "pagamentoId": PAGID})
 
+chamar("pag", "POST", "/api/pagamentos", token=TK, esperado=422, idem=True, corpo={         # RN-006
+    "tutorId": TID, "valor": 1.0, "meioPagamento": "Pix"})
+chamar("pag", "POST", "/api/pagamentos", token=TK, esperado=422, idem=True, corpo={
+    "tutorId": TID, "internacaoId": str(uuid.uuid4()), "valor": 1.0, "meioPagamento": "Pix"})
 chamar("pag", "GET", "/api/pagamentos?status=Confirmado&ordenarPor=criadoEm&direcao=desc", token=TK)
 chamar("pag", "GET", f"/api/pagamentos/{PAGID}?hateoas=true", token=TK)
 chamar("pag", "GET", f"/api/pagamentos/{PAGID}/status", token=TK)

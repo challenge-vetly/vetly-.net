@@ -2,7 +2,7 @@
 
 **Plataforma que conecta responsáveis de pets a clínicas e veterinários autônomos — agendamento, pagamento com split, prontuário assistido por IA e fidelidade em uma única API.**
 
-`.NET 10` · `ASP.NET Core` · `EF Core 10` · `Oracle` · `Docker` · `1.334 testes automatizados`
+`.NET 10` · `ASP.NET Core` · `EF Core 10` · `Oracle` · `Docker` · `1.336 testes automatizados`
 
 O ciclo completo do produto vive aqui: busca por proximidade, agenda com controle de concorrência, cobrança antecipada, captura de áudio da consulta, estruturação do prontuário por LLM, emissão de documentos assinados e programa de pontos.
 

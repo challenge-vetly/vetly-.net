@@ -99,13 +99,15 @@ public class PagamentoWebhookTests
     [Fact]
     public async Task CriarCobranca_NaoConfirmaOPagamento()
     {
+        var (_, consulta, _) = CenarioEmCheckout();
+
         Pagamento? criado = null;
         _repo.Setup(r => r.AdicionarAsync(It.IsAny<Pagamento>()))
             .Callback<Pagamento>(p => criado = p).Returns(Task.CompletedTask);
 
         var resposta = await CriarServico().CriarCobrancaAsync(new CriarPagamentoDto
         {
-            TutorId = Guid.NewGuid(), Valor = 200m, MeioPagamento = MeioPagamento.Pix
+            TutorId = consulta.TutorId, ConsultaId = consulta.Id, Valor = 200m, MeioPagamento = MeioPagamento.Pix
         });
 
         // Quem confirma e o webhook, nunca a resposta sincrona (vetly-tech §7.5)
@@ -116,9 +118,11 @@ public class PagamentoWebhookTests
     [Fact]
     public async Task CriarCobranca_GuardaAReferenciaDoProvedorEDevolveAsInstrucoes()
     {
+        var (_, consulta, _) = CenarioEmCheckout();
+
         var resposta = await CriarServico().CriarCobrancaAsync(new CriarPagamentoDto
         {
-            TutorId = Guid.NewGuid(), Valor = 200m, MeioPagamento = MeioPagamento.Pix
+            TutorId = consulta.TutorId, ConsultaId = consulta.Id, Valor = 200m, MeioPagamento = MeioPagamento.Pix
         });
 
         Assert.Equal(Referencia, resposta.Instrucoes.ReferenciaExterna);
@@ -696,7 +700,7 @@ public class PagamentoWebhookTests
         var cupom = CupomDe(10.00m);
 
         var ex = await Assert.ThrowsAsync<BusinessRuleException>(
-            () => CriarServico().CriarCobrancaAsync(new CriarPagamentoDto
+            () => CriarServico().CriarCobrancaDeInternacaoAsync(new CriarPagamentoDto
             {
                 TutorId = Guid.NewGuid(),
                 InternacaoId = Guid.NewGuid(),
@@ -705,9 +709,46 @@ public class PagamentoWebhookTests
                 CupomId = cupom.Id
             }));
 
-        // Internacao nao passa pelo split que financia o desconto: aplicar cupom ali
-        // abateria de uma comissao que nao existe
+        // O programa de pontos e da consulta: a caucao e o saldo da internacao nao
+        // entram nele
         Assert.Equal("RN-051", ex.Codigo);
+    }
+
+    // ── RN-006/RN-032: a rota publica so cobra consulta ─────────────────────
+
+    [Fact]
+    public async Task CobrancaSemConsulta_LancaBusinessRuleRN006()
+    {
+        // Sem consulta o valor seria o do corpo e o dinheiro nao teria destino: nem
+        // comissao nem repasse, e o consolidado deixava de fechar
+        var ex = await Assert.ThrowsAsync<BusinessRuleException>(
+            () => CriarServico().CriarCobrancaAsync(new CriarPagamentoDto
+            {
+                TutorId = Guid.NewGuid(),
+                Valor = 200m,
+                MeioPagamento = MeioPagamento.Pix
+            }));
+
+        Assert.Equal("RN-006", ex.Codigo);
+        _repo.Verify(r => r.AdicionarAsync(It.IsAny<Pagamento>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task CobrancaDeInternacaoPelaRotaPublica_LancaBusinessRuleRN006()
+    {
+        // A internacao cobra pelo proprio servico, com o valor dos procedimentos.
+        // Pela rota publica, quem escolheria o valor seria o cliente
+        var ex = await Assert.ThrowsAsync<BusinessRuleException>(
+            () => CriarServico().CriarCobrancaAsync(new CriarPagamentoDto
+            {
+                TutorId = Guid.NewGuid(),
+                InternacaoId = Guid.NewGuid(),
+                Valor = 1m,
+                MeioPagamento = MeioPagamento.Pix
+            }));
+
+        Assert.Equal("RN-006", ex.Codigo);
+        _repo.Verify(r => r.AdicionarAsync(It.IsAny<Pagamento>()), Times.Never);
     }
 
     // ── RN-053: pagamento recusado devolve o cupom ──────────────────────────

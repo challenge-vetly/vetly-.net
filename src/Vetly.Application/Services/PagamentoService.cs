@@ -91,6 +91,27 @@ public class PagamentoService : IPagamentoService
         return MapearParaDto(pagamento);
     }
 
+    /// <inheritdoc/>
+    public async Task<CobrancaCriadaRespostaDto> CriarCobrancaAsync(CriarPagamentoDto dto)
+    {
+        // A cobranca de internacao nasce da propria internacao, com o valor apurado
+        // pelos procedimentos. Aceita-la por aqui deixaria o cliente escolher o valor.
+        if (dto.InternacaoId is not null)
+            throw new BusinessRuleException("RN-006",
+                "A cobranca de internacao e gerada pela propria internacao, na abertura e na alta.");
+
+        return await CriarAsync(dto);
+    }
+
+    /// <inheritdoc/>
+    public async Task<CobrancaCriadaRespostaDto> CriarCobrancaDeInternacaoAsync(CriarPagamentoDto dto)
+    {
+        if (dto.InternacaoId is null)
+            throw new ArgumentException("A cobranca de internacao precisa da internacao.", nameof(dto));
+
+        return await CriarAsync(dto);
+    }
+
     /// <summary>
     /// Cria a cobranca: apura o split na Vetly (RN-070), registra a cobranca no
     /// adaptador e devolve as instrucoes de pagamento.
@@ -98,7 +119,7 @@ public class PagamentoService : IPagamentoService
     /// O pagamento NAO nasce confirmado. Quem confirma e o webhook, nunca a resposta
     /// sincrona — e o que mantem o fluxo pronto para um gateway real (vetly-tech §7.5).
     /// </summary>
-    public async Task<CobrancaCriadaRespostaDto> CriarCobrancaAsync(CriarPagamentoDto dto)
+    private async Task<CobrancaCriadaRespostaDto> CriarAsync(CriarPagamentoDto dto)
     {
         var (tutorId, valor) = await ValidarPedidoDeCobrancaAsync(dto);
 
@@ -195,8 +216,10 @@ public class PagamentoService : IPagamentoService
         if (dto.InternacaoId is not null)
             return (tutorId, dto.Valor);
 
+        // Sem consulta, o valor seria o do corpo e o dinheiro nao teria destino: nem
+        // comissao nem repasse, e o consolidado deixava de fechar (RN-032/RN-070).
         if (dto.ConsultaId is not { } consultaId)
-            return (tutorId, dto.Valor);
+            throw new BusinessRuleException("RN-006", "A cobranca precisa de uma consulta.");
 
         var consulta = await _consultaRepo.ObterPorIdAsync(consultaId)
             ?? throw new NotFoundException("Consulta", consultaId);
