@@ -25,8 +25,9 @@
     ./deploy/azure-vm-deploy.ps1 -ConnectionStringOracle "User Id=...;Password=...;Data Source=oracle.fiap.com.br:1521/orcl"
 
 .EXAMPLE
-    ./deploy/azure-vm-deploy.ps1 -Sufixo vtly01 -ConnectionStringOracle "..." -SomenteAplicacao
-    Recopia o codigo e refaz o build, sem tocar na infraestrutura.
+    ./deploy/azure-vm-deploy.ps1 -Sufixo vtly01 -SomenteAplicacao
+    Recopia o codigo e refaz o build, sem tocar na infraestrutura. Connection string e
+    segredos vem do .env que ja esta na VM.
 #>
 
 [CmdletBinding()]
@@ -44,7 +45,8 @@ param(
     # acabam e a maquina cai para uma fracao do desempenho justo quando esta em uso.
     [string]$TamanhoDaVm = 'Standard_D4as_v4',
 
-    [Parameter(Mandatory = $true)]
+    # Obrigatoria so no primeiro deploy. Num redeploy, este e os segredos abaixo que
+    # nao forem informados sao lidos do .env que ja esta na VM (ver o passo 5).
     [string]$ConnectionStringOracle,
 
     [string]$JwtKey,
@@ -156,8 +158,6 @@ $conta = & $Az account show --output json 2>$null | ConvertFrom-Json
 if ($null -eq $conta) { throw "Sem sessao ativa. Rode 'az login'." }
 Ok "Assinatura: $($conta.name)"
 
-if (-not $JwtKey)       { $JwtKey       = New-Segredo -Bytes 48 }
-if (-not $TokenInterno) { $TokenInterno = New-Segredo -Bytes 32 }
 
 if (-not $SomenteAplicacao) {
 
@@ -266,19 +266,50 @@ if ($LASTEXITCODE -ne 0) { throw 'scp do pacote falhou.' }
 
 Remove-Item $pacote -Force
 
-# Antes de apagar o codigo antigo: a senha do Mongo ja gravada no volume esta no .env
-# que vai junto. Atribuicao direta captura o stdout do ssh; sem .env, sai vazio.
-if (-not $MongoSenha) {
-    $MongoSenha = (ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR `
-        "$usuario@$fqdn" "grep -s '^MONGO_SENHA=' /opt/vetly/app/deploy/vm/.env | cut -d= -f2-")
-    if ($MongoSenha) { $MongoSenha = "$MongoSenha".Trim() }
+# Antes de apagar o codigo antigo: o .env que vai junto guarda a configuracao do
+# ambiente, e um redeploy sem parametros a reaproveita. Trocar a cada deploy custava
+# caro: a senha do Mongo nova deixava a API sem acesso ao volume (ela so vale na
+# primeira subida), a chave do JWT nova deslogava todo mundo, e o token de servico novo
+# quebrava quem chama o webhook. Parametro informado vence o que esta na VM.
+# Atribuicao direta captura o stdout do ssh; sem .env, sai vazio.
+$linhasDoEnv = ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR `
+    "$usuario@$fqdn" "cat /opt/vetly/app/deploy/vm/.env 2>/dev/null"
+$envAtual = @{}
+foreach ($linha in @($linhasDoEnv)) {
+    $i = "$linha".IndexOf('=')
+    if ($i -gt 0) { $envAtual["$linha".Substring(0, $i).Trim()] = "$linha".Substring($i + 1).Trim() }
 }
-if (-not $MongoSenha) {
-    $MongoSenha = New-SegredoHex
-    Ok 'MongoDB: senha nova gerada (primeira subida do volume).'
-} else {
-    Ok 'MongoDB: senha existente reaproveitada.'
+
+function Reaproveitar([string]$Informado, [string]$Chave) {
+    if ($Informado) { return $Informado }
+    return $envAtual[$Chave]
 }
+
+$ConnectionStringOracle = Reaproveitar $ConnectionStringOracle 'ConnectionStrings__OracleConnection'
+$JwtKey         = Reaproveitar $JwtKey 'Jwt__Key'
+$TokenInterno   = Reaproveitar $TokenInterno 'Servicos__TokenInterno'
+$MongoSenha     = Reaproveitar $MongoSenha 'MONGO_SENHA'
+$AzureSpeechKey = Reaproveitar $AzureSpeechKey 'AZURE_SPEECH_KEY'
+if ($envAtual['AZURE_SPEECH_REGION'] -and -not $PSBoundParameters.ContainsKey('AzureSpeechRegion')) {
+    $AzureSpeechRegion = $envAtual['AZURE_SPEECH_REGION']
+}
+
+if (-not $ConnectionStringOracle) {
+    throw 'Informe -ConnectionStringOracle: a VM ainda nao tem um .env para reaproveitar.'
+}
+
+if (-not $JwtKey)       { $JwtKey = New-Segredo -Bytes 48;       Ok 'JWT: chave nova gerada.' }
+else                    { Ok 'JWT: chave existente reaproveitada.' }
+if (-not $TokenInterno) { $TokenInterno = New-Segredo -Bytes 32; Ok 'Token de servico: novo gerado.' }
+else                    { Ok 'Token de servico: existente reaproveitado.' }
+if (-not $MongoSenha)   { $MongoSenha = New-SegredoHex;          Ok 'MongoDB: senha nova gerada (primeira subida do volume).' }
+else                    { Ok 'MongoDB: senha existente reaproveitada.' }
+
+# O bootstrap do primeiro administrador (Bootstrap__*) nao tem parametro aqui: o
+# operador o acrescenta ao .env da VM quando precisa, e ele sobrevive aos redeploys.
+$preservadas = @($envAtual.Keys | Where-Object { $_ -like 'Bootstrap__*' } | Sort-Object |
+    ForEach-Object { "$_=$($envAtual[$_])" })
+if ($preservadas.Count -gt 0) { Ok "Bootstrap: $($preservadas.Count) variavel(is) preservada(s)." }
 
 Invoke-Ssh 'rm -rf /opt/vetly/app && mkdir -p /opt/vetly/app && tar -xf /tmp/vetly.tar -C /opt/vetly/app && rm /tmp/vetly.tar'
 Ok 'Codigo extraido em /opt/vetly/app.'
@@ -315,6 +346,7 @@ MongoDb__Database=vetly
 if ($AzureSpeechKey) {
     $env_ += "AZURE_SPEECH_KEY=$AzureSpeechKey`nAZURE_SPEECH_REGION=$AzureSpeechRegion`n"
 }
+foreach ($linha in $preservadas) { $env_ += "$linha`n" }
 
 # base64 no transporte: o conteudo tem '=' e '/' das chaves e ';' da connection
 # string, que o shell remoto interpretaria.
@@ -364,7 +396,8 @@ if ($saude) {
     Write-Host "`n    Estado geral: $($saude.status)" -ForegroundColor Yellow
     foreach ($c in $saude.checks) {
         $cor = if ($c.status -eq 'Healthy') { 'Green' } else { 'Red' }
-        Write-Host ("    {0,-16} {1}" -f $c.name, $c.status) -ForegroundColor $cor
+        # A API devolve os checks em portugues (nome, status, descricao)
+        Write-Host ("    {0,-16} {1}  {2}" -f $c.nome, $c.status, $c.descricao) -ForegroundColor $cor
     }
 } else {
     Write-Host '    Nao respondeu a tempo. Veja: ssh ' -NoNewline -ForegroundColor Red

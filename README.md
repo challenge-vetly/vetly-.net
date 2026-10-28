@@ -302,7 +302,14 @@ Só a porta 443, no Caddy, que emite e renova o certificado sozinho. A API (8080
 
 O script é idempotente: rodar de novo reaproveita a VM, recopia o código e refaz o build — que é exatamente o que se quer num redeploy. Guarde o **sufixo** que ele imprime; é o que faz a próxima execução encontrar os recursos da anterior em vez de criar um conjunto novo.
 
-`-SomenteAplicacao` pula o provisionamento e só atualiza o código.
+`-SomenteAplicacao` pula o provisionamento e só atualiza o código. O deploy envia o `HEAD` versionado (`git archive`): commite antes, e o que estiver só na sua máquina não vai.
+
+```powershell
+az vm start -g rg-vetly-vm -n vetly-vm-<sufixo>          # se estiver desalocada
+./deploy/azure-vm-deploy.ps1 -Sufixo <sufixo> -SomenteAplicacao
+```
+
+Num redeploy, connection string, chave do JWT, token de serviço, senha do Mongo, chave do Azure Speech e as variáveis `Bootstrap__*` que não forem passadas por parâmetro são lidas do `.env` que já está na VM. Trocar qualquer uma a cada deploy custava caro: a senha nova do Mongo deixava a API sem acesso ao volume, a chave nova do JWT deslogava todo mundo e o token novo quebrava quem chama o webhook. Ligar a VM desalocada **não** atualiza nada: os containers voltam com a imagem do último deploy.
 
 | Parâmetro | Padrão | Nota |
 |---|---|---|
